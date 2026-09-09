@@ -113,7 +113,7 @@ export default function Sidebar({
                 aria-current={isActive ? 'page' : undefined}
                 className={`${NAV_ITEM_CLASS} ${
                   isActive
-                    ? 'bg-slate-900 text-white font-bold shadow-md ring-1 ring-slate-900/10'
+                    ? 'text-white font-bold'
                     : 'text-slate-700 font-semibold hover:bg-slate-100/80 hover:text-slate-900'
                 }`}
               >
@@ -122,7 +122,7 @@ export default function Sidebar({
                   <motion.span
                     layoutId="sidebar-active-pill"
                     transition={indicatorTransition}
-                    className="absolute inset-0 -z-10 rounded-xl bg-slate-900 shadow-md"
+                    className="absolute inset-0 rounded-xl bg-slate-900 shadow-md ring-1 ring-slate-900/10"
                   />
                 )}
 
@@ -131,11 +131,11 @@ export default function Sidebar({
                   <motion.span
                     layoutId="sidebar-active-edge"
                     transition={indicatorTransition}
-                    className="absolute bottom-2 left-0 top-2 w-1.5 rounded-r-full bg-emerald-400 shadow-[0_0_12px_#10B981]"
+                    className="absolute bottom-2 left-0 top-2 w-1.5 rounded-r-full bg-emerald-400 shadow-[0_0_12px_#10B981] z-10"
                   />
                 )}
 
-                <span className="relative flex items-center gap-3">
+                <span className="relative z-10 flex items-center gap-3">
                   <span className={`flex transition-colors ${isActive ? 'text-emerald-400' : 'text-slate-500 group-hover:text-indigo-600'}`}>
                     <Icon size={18} />
                   </span>
@@ -150,7 +150,7 @@ export default function Sidebar({
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.7 }}
                       transition={spring.soft}
-                      className={`relative rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold ${
+                      className={`relative z-10 rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold ${
                         isActive
                           ? 'border-slate-700 bg-slate-800 text-emerald-300'
                           : tab.badgeColor || 'border-slate-200 bg-slate-100 text-slate-600'

@@ -229,19 +229,19 @@ export default function PerformanceTab({ pages }) {
                   whileTap={tapPress}
                   transition={spring.press}
                   aria-pressed={isActive}
-                  className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold cursor-pointer outline-none ${
-                    isActive ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'
+                  className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold cursor-pointer outline-none transition-colors duration-150 ${
+                    isActive ? 'text-slate-900 font-extrabold' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   {isActive && (
                     <motion.span
                       layoutId="perf-strategy-pill"
                       transition={reduced ? { duration: 0 } : spring.snap}
-                      className="absolute inset-0 -z-10 rounded-lg border border-slate-200 bg-white shadow-xs"
+                      className="absolute inset-0 rounded-lg border border-slate-200 bg-white shadow-xs"
                     />
                   )}
-                  <Icon size={15} className="relative text-indigo-600" />
-                  <span className="relative">{label}</span>
+                  <Icon size={15} className="relative z-10 text-indigo-600" />
+                  <span className="relative z-10">{label}</span>
                 </motion.button>
               );
             })}

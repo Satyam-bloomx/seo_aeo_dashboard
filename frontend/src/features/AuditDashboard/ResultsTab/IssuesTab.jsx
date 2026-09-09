@@ -92,7 +92,7 @@ export default function IssuesTab({ pages, onIssueClick }) {
         </div>
 
         {/* Severity Filter Tabs */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
           <LayoutGroup id="issue-filters">
             {SEVERITY_FILTERS.map((f) => {
               const isActive = filterType === f.id;
@@ -103,18 +103,18 @@ export default function IssuesTab({ pages, onIssueClick }) {
                   whileTap={tapPress}
                   transition={spring.press}
                   aria-pressed={isActive}
-                  className={`relative px-3 py-1.5 rounded-lg text-xs font-bold outline-none ${
-                    isActive ? 'text-white' : `${f.idle} hover:opacity-80`
+                  className={`relative px-3.5 py-1.5 rounded-lg text-xs font-bold outline-none cursor-pointer transition-colors duration-150 flex items-center justify-center ${
+                    isActive ? 'text-white' : `${f.idle} hover:text-slate-900`
                   }`}
                 >
                   {isActive && (
                     <motion.span
                       layoutId="issue-filter-pill"
                       transition={reduced ? { duration: 0 } : spring.snap}
-                      className={`absolute inset-0 -z-10 rounded-lg shadow-xs ${f.active}`}
+                      className={`absolute inset-0 rounded-lg shadow-sm ${f.active}`}
                     />
                   )}
-                  <span className="relative tabular-nums">
+                  <span className="relative z-10 tabular-nums">
                     {f.label} ({summary[f.countKey]})
                   </span>
                 </motion.button>
