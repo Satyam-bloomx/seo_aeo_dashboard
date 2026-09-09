@@ -3,7 +3,16 @@ import React, { useState, useMemo } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { toast } from 'sonner';
 import { duration, ease, spring, tapPress, tween } from '@/lib/motion';
-import { Filter, Search, LayoutPanelLeft, FileSpreadsheet, Download, ExternalLink, ChevronRight } from 'lucide-react';
+import {
+  Filter,
+  Search,
+  Download,
+  FileSpreadsheet,
+  ChevronRight,
+  Copy,
+  Check,
+  TableProperties
+} from 'lucide-react';
 
 const CATEGORIES = [
   'Internal', 'External', 'Security', 'Response_Codes', 'URI', 'Page_Titles',
@@ -13,11 +22,52 @@ const CATEGORIES = [
   'Google_Analytics', 'Search_Console', 'Mobile', 'Accessibility', 'Validation', 'Link_Metrics'
 ];
 
+// Master 35+ column specification for full Excel/CSV technical site audit export
+const MASTER_EXPORT_FIELDS = [
+  { header: 'URL', getter: (p) => p.url },
+  { header: 'Status Code', getter: (p) => p.status_code || 200 },
+  { header: 'Status', getter: (p) => p.status_name || (p.status_code >= 400 ? 'Client Error' : p.status_code >= 300 ? 'Redirect' : 'OK') },
+  { header: 'Indexability', getter: (p) => p.indexability || 'Indexable' },
+  { header: 'Indexability Status', getter: (p) => p.indexability_status || 'None' },
+  { header: 'Content Type', getter: (p) => p.content_type || 'text/html' },
+  { header: 'Response Time (ms)', getter: (p) => p.response_time_ms || '' },
+  { header: 'Size (Bytes)', getter: (p) => p.size_bytes || '' },
+  { header: 'Word Count', getter: (p) => p.word_count ?? '' },
+  { header: 'Text Ratio (%)', getter: (p) => p.text_to_html_ratio ? (p.text_to_html_ratio * 100).toFixed(1) : '' },
+  { header: 'Crawl Depth', getter: (p) => p.crawl_depth ?? '' },
+  { header: 'Title 1', getter: (p) => p.title_1 || '' },
+  { header: 'Title 1 Length', getter: (p) => p.title_1_length || (p.title_1 ? p.title_1.length : '') },
+  { header: 'Title 1 Pixel Width', getter: (p) => p.title_1_pixel_width || '' },
+  { header: 'Meta Description 1', getter: (p) => p.meta_desc_1 || '' },
+  { header: 'Meta Description 1 Length', getter: (p) => p.meta_desc_1_length || (p.meta_desc_1 ? p.meta_desc_1.length : '') },
+  { header: 'Meta Keywords 1', getter: (p) => p.meta_keyword_1 || '' },
+  { header: 'H1-1', getter: (p) => p.h1_1 || '' },
+  { header: 'H1-1 Length', getter: (p) => p.h1_1_length || (p.h1_1 ? p.h1_1.length : '') },
+  { header: 'H1-2', getter: (p) => p.h1_2 || '' },
+  { header: 'H2-1', getter: (p) => p.h2_1 || '' },
+  { header: 'H2-2', getter: (p) => p.h2_2 || '' },
+  { header: 'Canonical Link Element 1', getter: (p) => p.canonical_link_element_1 || '' },
+  { header: 'Meta Robots 1', getter: (p) => p.meta_robots_1 || '' },
+  { header: 'Core Web Vitals - LCP', getter: (p) => p.audit_data?.PageSpeed?.mobile?.metrics?.lcp || '' },
+  { header: 'Core Web Vitals - CLS', getter: (p) => p.audit_data?.PageSpeed?.mobile?.metrics?.cls || '' },
+  { header: 'Core Web Vitals - INP', getter: (p) => p.audit_data?.PageSpeed?.mobile?.metrics?.inp || '' },
+  { header: 'Core Web Vitals - TTFB', getter: (p) => p.audit_data?.PageSpeed?.mobile?.metrics?.ttfb || '' },
+  { header: 'AEO Extractable Answer Score', getter: (p) => p.audit_data?.AEO_Audit?.aeo_score || '' },
+  { header: 'GEO Local Score', getter: (p) => p.audit_data?.GEO_Audit?.geo_score || '' },
+  { header: 'Multiple Head Tags', getter: (p) => p.audit_data?.Validation?.['Multiple <head> Tags'] ? 'TRUE' : 'FALSE' },
+  { header: 'Multiple Body Tags', getter: (p) => p.audit_data?.Validation?.['Multiple <body> Tags'] ? 'TRUE' : 'FALSE' },
+  { header: 'Duplicate Title', getter: (p) => p.audit_data?.Page_Titles?.['Duplicate'] ? 'TRUE' : 'FALSE' },
+  { header: 'Duplicate H1', getter: (p) => p.audit_data?.H1?.['Duplicate'] ? 'TRUE' : 'FALSE' },
+  { header: 'Duplicate Content', getter: (p) => p.audit_data?.Content?.['Exact Duplicates'] ? 'TRUE' : 'FALSE' },
+  { header: 'Missing Alt Text', getter: (p) => p.audit_data?.Images?.['Missing Alt Text'] ? 'TRUE' : 'FALSE' }
+];
+
 export default function URLExplorerTab({ pages, initialCategory, initialView, onRowClick }) {
   const reduced = useReducedMotion();
   const [activeCategory, setActiveCategory] = useState(initialCategory || 'Page_Titles');
   const [activeView, setActiveView] = useState(initialView || 'All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [copiedUrl, setCopiedUrl] = useState(null);
 
   React.useEffect(() => {
     if (initialCategory) {
@@ -27,21 +77,30 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
 
   React.useEffect(() => {
     if (initialView) {
-      setActiveView(initialView);
+      // Clean prefix if passed from issues (e.g. "Validation: Multiple <body> Tags" -> "Multiple <body> Tags")
+      const cleanView = initialView.includes(':')
+        ? initialView.split(':').slice(1).join(':').trim()
+        : initialView;
+      setActiveView(cleanView);
     }
   }, [initialView]);
 
   const dynamicColumns = useMemo(() => {
     if (!pages || pages.length === 0) return [];
 
+    if (activeCategory === 'Internal') {
+      return ['status_code', 'indexability', 'content_type', 'word_count', 'title_1', 'h1_1', 'response_time_ms'];
+    }
+
     for (const page of pages) {
       const catData = page.audit_data?.[activeCategory];
       if (catData && typeof catData === 'object' && !Array.isArray(catData)) {
-        return Object.keys(catData);
+        const keys = Object.keys(catData);
+        if (keys.length > 0) return keys;
       }
     }
-    if (activeCategory === 'Internal') return ['status_code', 'indexability', 'content_type', 'word_count'];
-    return [];
+
+    return ['status_code', 'indexability', 'word_count'];
   }, [pages, activeCategory]);
 
   const availableViews = useMemo(() => {
@@ -51,8 +110,10 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
   const filteredPages = useMemo(() => {
     let result = pages || [];
     if (searchQuery) {
-      result = result.filter(p => p.url.toLowerCase().includes(searchQuery.toLowerCase()));
+      const q = searchQuery.toLowerCase();
+      result = result.filter(p => (p.url || '').toLowerCase().includes(q) || (p.title_1 || '').toLowerCase().includes(q));
     }
+
     if (activeView === 'Errors') {
       result = result.filter(p => {
         const catData = p.audit_data?.[activeCategory];
@@ -63,57 +124,134 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
         return Object.values(catData).some(val => val === true);
       });
     } else if (activeView !== 'All') {
+      // Sanitize activeView search query
+      const cleanViewQuery = activeView.includes(':')
+        ? activeView.split(':').slice(1).join(':').trim().toLowerCase()
+        : activeView.toLowerCase();
+
       result = result.filter(p => {
         const catData = p.audit_data?.[activeCategory];
-        if (!catData) return false;
-        const directVal = catData[activeView];
-        if (directVal !== undefined) return directVal === true;
-        return Object.entries(catData).some(([k, v]) =>
-          k.toLowerCase().includes(activeView.toLowerCase()) && v === true
-        );
+        if (!catData) {
+          // Check top level page property
+          const directVal = p[activeView];
+          if (directVal !== undefined) return Boolean(directVal);
+          return false;
+        }
+        
+        // Exact key match
+        if (catData[activeView] !== undefined) {
+          return catData[activeView] === true;
+        }
+
+        // Fuzzy key match on sanitized query
+        return Object.entries(catData).some(([k, v]) => {
+          const kLower = k.toLowerCase();
+          return (kLower.includes(cleanViewQuery) || cleanViewQuery.includes(kLower)) && v === true;
+        });
       });
     }
     return result;
   }, [pages, searchQuery, activeCategory, activeView]);
 
-  const exportToCSV = () => {
-    if (!filteredPages || filteredPages.length === 0) return;
+  // Master Full Audit Exporter (Exports all 35+ parameters into formatted Excel/CSV)
+  const exportFullAuditToCSV = () => {
+    if (!pages || pages.length === 0) {
+      toast.error('No crawl data available to export.');
+      return;
+    }
 
-    const headers = ['URL', ...dynamicColumns];
+    const headers = MASTER_EXPORT_FIELDS.map(f => `"${f.header.replace(/"/g, '""')}"`);
+    const rows = pages.map(page => {
+      return MASTER_EXPORT_FIELDS.map(f => {
+        try {
+          const val = f.getter(page);
+          if (val === null || val === undefined) return '""';
+          if (typeof val === 'object') return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
+          return `"${String(val).replace(/"/g, '""')}"`;
+        } catch {
+          return '""';
+        }
+      }).join(',');
+    });
+
+    // \uFEFF is UTF-8 Byte Order Mark (BOM) ensuring Microsoft Excel detects UTF-8 correctly
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `auditpro_master_site_audit_export.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast.success('Master Site Audit Exported', {
+      description: `Exported ${pages.length} URLs across all 35+ technical parameters.`
+    });
+  };
+
+  // Export current filtered view
+  const exportCurrentViewToCSV = () => {
+    if (!filteredPages || filteredPages.length === 0) {
+      toast.error('No URLs match the current filter.');
+      return;
+    }
+
+    const baseCols = ['URL', 'Status_Code', 'Indexability', 'Content_Type', 'Word_Count'];
+    const extraCols = dynamicColumns.filter(c => !baseCols.map(b => b.toLowerCase()).includes(c.toLowerCase()));
+    const allHeaders = [...baseCols, ...extraCols];
+
     const rows = filteredPages.map(page => {
       const pageUrl = `"${(page.url || '').replace(/"/g, '""')}"`;
-      const colValues = dynamicColumns.map(col => {
+      const statusCode = `"${page.status_code || 200}"`;
+      const indexability = `"${page.indexability || 'Indexable'}"`;
+      const contentType = `"${page.content_type || 'text/html'}"`;
+      const wordCount = `"${page.word_count ?? ''}"`;
+
+      const extraValues = extraCols.map(col => {
         const val = page.audit_data?.[activeCategory]?.[col] ?? page[col];
         if (val === null || val === undefined) return '""';
         if (typeof val === 'object') return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
         return `"${String(val).replace(/"/g, '""')}"`;
       });
-      return [pageUrl, ...colValues].join(',');
+
+      return [pageUrl, statusCode, indexability, contentType, wordCount, ...extraValues].join(',');
     });
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = '\uFEFF' + [allHeaders.map(h => `"${h}"`).join(','), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `auditpro_${activeCategory.toLowerCase()}_export.csv`);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `auditpro_${activeCategory.toLowerCase()}_view_export.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 
-    toast.success('CSV Export Generated', {
-      description: `Exported ${filteredPages.length} rows for ${activeCategory.replace(/_/g, ' ')}.`
+    toast.success('Filtered View Exported', {
+      description: `Exported ${filteredPages.length} rows for category ${activeCategory.replace(/_/g, ' ')}.`
     });
   };
 
+  const handleCopy = (url, e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(url);
+    setCopiedUrl(url);
+    toast.success('URL copied to clipboard');
+    setTimeout(() => setCopiedUrl(null), 2000);
+  };
+
   const formatCellValue = (value, colKey) => {
-    if (value === true) {
+    if (value === true || value === 'TRUE') {
       return (
         <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200">
           True
         </span>
       );
     }
-    if (value === false) {
+    if (value === false || value === 'FALSE') {
       return (
         <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
           False
@@ -132,32 +270,43 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
   return (
     <div className="flex flex-col h-full space-y-3 overflow-hidden">
 
-      {/* Top Header & Export */}
+      {/* Top Header & Dual Export Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">Screaming Frog URL Data Grid</h2>
           <p className="text-xs text-slate-500 mt-0.5">Explore full 32-parameter extracted data for all crawled website endpoints.</p>
         </div>
 
-        <motion.button
-          onClick={exportToCSV}
-          disabled={!filteredPages || filteredPages.length === 0}
-          whileTap={tapPress}
-          initial="rest"
-          whileHover="hover"
-          animate="rest"
-          transition={spring.press}
-          className="btn-primary py-2 px-4 text-xs font-bold gap-2 shrink-0 self-start sm:self-auto disabled:opacity-50 shadow-xs"
-        >
-          <motion.span
-            variants={{ rest: { y: 0 }, hover: { y: 2 } }}
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+          {/* Master Full Export Button */}
+          <motion.button
+            onClick={exportFullAuditToCSV}
+            disabled={!pages || pages.length === 0}
+            whileTap={tapPress}
+            initial="rest"
+            whileHover="hover"
+            animate="rest"
             transition={spring.press}
-            className="flex"
+            className="btn-primary py-2 px-3.5 text-xs font-bold gap-2 disabled:opacity-50 shadow-xs"
+            title="Export full 35+ parameters for all pages into Excel"
           >
             <Download size={14} className="text-emerald-400" />
-          </motion.span>
-          Export CSV
-        </motion.button>
+            Export Full Audit (Excel)
+          </motion.button>
+
+          {/* Current Filtered View Export */}
+          <motion.button
+            onClick={exportCurrentViewToCSV}
+            disabled={!filteredPages || filteredPages.length === 0}
+            whileTap={tapPress}
+            transition={spring.press}
+            className="btn-secondary py-2 px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs"
+            title="Export only currently filtered rows"
+          >
+            <FileSpreadsheet size={13} className="text-slate-600" />
+            Filtered CSV
+          </motion.button>
+        </div>
       </div>
 
       {/* Controls Bar: Category Picker + Sub-view filter + Search */}
@@ -204,7 +353,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
           <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search URLs..."
+            placeholder="Search URLs or titles..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full glass-input pl-9 pr-3 py-2 text-xs text-slate-900 placeholder-slate-400 rounded-xl"
@@ -224,6 +373,9 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                 <th className="px-4 py-3.5 font-bold font-mono text-slate-500 uppercase tracking-wider w-24">
                   Status
                 </th>
+                <th className="px-4 py-3.5 font-bold font-mono text-slate-500 uppercase tracking-wider w-28">
+                  Indexability
+                </th>
                 {dynamicColumns.map(col => (
                   <th key={col} className="px-4 py-3.5 font-bold font-mono text-slate-500 uppercase tracking-wider min-w-[140px] whitespace-nowrap">
                     {col.replace(/_/g, ' ')}
@@ -237,6 +389,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                 filteredPages.map((page, idx) => {
                   const statusCode = page.status_code || 200;
                   const catData = page.audit_data?.[activeCategory] || {};
+                  const isCopied = copiedUrl === page.url;
 
                   return (
                     <motion.tr
@@ -247,8 +400,6 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                       exit={{ opacity: 0, y: -4 }}
                       transition={{
                         ...tween(duration.fast, ease.outQuart),
-                        // Cap the cascade: on a 500-row grid an uncapped
-                        // stagger would still be animating minutes later.
                         delay: Math.min(idx, 12) * 0.015,
                       }}
                       onClick={() => onRowClick && onRowClick(page)}
@@ -258,6 +409,13 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                         <div className="flex items-center gap-2 truncate max-w-sm">
                           <ChevronRight size={13} className="text-slate-400 group-hover:text-indigo-600 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5" />
                           <span className="truncate" title={page.url}>{page.url}</span>
+                          <button
+                            onClick={(e) => handleCopy(page.url, e)}
+                            className="p-1 text-slate-400 hover:text-slate-700 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Copy URL"
+                          >
+                            {isCopied ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                          </button>
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -269,6 +427,15 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                             : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                         }`}>
                           {statusCode}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${
+                          page.indexability === 'Non-Indexable'
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}>
+                          {page.indexability || 'Indexable'}
                         </span>
                       </td>
                       {dynamicColumns.map(col => {
@@ -290,7 +457,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                   exit={{ opacity: 0 }}
                   transition={tween(duration.base, ease.outQuart)}
                 >
-                  <td colSpan={dynamicColumns.length + 2} className="px-6 py-16 text-center text-slate-400">
+                  <td colSpan={dynamicColumns.length + 3} className="px-6 py-16 text-center text-slate-400">
                     <p className="font-bold text-slate-900 text-sm">No URLs match the selected filter.</p>
                     <p className="text-xs text-slate-500 mt-1">Try switching category or resetting search query.</p>
                   </td>
@@ -304,7 +471,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
         {/* Footer Meta */}
         <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 text-[11px] font-mono text-slate-500 flex justify-between items-center shrink-0">
           <span>Showing <strong className="text-slate-900">{filteredPages.length}</strong> of <strong className="text-slate-900">{pages?.length || 0}</strong> URLs</span>
-          <span>Category: <strong className="text-indigo-600">{activeCategory}</strong></span>
+          <span>Category: <strong className="text-indigo-600">{activeCategory}</strong> | View: <strong className="text-emerald-600">{activeView}</strong></span>
         </div>
       </div>
     </div>

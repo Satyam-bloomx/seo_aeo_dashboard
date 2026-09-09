@@ -23,20 +23,8 @@ import {
 } from '@/lib/motion';
 import AuditProLogo from '@/components/ui/AuditProLogo';
 
-/**
- * Sidebar
- * -------
- * The active-state indicator is a single `motion.div` shared across every nav
- * button via `layoutId`. React unmounts it from the old row and mounts it on
- * the new one; Framer Motion sees the same layoutId and physically glides the
- * element between the two positions instead of cutting. Same trick for the
- * emerald edge bar.
- *
- * Nav rows stagger in once, on mount, at 45ms apart.
- */
-
 const NAV_ITEM_CLASS =
-  'relative flex w-full cursor-pointer items-center justify-between rounded-xl px-3.5 py-2.5 text-left text-xs outline-none';
+  'relative flex w-full cursor-pointer items-center justify-between rounded-xl px-3.5 py-2.5 text-left text-xs outline-none transition-colors duration-150';
 
 export default function Sidebar({
   activeTab,
@@ -68,11 +56,10 @@ export default function Sidebar({
     { id: 'integrations', label: 'API Integrations', icon: Layers, badge: 'SEO/AEO' },
   ];
 
-  // With reduced motion the indicator still moves, it just teleports.
   const indicatorTransition = reduced ? { duration: 0 } : spring.snap;
 
   return (
-    <aside className="relative flex h-full w-full select-none flex-col border-r border-slate-200 bg-white/95 px-3.5 py-5 shadow-sm">
+    <aside className="relative flex h-full w-full select-none flex-col border-r border-slate-200 bg-white px-3.5 py-5 shadow-sm">
       {/* ------------------------------------------------------------------ */}
       {/* Brand                                                              */}
       {/* ------------------------------------------------------------------ */}
@@ -106,7 +93,7 @@ export default function Sidebar({
           className="mb-1 flex items-center justify-between px-3 font-mono text-[10px] font-bold uppercase tracking-widest text-slate-400"
         >
           <span>Navigation</span>
-          <span className="text-[9px] font-normal">v20.0</span>
+          <span className="text-[9px] font-normal">v20.4</span>
         </motion.div>
 
         <LayoutGroup id="sidebar-nav">
@@ -125,10 +112,12 @@ export default function Sidebar({
                 whileHover="hover"
                 aria-current={isActive ? 'page' : undefined}
                 className={`${NAV_ITEM_CLASS} ${
-                  isActive ? 'font-bold text-white' : 'font-semibold text-slate-600'
+                  isActive
+                    ? 'bg-slate-900 text-white font-bold shadow-md ring-1 ring-slate-900/10'
+                    : 'text-slate-700 font-semibold hover:bg-slate-100/80 hover:text-slate-900'
                 }`}
               >
-                {/* Gliding filled pill — one element, shared across all rows. */}
+                {/* Gliding filled pill indicator */}
                 {isActive && (
                   <motion.span
                     layoutId="sidebar-active-pill"
@@ -137,36 +126,19 @@ export default function Sidebar({
                   />
                 )}
 
-                {/* Hover wash for inactive rows only. */}
-                {!isActive && (
-                  <motion.span
-                    variants={{ rest: { opacity: 0 }, hover: { opacity: 1 } }}
-                    transition={tween(duration.micro, ease.outQuad)}
-                    className="absolute inset-0 -z-10 rounded-xl bg-slate-100"
-                  />
-                )}
-
-                {/* Gliding emerald edge bar. */}
+                {/* Gliding emerald edge bar */}
                 {isActive && (
                   <motion.span
                     layoutId="sidebar-active-edge"
                     transition={indicatorTransition}
-                    className="absolute bottom-2 left-0 top-2 w-1 rounded-r-full bg-emerald-400 shadow-[0_0_10px_#10B981]"
+                    className="absolute bottom-2 left-0 top-2 w-1.5 rounded-r-full bg-emerald-400 shadow-[0_0_12px_#10B981]"
                   />
                 )}
 
                 <span className="relative flex items-center gap-3">
-                  <motion.span
-                    variants={{
-                      rest: { rotate: 0, scale: 1, color: '#94A3B8' },
-                      hover: { rotate: 6, scale: 1.12, color: '#4F46E5' },
-                      active: { rotate: 0, scale: 1.05, color: '#34D399' },
-                    }}
-                    transition={spring.press}
-                    className="flex"
-                  >
+                  <span className={`flex transition-colors ${isActive ? 'text-emerald-400' : 'text-slate-500 group-hover:text-indigo-600'}`}>
                     <Icon size={18} />
-                  </motion.span>
+                  </span>
                   <span className="truncate">{tab.label}</span>
                 </span>
 
@@ -211,20 +183,15 @@ export default function Sidebar({
           animate="rest"
           className="btn-primary group relative w-full gap-2 overflow-hidden px-3 py-2.5 text-xs font-bold shadow-xs"
         >
-          {/* Sheen that sweeps across the button on hover. */}
           <motion.span
             aria-hidden="true"
             variants={{ rest: { x: '-120%' }, hover: { x: '120%' } }}
             transition={{ duration: 0.7, ease: ease.outQuart }}
             className="pointer-events-none absolute inset-y-0 w-1/2 skew-x-[-20deg] bg-white/15"
           />
-          <motion.span
-            variants={{ rest: { rotate: 0, scale: 1 }, hover: { rotate: -8, scale: 1.12 } }}
-            transition={spring.press}
-            className="relative flex"
-          >
-            <FileText size={15} className="text-emerald-400" />
-          </motion.span>
+          <span className="relative flex text-emerald-400">
+            <FileText size={15} />
+          </span>
           <span className="relative">Executive PDF Report</span>
         </motion.button>
 
@@ -234,22 +201,13 @@ export default function Sidebar({
           initial="rest"
           whileHover="hover"
           animate="rest"
-          className="group relative flex w-full cursor-pointer items-center justify-between rounded-xl border border-transparent px-3.5 py-2.5 text-xs font-semibold text-slate-600"
+          className="group relative flex w-full cursor-pointer items-center justify-between rounded-xl border border-transparent px-3.5 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
         >
-          <motion.span
-            variants={{ rest: { opacity: 0 }, hover: { opacity: 1 } }}
-            transition={tween(duration.micro, ease.outQuad)}
-            className="absolute inset-0 -z-10 rounded-xl border border-slate-200 bg-slate-100"
-          />
           <span className="flex items-center gap-2.5">
-            <motion.span
-              variants={{ rest: { rotate: 0, color: '#94A3B8' }, hover: { rotate: 90, color: '#4F46E5' } }}
-              transition={{ duration: 0.5, ease: ease.outQuint }}
-              className="flex"
-            >
+            <span className="flex text-slate-500 group-hover:text-indigo-600">
               <Settings size={16} />
-            </motion.span>
-            <span className="group-hover:text-slate-900">Crawler Settings</span>
+            </span>
+            <span>Crawler Settings</span>
           </span>
           <span className="font-mono text-[10px] uppercase text-slate-400">Config</span>
         </motion.button>

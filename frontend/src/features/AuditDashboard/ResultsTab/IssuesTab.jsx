@@ -1,9 +1,25 @@
 'use client';
 import React, { useState, useMemo } from 'react';
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
-import { generateIssuesReport } from '@/utils/IssuesEngine';
+import { generateIssuesReport, RULE_METADATA } from '@/utils/IssuesEngine';
 import { duration, ease, spring, tapPress, tween } from '@/lib/motion';
-import { AlertCircle, AlertTriangle, Lightbulb, Search, HelpCircle, ChevronDown, ExternalLink, ShieldCheck } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  AlertCircle,
+  AlertTriangle,
+  Lightbulb,
+  Search,
+  HelpCircle,
+  ChevronDown,
+  ExternalLink,
+  ShieldCheck,
+  Check,
+  Copy,
+  Info,
+  Wrench,
+  Flame,
+  ListTree
+} from 'lucide-react';
 
 const SEVERITY_FILTERS = [
   { id: 'ALL', label: 'All', countKey: 'Total', active: 'bg-slate-900', idle: 'text-slate-600' },
@@ -15,7 +31,8 @@ const SEVERITY_FILTERS = [
 export default function IssuesTab({ pages, onIssueClick }) {
   const [filterType, setFilterType] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedIssue, setExpandedIssue] = useState(null); // row key, not index
+  const [expandedIssue, setExpandedIssue] = useState(null);
+  const [copiedUrl, setCopiedUrl] = useState(null);
 
   const reduced = useReducedMotion();
 
@@ -36,7 +53,11 @@ export default function IssuesTab({ pages, onIssueClick }) {
 
       if (searchQuery.trim() !== '') {
         const q = searchQuery.toLowerCase();
-        return issue.name.toLowerCase().includes(q) || issue.category.toLowerCase().includes(q);
+        return (
+          issue.name.toLowerCase().includes(q) ||
+          issue.category.toLowerCase().includes(q) ||
+          (issue.rootCause && issue.rootCause.toLowerCase().includes(q))
+        );
       }
 
       return true;
@@ -52,13 +73,12 @@ export default function IssuesTab({ pages, onIssueClick }) {
     }
   };
 
-  const getHowToFixAdvice = (issueName) => {
-    if (issueName.includes('H1')) return 'Ensure each indexable HTML page contains exactly one primary <h1> tag containing target keywords near the top of the body.';
-    if (issueName.includes('Title')) return 'Format title tags between 20-70 characters. Ensure brand name is present at the end separated by a pipe (|).';
-    if (issueName.includes('Description')) return 'Provide unique meta descriptions between 120-160 characters containing a primary keyword and strong call-to-action.';
-    if (issueName.includes('4xx') || issueName.includes('Server Error')) return 'Audit broken links or server routes immediately. Implement 301 redirects or restore missing resources.';
-    if (issueName.includes('Alt Text') || issueName.includes('Images')) return 'Add descriptive <img alt="..."> attributes for screen-reader accessibility and image indexation.';
-    return 'Review affected URLs in the URL Data Grid. Ensure server configurations and HTML tags adhere to search engine webmaster guidelines.';
+  const handleCopy = (url, e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(url);
+    setCopiedUrl(url);
+    toast.success('URL copied to clipboard');
+    setTimeout(() => setCopiedUrl(null), 2000);
   };
 
   return (
@@ -68,7 +88,7 @@ export default function IssuesTab({ pages, onIssueClick }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">Audit Diagnostic Issues</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Prioritized diagnostic rules detected across all scanned pages.</p>
+          <p className="text-xs text-slate-500 mt-0.5">Prioritized diagnostic rules detected across all scanned pages with root-cause analysis.</p>
         </div>
 
         {/* Severity Filter Tabs */}
@@ -87,7 +107,6 @@ export default function IssuesTab({ pages, onIssueClick }) {
                     isActive ? 'text-white' : `${f.idle} hover:opacity-80`
                   }`}
                 >
-                  {/* One pill, shared across all four buttons - it slides. */}
                   {isActive && (
                     <motion.span
                       layoutId="issue-filter-pill"
@@ -110,7 +129,7 @@ export default function IssuesTab({ pages, onIssueClick }) {
         <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
           type="text"
-          placeholder="Search issues by rule name or category..."
+          placeholder="Search issues by rule name, category, or root cause..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full glass-input pl-10 pr-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 rounded-xl"
@@ -137,6 +156,7 @@ export default function IssuesTab({ pages, onIssueClick }) {
                 filteredIssues.map((issue, idx) => {
                   const rowKey = `${issue.category}-${issue.name}`;
                   const isExpanded = expandedIssue === rowKey;
+                  const affectedList = issue.affected_pages || [];
 
                   return (
                     <React.Fragment key={rowKey}>
@@ -146,11 +166,11 @@ export default function IssuesTab({ pages, onIssueClick }) {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -6 }}
                         transition={tween(duration.fast, ease.outQuart)}
-                        className={`transition-colors group hover:bg-slate-50 ${isExpanded ? 'bg-slate-50' : ''}`}
+                        className={`transition-colors group hover:bg-slate-50 cursor-pointer ${isExpanded ? 'bg-slate-50/90' : ''}`}
+                        onClick={() => setExpandedIssue(isExpanded ? null : rowKey)}
                       >
                         <td
-                          onClick={() => setExpandedIssue(isExpanded ? null : rowKey)}
-                          className="px-5 py-3.5 font-bold text-slate-900 group-hover:text-indigo-600 transition-colors cursor-pointer flex items-center gap-2"
+                          className="px-5 py-3.5 font-bold text-slate-900 group-hover:text-indigo-600 transition-colors flex items-center gap-2"
                         >
                           <motion.span
                             animate={{ rotate: isExpanded ? 180 : 0 }}
@@ -162,7 +182,7 @@ export default function IssuesTab({ pages, onIssueClick }) {
                               className={isExpanded ? 'text-indigo-600' : 'text-slate-400'}
                             />
                           </motion.span>
-                          {issue.name}
+                          <span>{issue.name}</span>
                         </td>
                         <td className="px-5 py-3.5">
                           <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 font-mono text-[10px] text-slate-700 font-semibold">
@@ -178,29 +198,34 @@ export default function IssuesTab({ pages, onIssueClick }) {
                           </div>
                         </td>
                         <td className="px-5 py-3.5 text-right font-mono font-bold text-slate-900">
-                          {issue.count || issue.urlsCount || 1}
+                          {issue.count || affectedList.length || 1}
                         </td>
                         <td className="px-5 py-3.5 text-right font-mono text-slate-500 font-medium">
                           {issue.percentage}%
                         </td>
                         <td className="px-5 py-3.5 text-center">
                           <motion.button
-                            onClick={() => onIssueClick(issue)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onIssueClick({
+                                category: issue.category,
+                                name: issue.ruleName || issue.name
+                              });
+                            }}
                             whileHover={{ y: -1 }}
                             whileTap={tapPress}
                             transition={spring.press}
                             className="btn-secondary px-3 py-1 text-[11px] font-bold flex items-center gap-1 mx-auto shadow-xs"
+                            title="Explore affected URLs in Grid"
                           >
                             Explore <ExternalLink size={12} />
                           </motion.button>
                         </td>
                       </motion.tr>
 
-                      {/* How To Fix - the one place we animate height, because
-                          an accordion has no honest transform equivalent. The
-                          inner content is fixed-size so the reflow is cheap. */}
+                      {/* Expanded Deep Diagnostic Root Cause & Affected URLs Drawer */}
                       {isExpanded && (
-                        <tr className="bg-slate-50/80 border-b border-slate-200">
+                        <tr className="bg-slate-50/95 border-b border-slate-200">
                           <td colSpan={6} className="p-0">
                             <motion.div
                               initial={{ height: 0, opacity: 0 }}
@@ -212,14 +237,111 @@ export default function IssuesTab({ pages, onIssueClick }) {
                               }}
                               className="overflow-hidden"
                             >
-                              <div className="px-6 py-4">
-                                <div className="flex items-start gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-                                  <HelpCircle className="text-indigo-600 shrink-0 mt-0.5" size={16} />
-                                  <div>
-                                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-1 font-mono">Remediation Guide</h4>
-                                    <p className="text-xs text-slate-600 leading-relaxed">{getHowToFixAdvice(issue.name)}</p>
+                              <div className="px-6 py-5 space-y-4">
+
+                                {/* 3-Pillar Diagnostic Analysis Bento */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                                  
+                                  {/* 1. Root Cause */}
+                                  <div className="bg-white p-4 rounded-xl border border-rose-100 shadow-xs flex flex-col justify-between">
+                                    <div>
+                                      <div className="flex items-center gap-2 text-rose-700 font-bold font-mono text-[11px] uppercase tracking-wider mb-1.5">
+                                        <Info size={14} className="text-rose-600" />
+                                        <span>Why This Error Occurred (Root Cause)</span>
+                                      </div>
+                                      <p className="text-xs text-slate-600 leading-relaxed font-sans">
+                                        {issue.rootCause || 'Detected during automated DOM inspection against W3C and SEO standards.'}
+                                      </p>
+                                    </div>
                                   </div>
+
+                                  {/* 2. Search Engine & AI Impact */}
+                                  <div className="bg-white p-4 rounded-xl border border-amber-100 shadow-xs flex flex-col justify-between">
+                                    <div>
+                                      <div className="flex items-center gap-2 text-amber-700 font-bold font-mono text-[11px] uppercase tracking-wider mb-1.5">
+                                        <Flame size={14} className="text-amber-600" />
+                                        <span>Search & AI Engine Impact</span>
+                                      </div>
+                                      <p className="text-xs text-slate-600 leading-relaxed font-sans">
+                                        {issue.impact || 'Causes crawl inefficiencies, diluted search relevancy, or snippet rendering errors.'}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {/* 3. Step-by-Step Remediation */}
+                                  <div className="bg-white p-4 rounded-xl border border-emerald-100 shadow-xs flex flex-col justify-between">
+                                    <div>
+                                      <div className="flex items-center gap-2 text-emerald-700 font-bold font-mono text-[11px] uppercase tracking-wider mb-1.5">
+                                        <Wrench size={14} className="text-emerald-600" />
+                                        <span>Step-by-Step Fix Guide</span>
+                                      </div>
+                                      <p className="text-xs text-slate-600 leading-relaxed font-sans">
+                                        {issue.fixGuide || 'Review template code and update HTML structures according to webmaster guidelines.'}
+                                      </p>
+                                    </div>
+                                  </div>
+
                                 </div>
+
+                                {/* Affected URLs Interactive List */}
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                      <ListTree size={14} className="text-indigo-600" />
+                                      <h4 className="text-xs font-bold text-slate-900 uppercase font-mono tracking-wider">
+                                        Affected URLs ({affectedList.length})
+                                      </h4>
+                                    </div>
+                                    <button
+                                      onClick={() => onIssueClick({
+                                        category: issue.category,
+                                        name: issue.ruleName || issue.name
+                                      })}
+                                      className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 cursor-pointer"
+                                    >
+                                      Open All in URL Grid <ExternalLink size={11} />
+                                    </button>
+                                  </div>
+
+                                  {affectedList.length > 0 ? (
+                                    <div className="max-h-56 overflow-y-auto custom-scrollbar divide-y divide-slate-100 border border-slate-100 rounded-lg">
+                                      {affectedList.slice(0, 50).map((page, pIdx) => {
+                                        const isCopied = copiedUrl === page.url;
+                                        return (
+                                          <div key={page.id || page.url || pIdx} className="px-3 py-2 flex items-center justify-between text-xs hover:bg-slate-50 transition-colors">
+                                            <div className="flex items-center gap-2 truncate max-w-xl">
+                                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                                                (page.status_code || 200) >= 400
+                                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                              }`}>
+                                                {page.status_code || 200}
+                                              </span>
+                                              <span className="font-mono text-slate-700 truncate" title={page.url}>
+                                                {page.url}
+                                              </span>
+                                            </div>
+                                            <button
+                                              onClick={(e) => handleCopy(page.url, e)}
+                                              className="p-1 text-slate-400 hover:text-slate-700 rounded transition-colors"
+                                              title="Copy URL"
+                                            >
+                                              {isCopied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
+                                      {affectedList.length > 50 && (
+                                        <div className="p-2 text-center text-xs text-slate-500 font-mono bg-slate-50">
+                                          + {affectedList.length - 50} more affected URLs. Click "Open All in URL Grid" to inspect full list.
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-slate-500 font-mono">No specific URL records loaded.</p>
+                                  )}
+                                </div>
+
                               </div>
                             </motion.div>
                           </td>

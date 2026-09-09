@@ -455,7 +455,7 @@ export default function OverviewTab({ pages, onNavigateToExplorer }) {
                 layout={!reduced}
                 variants={staggerItem}
                 exit={{ opacity: 0, scale: 0.96 }}
-                onClick={() => onNavigateToExplorer(issue.category, issue.name)}
+                onClick={() => onNavigateToExplorer(issue.category, issue.ruleName || issue.name)}
                 whileHover={{ y: -2 }}
                 whileTap={{ scale: 0.99 }}
                 transition={spring.press}
