@@ -22,6 +22,7 @@ import { spring, staggerContainer, staggerItem, tapPress } from '@/lib/motion';
 import axios from 'axios';
 import { toast } from 'sonner';
 import ApiKeyModal from './ApiKeyModal';
+import { API_BASE_URL } from '@/api/client';
 
 const API_INTEGRATIONS = [
   {
@@ -104,7 +105,7 @@ export default function IntegrationsPanel({ projectId = 1 }) {
   const fetchStatus = async () => {
     try {
       setLoadingStatus(true);
-      const res = await axios.get(`http://localhost:8000/api/integrations/status/${projectId}`);
+      const res = await axios.get(`${API_BASE_URL}/integrations/status/${projectId}`);
       setIntegrations(res.data || {});
     } catch (e) {
       console.warn("Could not fetch integrations status:", e);
@@ -121,7 +122,7 @@ export default function IntegrationsPanel({ projectId = 1 }) {
     setTestingId(integrationId);
     setTestResults(prev => ({ ...prev, [integrationId]: { status: 'testing' } }));
     try {
-      const res = await axios.post(`http://localhost:8000/api/integrations/test`, {
+      const res = await axios.post(`${API_BASE_URL}/integrations/test`, {
         service_name: integrationId,
         project_id: projectId
       });
@@ -153,7 +154,7 @@ export default function IntegrationsPanel({ projectId = 1 }) {
 
   const handleDisconnect = async (integrationId) => {
     try {
-      await axios.delete(`http://localhost:8000/api/integrations/disconnect/${projectId}/${integrationId}`);
+      await axios.delete(`${API_BASE_URL}/integrations/disconnect/${projectId}/${integrationId}`);
       setIntegrations(prev => ({
         ...prev,
         [integrationId]: { connected: false }
@@ -169,7 +170,7 @@ export default function IntegrationsPanel({ projectId = 1 }) {
   const handleOAuthConnect = async (provider) => {
     toast.loading(`Redirecting to Google OAuth authorization...`);
     try {
-      const res = await axios.get(`http://localhost:8000/api/integrations/google/auth?project_id=${projectId}&service=${provider}`);
+      const res = await axios.get(`${API_BASE_URL}/integrations/google/auth?project_id=${projectId}&service=${provider}`);
       if (res.data?.auth_url) {
         window.location.href = res.data.auth_url;
       }

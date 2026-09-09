@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import axios from 'axios';
 import { CheckCircle2, Loader2, XCircle, ShieldCheck } from 'lucide-react';
+import { API_BASE_URL } from '@/api/client';
 
 function CallbackContent() {
   const searchParams = useSearchParams();
@@ -25,7 +26,7 @@ function CallbackContent() {
 
     const completeAuth = async () => {
       try {
-        await axios.post(`http://localhost:8000/api/integrations/google/callback?project_id=${projectId}&service=${service}&code=${code}`);
+        await axios.post(`${API_BASE_URL}/integrations/google/callback?project_id=${projectId}&service=${service}&code=${code}`);
         setStatus('success');
         setMessage(`Successfully connected to ${service.replace(/_/g, ' ').toUpperCase()}!`);
         

@@ -13,6 +13,7 @@ import ExecutiveReportModal from './ExecutiveReportModal';
 import SettingsModal from './SettingsModal/SettingsModal';
 import IntegrationsPanel from './IntegrationsPanel';
 import Loading from '../../app/loading';
+import { API_BASE_URL } from '@/api/client';
 import {
   bannerDrop,
   duration,
@@ -134,7 +135,7 @@ export default function AuditDashboard() {
     });
 
     try {
-      const response = await fetch('http://localhost:8000/api/crawls', {
+      const response = await fetch(`${API_BASE_URL}/crawls`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -172,7 +173,7 @@ export default function AuditDashboard() {
   const fetchResults = useCallback(async () => {
     if (!crawlId) return;
     try {
-      const response = await fetch(`http://localhost:8000/api/crawls/${crawlId}/pages`);
+      const response = await fetch(`${API_BASE_URL}/crawls/${crawlId}/pages`);
       setPages(await response.json());
     } catch (error) {
       console.error('Failed to fetch pages:', error);
@@ -186,7 +187,7 @@ export default function AuditDashboard() {
       if (!crawlId || status === 'completed' || status === 'failed') return;
 
       try {
-        const response = await fetch(`http://localhost:8000/api/crawls/${crawlId}/status`);
+        const response = await fetch(`${API_BASE_URL}/crawls/${crawlId}/status`);
         const data = await response.json();
 
         setStatus(data.status);

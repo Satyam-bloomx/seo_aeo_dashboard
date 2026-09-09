@@ -1,7 +1,9 @@
 import axios from 'axios';
 
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api',
+  baseURL: API_BASE_URL,
 });
 
 export const startCrawl = async (seedUrl, maxDepth = 100, maxPages = 500) => {
@@ -28,3 +30,5 @@ export const getOutlinks = async (pageId) => {
   const response = await api.get(`/pages/${pageId}/outlinks`);
   return response.data;
 };
+
+export default api;

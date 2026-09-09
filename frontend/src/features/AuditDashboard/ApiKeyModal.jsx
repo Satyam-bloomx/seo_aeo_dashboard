@@ -7,6 +7,7 @@ import { spring, tapPress, tween, duration, ease } from '@/lib/motion';
 import { X, Key, Check, Eye, EyeOff, Loader2, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { API_BASE_URL } from '@/api/client';
 
 export default function ApiKeyModal({
   isOpen = true,
@@ -37,7 +38,7 @@ export default function ApiKeyModal({
     setTestResult(null);
 
     try {
-      const res = await axios.post('http://127.0.0.1:8000/api/integrations/test', {
+      const res = await axios.post(`${API_BASE_URL}/integrations/test`, {
         project_id: projectId,
         service: integration.id,
         service_name: integration.id,
@@ -79,7 +80,7 @@ export default function ApiKeyModal({
     setError(null);
 
     try {
-      await axios.post('http://127.0.0.1:8000/api/integrations/key', {
+      await axios.post(`${API_BASE_URL}/integrations/key`, {
         project_id: projectId,
         service: integration.id,
         service_name: integration.id,
