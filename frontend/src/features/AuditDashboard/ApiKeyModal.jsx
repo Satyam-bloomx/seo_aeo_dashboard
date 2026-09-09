@@ -4,10 +4,131 @@ import { DialogTitle } from '@headlessui/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import AnimatedModal from '@/components/ui/AnimatedModal';
 import { spring, tapPress, tween, duration, ease } from '@/lib/motion';
-import { X, Key, Check, Eye, EyeOff, Loader2, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  X,
+  Key,
+  Check,
+  Eye,
+  EyeOff,
+  Loader2,
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
+  BookOpen,
+  ChevronDown,
+  ChevronUp,
+  HelpCircle,
+  Copy
+} from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { API_BASE_URL } from '@/api/client';
+
+const GUIDES = {
+  pagespeed: {
+    docUrl: 'https://developers.google.com/speed/docs/insights/v5/get-started',
+    title: 'Google PageSpeed Insights API Setup',
+    steps: [
+      {
+        step: 1,
+        title: 'Open Google PageSpeed API Docs',
+        desc: 'Open the official Google Developers Get Started page.',
+        link: 'https://developers.google.com/speed/docs/insights/v5/get-started',
+        linkLabel: 'Open PageSpeed Get-Started Page'
+      },
+      {
+        step: 2,
+        title: 'Scroll to "Acquiring and using an API key"',
+        desc: 'Scroll down until you locate the "Acquiring and using an API key" section.'
+      },
+      {
+        step: 3,
+        title: 'Click the "Get a Key" blue button',
+        desc: 'Click the blue "Get a Key" button to open the Google Cloud enablement dialog.'
+      },
+      {
+        step: 4,
+        title: 'Select or Create a Project',
+        desc: 'Choose "+ Create a new project" (or select an existing project) and click "NEXT".'
+      },
+      {
+        step: 5,
+        title: 'Confirm API Enablement',
+        desc: 'Click "CONFIRM AND CONTINUE" to activate PageSpeed Insights API.'
+      },
+      {
+        step: 6,
+        title: 'Copy & Paste Key',
+        desc: 'Copy your generated key (starts with "AIzaSy..."), paste it into the field below, test connection, and click Connect & Save.'
+      }
+    ]
+  },
+  openai: {
+    docUrl: 'https://platform.openai.com/api-keys',
+    title: 'OpenAI API Key Setup',
+    steps: [
+      {
+        step: 1,
+        title: 'Open OpenAI Dashboard',
+        desc: 'Visit your OpenAI Platform API Keys dashboard.',
+        link: 'https://platform.openai.com/api-keys',
+        linkLabel: 'Open OpenAI Keys Page'
+      },
+      {
+        step: 2,
+        title: 'Create New Secret Key',
+        desc: 'Click "+ Create new secret key", provide a name, and generate your key (starts with "sk-...").'
+      },
+      {
+        step: 3,
+        title: 'Paste & Connect',
+        desc: 'Copy your key, paste it below, test the connection, and save.'
+      }
+    ]
+  },
+  perplexity: {
+    docUrl: 'https://docs.perplexity.ai/',
+    title: 'Perplexity AI API Setup',
+    steps: [
+      {
+        step: 1,
+        title: 'Open Perplexity Settings',
+        desc: 'Navigate to Perplexity API settings dashboard.',
+        link: 'https://www.perplexity.ai/settings/api',
+        linkLabel: 'Open Perplexity API Page'
+      },
+      {
+        step: 2,
+        title: 'Generate API Token',
+        desc: 'Generate a new API key starting with "pplx-...".'
+      },
+      {
+        step: 3,
+        title: 'Paste & Test',
+        desc: 'Paste your token below and click "Test Connection".'
+      }
+    ]
+  },
+  serpapi: {
+    docUrl: 'https://serpapi.com/manage-api-key',
+    title: 'SerpAPI Search Engine Key Setup',
+    steps: [
+      {
+        step: 1,
+        title: 'Open SerpAPI Account',
+        desc: 'Visit your SerpAPI dashboard to copy your private API key.',
+        link: 'https://serpapi.com/manage-api-key',
+        linkLabel: 'Open SerpAPI Dashboard'
+      },
+      {
+        step: 2,
+        title: 'Copy & Save',
+        desc: 'Copy your key, paste it below, and test connection.'
+      }
+    ]
+  }
+};
 
 export default function ApiKeyModal({
   isOpen = true,
@@ -23,8 +144,11 @@ export default function ApiKeyModal({
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [error, setError] = useState(null);
+  const [isGuideOpen, setIsGuideOpen] = useState(true);
 
   if (!integration) return null;
+
+  const guide = GUIDES[integration.id];
 
   const handleTestConnection = async () => {
     if (!apiKey.trim()) {
@@ -105,199 +229,252 @@ export default function ApiKeyModal({
   };
 
   return (
-    <AnimatedModal isOpen={isOpen} onClose={onClose} size="md">
+    <AnimatedModal isOpen={isOpen} onClose={onClose} size="lg">
 
-              {/* Modal Header */}
-              <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs">
-                    <Key size={20} />
-                  </div>
-                  <div>
-                    <DialogTitle as="h3" className="text-base font-bold text-slate-900">
-                      {integration.name}
-                    </DialogTitle>
-                    <p className="text-xs text-slate-500">Configure key for live audit enrichments</p>
-                  </div>
-                </div>
-                <motion.button
-                  onClick={onClose}
-                  whileHover={{ rotate: 90, scale: 1.1 }}
-                  whileTap={tapPress}
-                  transition={spring.press}
-                  aria-label="Close"
-                  className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
-                >
-                  <X size={16} />
-                </motion.button>
+      {/* Modal Header */}
+      <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs">
+            <Key size={20} />
+          </div>
+          <div>
+            <DialogTitle as="h3" className="text-base font-bold text-slate-900">
+              {integration.name}
+            </DialogTitle>
+            <p className="text-xs text-slate-500">Configure API credentials for live crawler data enrichments</p>
+          </div>
+        </div>
+        <motion.button
+          onClick={onClose}
+          whileHover={{ rotate: 90, scale: 1.1 }}
+          whileTap={tapPress}
+          transition={spring.press}
+          aria-label="Close"
+          className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+        >
+          <X size={16} />
+        </motion.button>
+      </div>
+
+      {/* Modal Body with Step-by-Step Guide */}
+      <form onSubmit={handleSave} className="p-6 space-y-5 bg-white max-h-[80vh] overflow-y-auto custom-scrollbar">
+
+        {/* Interactive Step-by-Step Guide Box */}
+        {guide && (
+          <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 to-slate-50/70 overflow-hidden shadow-xs">
+            <button
+              type="button"
+              onClick={() => setIsGuideOpen(!isGuideOpen)}
+              className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-indigo-100/40 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-indigo-900 font-bold text-xs">
+                <BookOpen size={16} className="text-indigo-600" />
+                <span>How to Get Your {integration.name} API Key (Step-by-Step Guide)</span>
               </div>
+              <span className="text-xs font-mono text-indigo-600 flex items-center gap-1 font-semibold">
+                {isGuideOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                {isGuideOpen ? 'Hide Guide' : 'Show Guide'}
+              </span>
+            </button>
 
-              {/* Modal Body */}
-              <form onSubmit={handleSave} className="p-6 space-y-4 bg-white">
-                <AnimatePresence initial={false} mode="popLayout">
-                  {error && (
-                    <motion.div
-                      key="error"
-                      initial={{ opacity: 0, y: -8, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                      transition={spring.soft}
-                      className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium flex items-center gap-2"
-                    >
-                      <AlertCircle size={15} />
-                      {error}
-                    </motion.div>
-                  )}
-
-                  {testResult && (
-                    <motion.div
-                      key={testResult.success ? 'result-ok' : 'result-fail'}
-                      initial={{ opacity: 0, y: -8, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                      transition={spring.soft}
-                      className={`p-3.5 rounded-xl text-xs font-semibold flex items-start gap-2.5 border ${
-                        testResult.success
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                          : 'bg-rose-50 text-rose-800 border-rose-200'
-                      }`}
-                    >
-                      <motion.span
-                        initial={{ scale: 0, rotate: -45 }}
-                        animate={{ scale: 1, rotate: 0 }}
-                        transition={{ ...spring.soft, delay: 0.06 }}
-                        className="mt-0.5 shrink-0 flex"
-                      >
-                        {testResult.success
-                          ? <CheckCircle2 size={16} className="text-emerald-600" />
-                          : <AlertCircle size={16} className="text-rose-600" />}
-                      </motion.span>
+            {isGuideOpen && (
+              <div className="px-4 pb-4 pt-1 space-y-3 border-t border-indigo-100/60 text-xs text-slate-700">
+                <div className="space-y-2">
+                  {guide.steps.map((s) => (
+                    <div key={s.step} className="flex items-start gap-2.5 bg-white/80 p-2.5 rounded-xl border border-slate-200/80">
+                      <div className="w-5 h-5 rounded-full bg-indigo-600 text-white font-mono font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                        {s.step}
+                      </div>
                       <div className="flex-1">
-                        <p>{testResult.message}</p>
-                        {testResult.latency_ms && (
-                          <p className="text-[10px] font-mono text-emerald-700 mt-0.5 font-bold">Latency: {testResult.latency_ms}ms</p>
+                        <strong className="text-slate-900 font-bold block">{s.title}</strong>
+                        <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">{s.desc}</p>
+                        {s.link && (
+                          <a
+                            href={s.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline"
+                          >
+                            {s.linkLabel || 'Open Link'} <ExternalLink size={11} />
+                          </a>
                         )}
                       </div>
-                    </motion.div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Error Notification */}
+        <AnimatePresence initial={false} mode="popLayout">
+          {error && (
+            <motion.div
+              key="error"
+              initial={{ opacity: 0, y: -8, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.98 }}
+              transition={spring.soft}
+              className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium flex items-center gap-2"
+            >
+              <AlertCircle size={15} />
+              {error}
+            </motion.div>
+          )}
+
+          {/* Test Connection Results */}
+          {testResult && (
+            <motion.div
+              key={testResult.success ? 'result-ok' : 'result-fail'}
+              initial={{ opacity: 0, y: -8, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.98 }}
+              transition={spring.soft}
+              className={`p-3.5 rounded-xl text-xs font-semibold flex items-start gap-2.5 border ${
+                testResult.success
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  : 'bg-rose-50 text-rose-800 border-rose-200'
+              }`}
+            >
+              <motion.span
+                initial={{ scale: 0, rotate: -45 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ ...spring.soft, delay: 0.06 }}
+                className="mt-0.5 shrink-0 flex"
+              >
+                {testResult.success
+                  ? <CheckCircle2 size={16} className="text-emerald-600" />
+                  : <AlertCircle size={16} className="text-rose-600" />}
+              </motion.span>
+              <div className="flex-1">
+                <p>{testResult.message}</p>
+                {testResult.latency_ms && (
+                  <p className="text-[10px] font-mono text-emerald-700 mt-0.5 font-bold">Latency: {testResult.latency_ms}ms</p>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* API Key Input */}
+        <div>
+          <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-2">
+            Enter {integration.name} API Key
+          </label>
+          <div className="relative flex items-center">
+            <input
+              type={showKey ? 'text' : 'password'}
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                setTestResult(null);
+                setError(null);
+              }}
+              placeholder={integration.placeholder || 'AIzaSy... / sk-...'}
+              className="w-full glass-input pl-3.5 pr-10 py-2.5 font-mono text-sm bg-slate-50/50"
+              autoFocus
+            />
+            <motion.button
+              type="button"
+              onClick={() => setShowKey(!showKey)}
+              whileTap={tapPress}
+              transition={spring.press}
+              aria-label={showKey ? 'Hide API key' : 'Show API key'}
+              className="absolute right-3 text-slate-400 hover:text-slate-700"
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={showKey ? 'hide' : 'show'}
+                  initial={{ opacity: 0, scale: 0.7 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.7 }}
+                  transition={tween(duration.micro, ease.outQuart)}
+                  className="flex"
+                >
+                  {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </motion.span>
+              </AnimatePresence>
+            </motion.button>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+            Your key is encrypted per-project and used exclusively for live crawler enrichments.
+          </p>
+        </div>
+
+        {/* Modal Action Buttons */}
+        <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
+          <motion.button
+            type="button"
+            onClick={handleTestConnection}
+            disabled={isTesting || !apiKey.trim()}
+            whileTap={isTesting ? undefined : tapPress}
+            transition={spring.press}
+            className="btn-secondary py-2 px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs"
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={isTesting ? 'testing' : 'idle'}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                transition={tween(duration.micro, ease.outQuart)}
+                className="flex items-center gap-1.5"
+              >
+                {isTesting ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin text-indigo-600" /> Testing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={13} className="text-indigo-600" /> Test Connection
+                  </>
+                )}
+              </motion.span>
+            </AnimatePresence>
+          </motion.button>
+
+          <div className="flex items-center gap-2">
+            <motion.button
+              type="button"
+              onClick={onClose}
+              whileTap={tapPress}
+              transition={spring.press}
+              className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+            >
+              Cancel
+            </motion.button>
+            <motion.button
+              type="submit"
+              disabled={isLoading}
+              whileTap={isLoading ? undefined : tapPress}
+              transition={spring.press}
+              className="btn-primary py-2 px-4 text-xs font-bold gap-2 disabled:opacity-50 shadow-xs"
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={isLoading ? 'saving' : 'idle'}
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  transition={tween(duration.micro, ease.outQuart)}
+                  className="flex items-center gap-2"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" /> Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Check size={14} /> Connect &amp; Save
+                    </>
                   )}
-                </AnimatePresence>
-
-                <div>
-                  <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-2">
-                    Enter API Key
-                  </label>
-                  <div className="relative flex items-center">
-                    <input
-                      type={showKey ? 'text' : 'password'}
-                      value={apiKey}
-                      onChange={(e) => {
-                        setApiKey(e.target.value);
-                        setTestResult(null);
-                        setError(null);
-                      }}
-                      placeholder={integration.placeholder || 'sk-...'}
-                      className="w-full glass-input pl-3.5 pr-10 py-2.5 font-mono text-sm bg-slate-50/50"
-                      autoFocus
-                    />
-                    <motion.button
-                      type="button"
-                      onClick={() => setShowKey(!showKey)}
-                      whileTap={tapPress}
-                      transition={spring.press}
-                      aria-label={showKey ? 'Hide API key' : 'Show API key'}
-                      className="absolute right-3 text-slate-400 hover:text-slate-700"
-                    >
-                      <AnimatePresence mode="wait" initial={false}>
-                        <motion.span
-                          key={showKey ? 'hide' : 'show'}
-                          initial={{ opacity: 0, scale: 0.7 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.7 }}
-                          transition={tween(duration.micro, ease.outQuart)}
-                          className="flex"
-                        >
-                          {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </motion.span>
-                      </AnimatePresence>
-                    </motion.button>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                    Your key is securely stored per-project and used exclusively for live crawler enrichments.
-                  </p>
-                </div>
-
-                <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
-                  <motion.button
-                    type="button"
-                    onClick={handleTestConnection}
-                    disabled={isTesting || !apiKey.trim()}
-                    whileTap={isTesting ? undefined : tapPress}
-                    transition={spring.press}
-                    className="btn-secondary py-2 px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs"
-                  >
-                    <AnimatePresence mode="wait" initial={false}>
-                      <motion.span
-                        key={isTesting ? 'testing' : 'idle'}
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -5 }}
-                        transition={tween(duration.micro, ease.outQuart)}
-                        className="flex items-center gap-1.5"
-                      >
-                        {isTesting ? (
-                          <>
-                            <Loader2 size={13} className="animate-spin text-indigo-600" /> Testing...
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles size={13} className="text-indigo-600" /> Test Connection
-                          </>
-                        )}
-                      </motion.span>
-                    </AnimatePresence>
-                  </motion.button>
-
-                  <div className="flex items-center gap-2">
-                    <motion.button
-                      type="button"
-                      onClick={onClose}
-                      whileTap={tapPress}
-                      transition={spring.press}
-                      className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
-                    >
-                      Cancel
-                    </motion.button>
-                    <motion.button
-                      type="submit"
-                      disabled={isLoading}
-                      whileTap={isLoading ? undefined : tapPress}
-                      transition={spring.press}
-                      className="btn-primary py-2 px-4 text-xs font-bold gap-2 disabled:opacity-50 shadow-xs"
-                    >
-                      <AnimatePresence mode="wait" initial={false}>
-                        <motion.span
-                          key={isLoading ? 'saving' : 'idle'}
-                          initial={{ opacity: 0, y: 5 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -5 }}
-                          transition={tween(duration.micro, ease.outQuart)}
-                          className="flex items-center gap-2"
-                        >
-                          {isLoading ? (
-                            <>
-                              <Loader2 size={14} className="animate-spin" /> Saving...
-                            </>
-                          ) : (
-                            <>
-                              <Check size={14} /> Connect &amp; Save
-                            </>
-                          )}
-                        </motion.span>
-                      </AnimatePresence>
-                    </motion.button>
-                  </div>
-                </div>
-              </form>
+                </motion.span>
+              </AnimatePresence>
+            </motion.button>
+          </div>
+        </div>
+      </form>
 
     </AnimatedModal>
   );
