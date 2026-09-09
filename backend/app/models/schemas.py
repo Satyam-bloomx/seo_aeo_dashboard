@@ -4,7 +4,7 @@ from datetime import datetime
 
 class CrawlRequest(BaseModel):
     seed_url: str
-    max_depth: int = 3
+    max_depth: int = 4
     max_concurrent: int = 5
     max_pages: int = 500
     stealth_delay: float = 0.0

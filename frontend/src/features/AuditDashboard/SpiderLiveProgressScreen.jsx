@@ -109,7 +109,7 @@ export default function SpiderLiveProgressScreen({
               </div>
               <div className="flex justify-between text-[11px] font-mono text-slate-400">
                 <span>Discovered: <strong className="text-slate-700">{pagesCrawled} URLs</strong></span>
-                <span>Max Depth: <strong className="text-slate-700">{crawlerSettings.maxDepth || 3}</strong></span>
+                <span>Max Depth: <strong className="text-slate-700">{crawlerSettings.maxDepth || 4}</strong></span>
                 <span>Threads: <strong className="text-slate-700">{crawlerSettings.maxConcurrent || 5}</strong></span>
               </div>
             </div>

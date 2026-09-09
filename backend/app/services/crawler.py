@@ -475,35 +475,32 @@ class CrawlerService:
         
         if hasattr(self, 'active_integrations'):
             if "google_analytics" in self.active_integrations:
+                metrics["audit_data"].setdefault("Analytics", {})
                 metrics["audit_data"]["Analytics"]["Sessions"] = 150
                 metrics["audit_data"]["Analytics"]["Bounce Rate"] = 45.5
             
             if "search_console" in self.active_integrations:
+                metrics["audit_data"].setdefault("Search_Console", {})
                 metrics["audit_data"]["Search_Console"]["Clicks"] = 32
                 metrics["audit_data"]["Search_Console"]["Impressions"] = 450
                 
             if "pagespeed" in self.active_integrations:
-                # We only fetch real PageSpeed Insights data for the seed URL (homepage)
-                # Fetching it for all 300+ pages would cause severe rate limiting and timeouts.
                 if current_depth == 0:
-                    from app.features.audits.scrapers.seo_scraper import fetch_pagespeed_data
-                    mobile_ps, desktop_ps = await asyncio.gather(
-                        fetch_pagespeed_data(url, "mobile"),
-                        fetch_pagespeed_data(url, "desktop")
-                    )
-                    
-                    if "seo_audit" not in metrics["audit_data"]:
-                        metrics["audit_data"]["seo_audit"] = {}
-                        
-                    metrics["audit_data"]["seo_audit"]["pagespeed"] = {
-                        "mobile": mobile_ps,
-                        "desktop": desktop_ps
-                    }
+                    try:
+                        from app.features.audits.scrapers.seo_scraper import fetch_pagespeed_data
+                        mobile_ps, desktop_ps = await asyncio.gather(
+                            fetch_pagespeed_data(url, "mobile"),
+                            fetch_pagespeed_data(url, "desktop")
+                        )
+                        metrics["audit_data"].setdefault("seo_audit", {})
+                        metrics["audit_data"]["seo_audit"]["pagespeed"] = {
+                            "mobile": mobile_ps,
+                            "desktop": desktop_ps
+                        }
+                    except Exception as e:
+                        print(f"PageSpeed gather warning: {e}")
                 else:
-                    # For sub-pages, we skip PageSpeed check to avoid rate limits.
-                    # Setting an empty structure so the UI handles it gracefully.
-                    if "seo_audit" not in metrics["audit_data"]:
-                        metrics["audit_data"]["seo_audit"] = {}
+                    metrics["audit_data"].setdefault("seo_audit", {})
                     metrics["audit_data"]["seo_audit"]["pagespeed"] = {}
         
         page_columns = {c.name for c in Page.__table__.columns}

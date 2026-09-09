@@ -92,8 +92,8 @@ export default function AuditDashboard() {
 
   const [crawlerSettings, setCrawlerSettings] = useState({
     maxPages: 500,
-    maxDepth: 3,
-    maxConcurrent: 5,
+    maxDepth: 4,
+    maxConcurrent: 3,
     stealthDelay: 0,
     ignoreUrlParams: true,
     checkExternalLinks: false,
@@ -318,11 +318,10 @@ export default function AuditDashboard() {
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium text-slate-500">Status Code</span>
                   <span
-                    className={`rounded border px-2 py-0.5 font-mono text-[11px] font-bold ${
-                      selectedRow.status_code >= 400
-                        ? 'border-rose-200 bg-rose-50 text-rose-700'
-                        : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    }`}
+                    className={`rounded border px-2 py-0.5 font-mono text-[11px] font-bold ${selectedRow.status_code >= 400
+                      ? 'border-rose-200 bg-rose-50 text-rose-700'
+                      : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      }`}
                   >
                     {selectedRow.status_code || 200}
                   </span>
@@ -554,23 +553,23 @@ export default function AuditDashboard() {
               exit="exit"
               className="fixed inset-y-0 left-0 z-40 w-[260px] will-change-transform md:hidden"
             >
-                <Sidebar
-                  activeTab={activeTab}
-                  setActiveTab={(tab) => {
-                    setActiveTab(tab);
-                    setIsMobileSidebarOpen(false);
-                  }}
-                  onOpenExecutiveReport={() => {
-                    setIsExecutiveReportOpen(true);
-                    setIsMobileSidebarOpen(false);
-                  }}
-                  onOpenSettings={(t) => {
-                    handleOpenSettings(t);
-                    setIsMobileSidebarOpen(false);
-                  }}
-                  pagesCount={pages.length}
-                  issuesCount={issuesReport.length}
-                />
+              <Sidebar
+                activeTab={activeTab}
+                setActiveTab={(tab) => {
+                  setActiveTab(tab);
+                  setIsMobileSidebarOpen(false);
+                }}
+                onOpenExecutiveReport={() => {
+                  setIsExecutiveReportOpen(true);
+                  setIsMobileSidebarOpen(false);
+                }}
+                onOpenSettings={(t) => {
+                  handleOpenSettings(t);
+                  setIsMobileSidebarOpen(false);
+                }}
+                pagesCount={pages.length}
+                issuesCount={issuesReport.length}
+              />
             </motion.div>
           )}
         </AnimatePresence>

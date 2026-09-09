@@ -251,7 +251,12 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
         "Accessibility": {},
         "Validation": validation_data,
         "Link_Metrics": {},
-        "AI": {}
+        "AI": {},
+        "Analytics": {},
+        "Search_Console": {},
+        "Google_Analytics": {},
+        "AEO_Audit": {},
+        "GEO_Audit": {}
     }
 
     return metrics
