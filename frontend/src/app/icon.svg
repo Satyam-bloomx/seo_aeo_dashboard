@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <linearGradient id="prism-grad-1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5" />
+      <stop offset="50%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#06B6D4" />
+    </linearGradient>
+    <linearGradient id="prism-grad-2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="50%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#4F46E5" />
+    </linearGradient>
+    <linearGradient id="orbital-beam" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="50%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#4F46E5" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="100" height="100" rx="24" fill="#0F172A" />
+
+  <!-- Outer Kinetic Ring -->
+  <circle cx="50" cy="50" r="38" fill="none" stroke="url(#orbital-beam)" stroke-width="3" stroke-dasharray="70 140" stroke-linecap="round" />
+  <circle cx="50" cy="50" r="30" fill="none" stroke="#334155" stroke-width="1.5" stroke-dasharray="4 6" />
+
+  <!-- Central 'A' Prism Structure -->
+  <path d="M50 20 L26 74 L39 74 L50 46 L61 74 L74 74 Z" fill="url(#prism-grad-1)" />
+  <path d="M50 20 L50 46 L61 74 L74 74 Z" fill="url(#prism-grad-2)" opacity="0.9" />
+
+  <!-- Crossbar Beam -->
+  <path d="M36 58 L64 58" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" />
+
+  <!-- Quantum Beacon Core -->
+  <circle cx="50" cy="38" r="4.5" fill="#10B981" />
+  <circle cx="50" cy="38" r="2" fill="#FFFFFF" />
+</svg>

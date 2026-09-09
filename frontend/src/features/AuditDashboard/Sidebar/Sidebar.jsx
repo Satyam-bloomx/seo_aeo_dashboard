@@ -21,6 +21,7 @@ import {
   tapPressSoft,
   tween,
 } from '@/lib/motion';
+import AuditProLogo from '@/components/ui/AuditProLogo';
 
 /**
  * Sidebar
@@ -82,36 +83,12 @@ export default function Sidebar({
         className="mb-7 px-2"
       >
         <motion.div
-          className="group flex cursor-pointer items-center gap-3"
+          className="group flex cursor-pointer items-center"
           whileHover="hover"
           initial="rest"
           animate="rest"
         >
-          <motion.div
-            variants={{ rest: { scale: 1, rotate: 0 }, hover: { scale: 1.06, rotate: -3 } }}
-            transition={spring.press}
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-white shadow-md"
-          >
-            <motion.span
-              variants={{ rest: { rotate: 0 }, hover: { rotate: 8 } }}
-              transition={spring.press}
-              className="flex"
-            >
-              <BookOpen className="stroke-[2.5] text-emerald-400" size={20} />
-            </motion.span>
-          </motion.div>
-
-          <div>
-            <div className="flex items-center gap-1.5">
-              <h1 className="text-base font-extrabold tracking-tight text-slate-900">
-                Audit<span className="text-emerald-600">Pro</span>
-              </h1>
-              <span className="live-dot h-2 w-2 rounded-full bg-emerald-500 text-emerald-500/60" />
-            </div>
-            <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Screaming Frog Core
-            </p>
-          </div>
+          <AuditProLogo size={38} animated={true} showText={true} />
         </motion.div>
       </motion.div>
 
