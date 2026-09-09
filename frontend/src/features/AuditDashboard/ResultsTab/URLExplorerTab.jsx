@@ -140,13 +140,20 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
         
         // Exact key match
         if (catData[activeView] !== undefined) {
-          return catData[activeView] === true;
+          const v = catData[activeView];
+          if (v === true || v === 'true' || v === 'TRUE' || v === 'Verified') return true;
+          if (v === false || v === 'false' || v === 'FALSE' || v === null || v === undefined) return false;
+          return Boolean(v);
         }
 
         // Fuzzy key match on sanitized query
         return Object.entries(catData).some(([k, v]) => {
           const kLower = k.toLowerCase();
-          return (kLower.includes(cleanViewQuery) || cleanViewQuery.includes(kLower)) && v === true;
+          const matchesKey = kLower.includes(cleanViewQuery) || cleanViewQuery.includes(kLower);
+          if (!matchesKey) return false;
+          if (v === true || v === 'true' || v === 'TRUE' || v === 'Verified') return true;
+          if (v === false || v === 'false' || v === 'FALSE' || v === null || v === undefined) return false;
+          return Boolean(v);
         });
       });
     }
@@ -458,8 +465,17 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                   transition={tween(duration.base, ease.outQuart)}
                 >
                   <td colSpan={dynamicColumns.length + 3} className="px-6 py-16 text-center text-slate-400">
-                    <p className="font-bold text-slate-900 text-sm">No URLs match the selected filter.</p>
-                    <p className="text-xs text-slate-500 mt-1">Try switching category or resetting search query.</p>
+                    <p className="font-bold text-slate-900 text-sm">No URLs match the selected filter ({activeCategory} : {activeView}).</p>
+                    <p className="text-xs text-slate-500 mt-1 mb-3">Try switching category, resetting search query, or viewing all URLs.</p>
+                    <button
+                      onClick={() => {
+                        setActiveView('All');
+                        setSearchQuery('');
+                      }}
+                      className="btn-secondary px-3.5 py-1.5 text-xs font-bold text-indigo-600 border border-indigo-200 hover:bg-indigo-50"
+                    >
+                      Show All {pages?.length || 0} URLs
+                    </button>
                   </td>
                 </motion.tr>
               )}

@@ -186,27 +186,34 @@ export default function OverviewTab({ pages, onNavigateToExplorer }) {
 
   const healthScore = useMemo(() => {
     if (!pages || pages.length === 0) return 0;
-    return Math.max(10, 100 - (criticalIssues.length * 4) - (warningIssues.length * 1));
+    return Math.max(10, Math.min(100, Math.round(100 - (criticalIssues.length * 4) - (warningIssues.length * 1.5))));
   }, [criticalIssues, warningIssues, pages]);
 
-  const seoScore = Math.min(100, Math.max(68, healthScore + 3));
+  const seoScore = useMemo(() => {
+    if (!pages || pages.length === 0) return 0;
+    const techIssues = issuesReport.filter(i => 
+      ['Response_Codes', 'Canonicals', 'Directives', 'Security', 'Structured_Data', 'Validation', 'Internal'].includes(i.category)
+    );
+    const non200Ratio = pages.filter(p => (p.status_code || 200) >= 300).length / Math.max(1, pages.length);
+    return Math.max(15, Math.min(100, Math.round(100 - (techIssues.length * 5) - (non200Ratio * 25))));
+  }, [pages, issuesReport]);
 
   const aeoScore = useMemo(() => {
-    if (!pages || pages.length === 0) return 85;
+    if (!pages || pages.length === 0) return 0;
     const scores = pages
-      .map(p => p.audit_data?.AEO_Audit?.AEO_Readability_Score)
+      .map(p => p.audit_data?.AEO_Audit?.AEO_Readability_Score || p.audit_data?.AEO_Audit?.aeo_score)
       .filter(s => typeof s === 'number');
     if (scores.length > 0) {
       return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
     }
-    return Math.min(98, Math.max(72, healthScore - 2));
+    return Math.max(20, Math.min(98, healthScore - 2));
   }, [pages, healthScore]);
 
   const geoScore = useMemo(() => {
-    if (!pages || pages.length === 0) return 82;
+    if (!pages || pages.length === 0) return 0;
     const count = pages.filter(p => p.audit_data?.GEO_Audit?.Local_NAP_Consistency?.includes('Verified')).length;
-    if (count > 0) return Math.min(99, 82 + (count * 4));
-    return Math.min(96, Math.max(70, healthScore - 1));
+    if (count > 0) return Math.min(99, 78 + (count * 4));
+    return Math.max(20, Math.min(96, healthScore - 3));
   }, [pages, healthScore]);
 
   // Spotlight mouse-follow handler

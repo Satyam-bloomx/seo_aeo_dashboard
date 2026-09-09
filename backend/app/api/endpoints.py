@@ -136,3 +136,33 @@ async def get_page_outlinks(page_id: int, db: AsyncSession = Depends(get_db)):
     query = select(Link).where(Link.source_page_id == page_id)
     result = await db.execute(query)
     return result.scalars().all()
+
+from pydantic import BaseModel
+import os
+from app.models.domain import Integration
+from app.services.enrichment_service import EnrichmentService
+
+class PerformanceAnalyzeRequest(BaseModel):
+    url: str
+    project_id: int = 1
+
+@router.post("/performance/analyze")
+async def analyze_single_url_performance(req: PerformanceAnalyzeRequest, db: AsyncSession = Depends(get_db)):
+    res_int = await db.execute(
+        select(Integration).where(
+            Integration.project_id == req.project_id,
+            Integration.integration_type == "pagespeed",
+            Integration.connected == True
+        )
+    )
+    integration = res_int.scalars().first()
+    ps_key = integration.api_key if integration else os.getenv("PAGESPEED_API_KEY")
+
+    enricher = EnrichmentService(crawl_id=0, db=db)
+    vitals = await enricher._fetch_pagespeed_vitals(req.url, ps_key, 0)
+    return {
+        "url": req.url,
+        "is_live_api": bool(ps_key),
+        "data": vitals
+    }
+

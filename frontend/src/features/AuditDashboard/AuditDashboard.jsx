@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import confetti from 'canvas-confetti';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
@@ -14,6 +14,7 @@ import SettingsModal from './SettingsModal/SettingsModal';
 import IntegrationsPanel from './IntegrationsPanel';
 import Loading from '../../app/loading';
 import { API_BASE_URL } from '@/api/client';
+import { generateIssuesReport } from '@/utils/IssuesEngine';
 import {
   bannerDrop,
   duration,
@@ -107,6 +108,8 @@ export default function AuditDashboard() {
   const [pagesCrawled, setPagesCrawled] = useState(0);
   const [pages, setPages] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
+
+  const issuesReport = useMemo(() => generateIssuesReport(pages), [pages]);
 
   const [explorerCategory, setExplorerCategory] = useState('Page_Titles');
   const [explorerView, setExplorerView] = useState('All');
@@ -491,7 +494,7 @@ export default function AuditDashboard() {
             onOpenExecutiveReport={() => setIsExecutiveReportOpen(true)}
             onOpenSettings={handleOpenSettings}
             pagesCount={pages.length}
-            issuesCount={pages.length > 0 ? 3 : 0}
+            issuesCount={issuesReport.length}
           />
         </div>
 
@@ -531,7 +534,7 @@ export default function AuditDashboard() {
                     setIsMobileSidebarOpen(false);
                   }}
                   pagesCount={pages.length}
-                  issuesCount={pages.length > 0 ? 3 : 0}
+                  issuesCount={issuesReport.length}
                 />
             </motion.div>
           )}
