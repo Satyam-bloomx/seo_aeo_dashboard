@@ -156,7 +156,7 @@ export default function OverviewTab({ pages, onNavigateToExplorer }) {
         ease: 'power3.out'
       });
     }
-  }, { scope: containerRef, dependencies: [pages] });
+  }, { scope: containerRef, dependencies: [] });
 
   const issuesReport = useMemo(() => generateIssuesReport(pages), [pages]);
 

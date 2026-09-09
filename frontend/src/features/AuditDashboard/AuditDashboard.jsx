@@ -12,6 +12,7 @@ import PerformanceTab from './ResultsTab/PerformanceTab';
 import ExecutiveReportModal from './ExecutiveReportModal';
 import SettingsModal from './SettingsModal/SettingsModal';
 import IntegrationsPanel from './IntegrationsPanel';
+import SpiderLiveProgressScreen from './SpiderLiveProgressScreen';
 import Loading from '../../app/loading';
 import { API_BASE_URL } from '@/api/client';
 import { generateIssuesReport } from '@/utils/IssuesEngine';
@@ -201,8 +202,16 @@ export default function AuditDashboard() {
 
         if (data.status === 'completed') {
           setProgress(100);
+          try {
+            const finalRes = await fetch(`${API_BASE_URL}/crawls/${crawlId}/pages`);
+            if (finalRes.ok) {
+              const finalPages = await finalRes.json();
+              setPages(finalPages);
+            }
+          } catch (e) {
+            console.error('Failed to fetch final pages:', e);
+          }
           setIsAuditing(false);
-          fetchResults();
           setShowCompletionBanner(true);
           fireCelebrationCannons();
           toast.success('Technical Audit Completed!', {
@@ -392,83 +401,109 @@ export default function AuditDashboard() {
       );
     }
 
-    if (pages.length > 0) {
+    if (activeTab === 'overview') {
+      if (isAuditing || status === 'running') {
+        return (
+          <SpiderLiveProgressScreen
+            url={url}
+            progress={progress}
+            pagesCrawled={pagesCrawled}
+            pages={pages}
+            crawlerSettings={crawlerSettings}
+            onSwitchTab={(tab) => setActiveTab(tab)}
+          />
+        );
+      }
+
+      if (pages.length > 0) {
+        return (
+          <OverviewTab
+            key={`overview-${crawlId || 'ready'}-${pages.length}`}
+            pages={pages}
+            onNavigateToExplorer={handleNavigateToExplorer}
+          />
+        );
+      }
+
       return (
-        <>
-          {activeTab === 'overview' && (
-            <OverviewTab pages={pages} onNavigateToExplorer={handleNavigateToExplorer} />
-          )}
-          {activeTab === 'issues' && (
-            <IssuesTab
-              pages={pages}
-              onIssueClick={(issue) =>
-                handleNavigateToExplorer(issue.category, issue.name || 'Errors')
-              }
-            />
-          )}
-          {activeTab === 'explorer' && (
-            <URLExplorerTab
-              pages={pages}
-              initialCategory={explorerCategory}
-              initialView={explorerView}
-              onRowClick={(row) => setSelectedRow(row)}
-            />
-          )}
-          {activeTab === 'performance' && <PerformanceTab pages={pages} />}
-        </>
+        <motion.div
+          variants={staggerContainer(0.06, 0.05)}
+          initial="initial"
+          animate="animate"
+          className="flex h-full flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/60 p-6 text-center backdrop-blur-xs"
+        >
+          <motion.div
+            variants={staggerItem}
+            animate={
+              reduced ? undefined : { y: [0, -6, 0], transition: { duration: 3.2, repeat: Infinity, ease: 'easeInOut' } }
+            }
+            className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-indigo-100 bg-indigo-50 text-indigo-600 shadow-xs"
+          >
+            <Search size={28} />
+          </motion.div>
+          <motion.h3 variants={staggerItem} className="mb-1 text-lg font-bold text-slate-900">
+            No Active Audit Session
+          </motion.h3>
+          <motion.p
+            variants={staggerItem}
+            className="mb-6 max-w-sm text-xs leading-relaxed text-slate-500"
+          >
+            Enter a website URL in the address bar above to deploy the Screaming Frog 32-factor
+            crawling engine.
+          </motion.p>
+
+          <motion.div
+            variants={staggerContainer(0.05)}
+            className="flex max-w-md flex-wrap items-center justify-center gap-2"
+          >
+            <motion.span variants={staggerItem} className="mb-1 w-full font-mono text-[11px] text-slate-400">
+              Quick Launch Seed Targets:
+            </motion.span>
+            {QUICK_TARGETS.map((target) => (
+              <motion.button
+                key={target}
+                variants={staggerItem}
+                onClick={() => handleQuickLaunch(target)}
+                whileHover={{ y: -2, scale: 1.02 }}
+                whileTap={tapPress}
+                transition={spring.press}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-700 shadow-xs transition-colors hover:border-indigo-400 hover:bg-indigo-50/50"
+              >
+                {target.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+              </motion.button>
+            ))}
+          </motion.div>
+        </motion.div>
       );
     }
 
-    return (
-      <motion.div
-        variants={staggerContainer(0.06, 0.05)}
-        initial="initial"
-        animate="animate"
-        className="flex h-full flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/60 p-6 text-center backdrop-blur-xs"
-      >
-        <motion.div
-          variants={staggerItem}
-          animate={
-            reduced ? undefined : { y: [0, -6, 0], transition: { duration: 3.2, repeat: Infinity, ease: 'easeInOut' } }
+    if (activeTab === 'issues') {
+      return (
+        <IssuesTab
+          pages={pages}
+          onIssueClick={(issue) =>
+            handleNavigateToExplorer(issue.category, issue.name || 'Errors')
           }
-          className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-indigo-100 bg-indigo-50 text-indigo-600 shadow-xs"
-        >
-          <Search size={28} />
-        </motion.div>
-        <motion.h3 variants={staggerItem} className="mb-1 text-lg font-bold text-slate-900">
-          No Active Audit Session
-        </motion.h3>
-        <motion.p
-          variants={staggerItem}
-          className="mb-6 max-w-sm text-xs leading-relaxed text-slate-500"
-        >
-          Enter a website URL in the address bar above to deploy the Screaming Frog 32-factor
-          crawling engine.
-        </motion.p>
+        />
+      );
+    }
 
-        <motion.div
-          variants={staggerContainer(0.05)}
-          className="flex max-w-md flex-wrap items-center justify-center gap-2"
-        >
-          <motion.span variants={staggerItem} className="mb-1 w-full font-mono text-[11px] text-slate-400">
-            Quick Launch Seed Targets:
-          </motion.span>
-          {QUICK_TARGETS.map((target) => (
-            <motion.button
-              key={target}
-              variants={staggerItem}
-              onClick={() => handleQuickLaunch(target)}
-              whileHover={{ y: -2, scale: 1.02 }}
-              whileTap={tapPress}
-              transition={spring.press}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-700 shadow-xs transition-colors hover:border-indigo-400 hover:bg-indigo-50/50"
-            >
-              {target.replace(/^https?:\/\//, '').replace(/\/$/, '')}
-            </motion.button>
-          ))}
-        </motion.div>
-      </motion.div>
-    );
+    if (activeTab === 'explorer') {
+      return (
+        <URLExplorerTab
+          pages={pages}
+          initialCategory={explorerCategory}
+          initialView={explorerView}
+          onRowClick={(row) => setSelectedRow(row)}
+        />
+      );
+    }
+
+    if (activeTab === 'performance') {
+      return <PerformanceTab pages={pages} />;
+    }
+
+    return null;
   };
 
   return (
