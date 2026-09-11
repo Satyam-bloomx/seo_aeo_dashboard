@@ -208,17 +208,17 @@ export default function PerformanceTab({ pages }) {
     <div className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-2 space-y-5">
 
       {/* Header & Device Strategy Toggle */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 shrink-0">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-            <Zap className="text-amber-500" size={24} />
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+            <Zap className="text-amber-500 shrink-0" size={24} />
             Performance & Core Web Vitals
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">Real-user Google Lighthouse diagnostics and field Core Web Vitals telemetry.</p>
         </div>
 
         {/* Strategy Buttons */}
-        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0 self-start sm:self-auto">
           <LayoutGroup id="perf-strategy">
             {STRATEGIES.map(({ id, label, Icon }) => {
               const isActive = strategy === id;
@@ -229,7 +229,7 @@ export default function PerformanceTab({ pages }) {
                   whileTap={tapPress}
                   transition={spring.press}
                   aria-pressed={isActive}
-                  className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold cursor-pointer outline-none transition-colors duration-150 ${
+                  className={`relative flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs font-bold cursor-pointer outline-none transition-colors duration-150 ${
                     isActive ? 'text-slate-900 font-extrabold' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -250,7 +250,7 @@ export default function PerformanceTab({ pages }) {
       </div>
 
       {/* Single URL Inspector & Speed Tester Bar */}
-      <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3">
+      <div className="p-3.5 sm:p-4 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3 shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Globe size={16} className="text-indigo-600 shrink-0" />
@@ -258,7 +258,7 @@ export default function PerformanceTab({ pages }) {
           </div>
 
           {inspectedUrl && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[11px] font-mono font-bold bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg border border-indigo-200 truncate max-w-xs">
                 Inspecting: {inspectedUrl}
               </span>
@@ -323,7 +323,7 @@ export default function PerformanceTab({ pages }) {
 
         {/* Quick Selection Chips of Crawled URLs */}
         {crawledUrls.length > 0 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pt-1 text-[11px] font-mono">
+          <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar max-w-full pt-1 text-[11px] font-mono">
             <span className="text-slate-400 font-semibold shrink-0">Quick Select:</span>
             {crawledUrls.slice(0, 6).map((u, i) => (
               <button
@@ -348,11 +348,11 @@ export default function PerformanceTab({ pages }) {
       {/* Main Score & Top Telemetry */}
       {metrics ? (
         <>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
 
             {/* Animated Lighthouse Gauge */}
             <div className="glass-card p-6 flex flex-col items-center justify-center relative overflow-hidden text-center bg-white shadow-sm border border-slate-200 rounded-3xl">
-              <div className="relative w-44 h-44 flex items-center justify-center mb-3">
+              <div className="relative w-40 h-40 sm:w-44 sm:h-44 flex items-center justify-center mb-3">
                 <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                   <circle
                     cx="50"
@@ -395,7 +395,7 @@ export default function PerformanceTab({ pages }) {
               variants={staggerContainer(0.05, 0.1)}
               initial="initial"
               animate="animate"
-              className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-3.5"
+              className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3.5"
             >
               {vitals.map((v, i) => (
                 <motion.div
@@ -403,7 +403,7 @@ export default function PerformanceTab({ pages }) {
                   variants={staggerItem}
                   whileHover={{ y: -3 }}
                   transition={spring.press}
-                  className="metric-card-item p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between hover:border-indigo-300 transition-colors"
+                  className="metric-card-item p-3.5 sm:p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between hover:border-indigo-300 transition-colors"
                 >
                   <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">{v.label}</span>
                   <div className="my-2">
@@ -428,10 +428,10 @@ export default function PerformanceTab({ pages }) {
 
           {/* Actionable Opportunities List */}
           {opportunities.length > 0 && (
-            <div className="glass-card p-5 bg-white border border-slate-200 rounded-3xl shadow-xs">
-              <div className="flex items-center justify-between mb-4">
+            <div className="glass-card p-4 sm:p-5 bg-white border border-slate-200 rounded-3xl shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
                 <div className="flex items-center gap-2">
-                  <Zap className="text-amber-500" size={18} />
+                  <Zap className="text-amber-500 shrink-0" size={18} />
                   <h4 className="text-sm font-bold text-slate-900">
                     Actionable Speed Opportunities {inspectedUrl ? `for Selected Page` : ''}
                   </h4>
@@ -453,10 +453,10 @@ export default function PerformanceTab({ pages }) {
                     exit={{ opacity: 0, x: -12 }}
                     whileHover={{ x: 3 }}
                     transition={spring.press}
-                    className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between hover:bg-slate-100/60 transition-colors"
+                    className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:bg-slate-100/60 transition-colors"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-amber-100 border border-amber-200 text-amber-800 flex items-center justify-center font-mono font-bold text-xs">
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 border border-amber-200 text-amber-800 flex items-center justify-center font-mono font-bold text-xs shrink-0">
                         {idx + 1}
                       </div>
                       <div>
@@ -465,7 +465,7 @@ export default function PerformanceTab({ pages }) {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 font-mono text-xs text-emerald-800 font-bold bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+                    <div className="flex items-center gap-2 font-mono text-xs text-emerald-800 font-bold bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 self-start sm:self-auto shrink-0">
                       <Clock size={12} /> Saves ~{opp.savings}
                     </div>
                   </motion.div>

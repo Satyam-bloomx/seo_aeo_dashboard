@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { DialogTitle } from '@headlessui/react';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import AnimatedModal from '@/components/ui/AnimatedModal';
+import CustomSelect from '@/components/ui/CustomSelect';
 import { spring, staggerContainer, staggerItem, tabPanel, tapPress } from '@/lib/motion';
 import { X, Sliders, Gauge, Globe, Bot, Check, Sparkles } from 'lucide-react';
 
@@ -143,95 +144,95 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
       isOpen={isOpen}
       onClose={onClose}
       size="xl"
-      panelClassName="h-[85vh] max-h-[800px]"
+      panelClassName="h-[90vh] sm:h-[85vh] max-h-[800px]"
     >
-              {/* Top Header */}
-              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80 shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs">
-                    <Sliders size={20} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <DialogTitle as="h2" className="text-base font-bold text-slate-900 tracking-tight">
-                        Crawler Configuration Console
-                      </DialogTitle>
-                      {activePresetId !== 'custom' ? (
-                        <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          Mode: {PRESETS.find(p => p.id === activePresetId)?.name}
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                          Mode: Custom Setup
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-500">Fine-tune crawling limits, speed, headers and robot behavior</p>
-                  </div>
-                </div>
+      {/* Top Header */}
+      <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs shrink-0">
+            <Sliders size={20} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <DialogTitle as="h2" className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+                Crawler Configuration Console
+              </DialogTitle>
+              {activePresetId !== 'custom' ? (
+                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Mode: {PRESETS.find(p => p.id === activePresetId)?.name}
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                  Mode: Custom Setup
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500">Fine-tune crawling limits, speed, headers and robot behavior</p>
+          </div>
+        </div>
+        <motion.button
+          onClick={onClose}
+          whileHover={{ rotate: 90, scale: 1.1 }}
+          whileTap={tapPress}
+          transition={spring.press}
+          aria-label="Close settings"
+          className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 shrink-0"
+        >
+          <X size={18} />
+        </motion.button>
+      </div>
+
+      {/* Main Body: Left Vertical/Horizontal Sidebar + Right Content */}
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+
+        {/* Left Sidebar on desktop, horizontal tabs on mobile */}
+        <div className="w-full md:w-60 bg-slate-50/70 border-b md:border-b-0 md:border-r border-slate-200 p-2 md:p-3 flex flex-row md:flex-col gap-1 shrink-0 overflow-x-auto md:overflow-y-auto custom-scrollbar">
+          <div className="hidden md:block px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
+            Settings Menu
+          </div>
+          <LayoutGroup id="settings-nav">
+            {sidebarTabs.map(tab => {
+              const isActive = activeTab === tab.id;
+              return (
                 <motion.button
-                  onClick={onClose}
-                  whileHover={{ rotate: 90, scale: 1.1 }}
-                  whileTap={tapPress}
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  whileTap={{ scale: 0.985 }}
                   transition={spring.press}
-                  aria-label="Close settings"
-                  className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+                  aria-current={isActive ? 'true' : undefined}
+                  className={`relative flex items-center md:items-start gap-2.5 md:gap-3 p-2.5 md:p-3 rounded-xl text-left select-none outline-none shrink-0 whitespace-nowrap md:whitespace-normal ${
+                    isActive ? 'text-white font-bold' : 'text-slate-600 font-semibold hover:bg-slate-100/80 transition-colors duration-150'
+                  }`}
                 >
-                  <X size={18} />
-                </motion.button>
-              </div>
-
-              {/* Main Body: Left Vertical Sidebar + Right Content */}
-              <div className="flex-1 flex overflow-hidden">
-
-                {/* Left Vertical Sidebar */}
-                <div className="w-60 bg-slate-50/70 border-r border-slate-200 p-3 flex flex-col gap-1 shrink-0 overflow-y-auto">
-                  <div className="px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
-                    Settings Menu
+                  {/* Shared-layout pill: glides between rows instead of cutting. */}
+                  {isActive && (
+                    <motion.span
+                      layoutId="settings-active-pill"
+                      transition={spring.snap}
+                      className="absolute inset-0 -z-10 rounded-xl bg-slate-900 shadow-xs"
+                    />
+                  )}
+                  <motion.div
+                    animate={{ color: isActive ? '#818CF8' : '#94A3B8' }}
+                    transition={spring.press}
+                    className="shrink-0"
+                  >
+                    {tab.icon}
+                  </motion.div>
+                  <div>
+                    <div className="text-xs leading-tight">{tab.label}</div>
+                    <div className={`hidden md:block text-[10px] mt-0.5 ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                      {tab.desc}
+                    </div>
                   </div>
-                  <LayoutGroup id="settings-nav">
-                    {sidebarTabs.map(tab => {
-                      const isActive = activeTab === tab.id;
-                      return (
-                        <motion.button
-                          key={tab.id}
-                          onClick={() => setActiveTab(tab.id)}
-                          whileTap={{ scale: 0.985 }}
-                          transition={spring.press}
-                          aria-current={isActive ? 'true' : undefined}
-                          className={`relative flex items-start gap-3 p-3 rounded-xl text-left select-none outline-none ${
-                            isActive ? 'text-white font-bold' : 'text-slate-600 font-semibold hover:bg-slate-100/80 transition-colors duration-150'
-                          }`}
-                        >
-                          {/* Shared-layout pill: glides between rows instead of cutting. */}
-                          {isActive && (
-                            <motion.span
-                              layoutId="settings-active-pill"
-                              transition={spring.snap}
-                              className="absolute inset-0 -z-10 rounded-xl bg-slate-900 shadow-xs"
-                            />
-                          )}
-                          <motion.div
-                            animate={{ color: isActive ? '#818CF8' : '#94A3B8' }}
-                            transition={spring.press}
-                            className="mt-0.5"
-                          >
-                            {tab.icon}
-                          </motion.div>
-                          <div>
-                            <div className="text-xs leading-tight">{tab.label}</div>
-                            <div className={`text-[10px] mt-0.5 ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
-                              {tab.desc}
-                            </div>
-                          </div>
-                        </motion.button>
-                      );
-                    })}
-                  </LayoutGroup>
-                </div>
+                </motion.button>
+              );
+            })}
+          </LayoutGroup>
+        </div>
 
-                {/* Right Main Content Panel - cross-faded on tab change */}
-                <div className="flex-1 bg-white overflow-y-auto p-6 custom-scrollbar">
+        {/* Right Main Content Panel - cross-faded on tab change */}
+        <div className="flex-1 bg-white overflow-y-auto p-4 sm:p-6 custom-scrollbar">
                   <AnimatePresence mode="wait" initial={false}>
 
                   {/* TAB 1: QUICK PRESETS */}
@@ -327,17 +328,19 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                           <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                             Parallel Worker Threads
                           </label>
-                          <select
+                          <CustomSelect
                             value={settings?.maxConcurrent ?? 5}
-                            onChange={(e) => handleChange('maxConcurrent', parseInt(e.target.value))}
-                            className="w-full glass-input px-3.5 py-2.5 font-mono text-sm cursor-pointer"
-                          >
-                            <option value={1}>1 Worker (Slow & gentle)</option>
-                            <option value={3}>3 Workers (Moderate speed)</option>
-                            <option value={5}>5 Workers (Fast - Default)</option>
-                            <option value={8}>8 Workers (High throughput)</option>
-                            <option value={10}>10 Workers (Maximum speed)</option>
-                          </select>
+                            onChange={(val) => handleChange('maxConcurrent', parseInt(val))}
+                            options={[
+                              { value: 1, label: '1 Worker (Slow & gentle)' },
+                              { value: 3, label: '3 Workers (Moderate speed)' },
+                              { value: 5, label: '5 Workers (Fast - Default)' },
+                              { value: 8, label: '8 Workers (High throughput)' },
+                              { value: 10, label: '10 Workers (Maximum speed)' },
+                            ]}
+                            buttonClassName="py-2 px-3"
+                            valueClassName="text-slate-800 font-semibold font-mono text-xs"
+                          />
                           <span className="text-xs text-slate-500 mt-1 block">Simultaneous crawler connections.</span>
                         </div>
 
@@ -345,17 +348,19 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                           <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                             Request Delay (Stealth Mode)
                           </label>
-                          <select
+                          <CustomSelect
                             value={settings?.stealthDelay ?? 0}
-                            onChange={(e) => handleChange('stealthDelay', parseFloat(e.target.value))}
-                            className="w-full glass-input px-3.5 py-2.5 font-mono text-sm cursor-pointer"
-                          >
-                            <option value={0}>0s (Fastest - Max throughput)</option>
-                            <option value={0.5}>0.5s pause (Light throttle)</option>
-                            <option value={1.0}>1.0s pause (Moderate stealth)</option>
-                            <option value={2.0}>2.0s pause (Polite delay)</option>
-                            <option value={5.0}>5.0s pause (Safest anti-blocking)</option>
-                          </select>
+                            onChange={(val) => handleChange('stealthDelay', parseFloat(val))}
+                            options={[
+                              { value: 0, label: '0s (Fastest - Max throughput)' },
+                              { value: 0.5, label: '0.5s pause (Light throttle)' },
+                              { value: 1.0, label: '1.0s pause (Moderate stealth)' },
+                              { value: 2.0, label: '2.0s pause (Polite delay)' },
+                              { value: 5.0, label: '5.0s pause (Safest anti-blocking)' },
+                            ]}
+                            buttonClassName="py-2 px-3"
+                            valueClassName="text-slate-800 font-semibold font-mono text-xs"
+                          />
                           <span className="text-xs text-slate-500 mt-1 block">Pause between page downloads.</span>
                         </div>
                       </div>
@@ -411,16 +416,18 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                         <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                           User-Agent Header
                         </label>
-                        <select
+                        <CustomSelect
                           value={settings?.userAgent ?? "SEO-Spider-Bot"}
-                          onChange={(e) => handleChange('userAgent', e.target.value)}
-                          className="w-full glass-input px-3.5 py-2.5 font-mono text-xs cursor-pointer"
-                        >
-                          <option value="SEO-Spider-Bot">Default Crawler (SEO-Spider-Bot)</option>
-                          <option value="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36">Standard Chrome Desktop</option>
-                          <option value="Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)">Googlebot Desktop</option>
-                          <option value="Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/W.X.Y.Z Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)">Googlebot Mobile</option>
-                        </select>
+                          onChange={(val) => handleChange('userAgent', val)}
+                          options={[
+                            { value: "SEO-Spider-Bot", label: "Default Crawler (SEO-Spider-Bot)" },
+                            { value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", label: "Standard Chrome Desktop" },
+                            { value: "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", label: "Googlebot Desktop" },
+                            { value: "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/W.X.Y.Z Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", label: "Googlebot Mobile" },
+                          ]}
+                          buttonClassName="py-2 px-3"
+                          valueClassName="text-slate-800 font-semibold font-mono text-xs"
+                        />
                       </div>
                     </motion.div>
                   )}

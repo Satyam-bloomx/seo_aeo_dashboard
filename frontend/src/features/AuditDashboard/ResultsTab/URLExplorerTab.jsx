@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { toast } from 'sonner';
 import { duration, ease, spring, tapPress, tween } from '@/lib/motion';
+import CustomSelect from '@/components/ui/CustomSelect';
 import {
   Filter,
   Search,
@@ -280,11 +281,11 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       {/* Top Header & Dual Export Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Screaming Frog URL Data Grid</h2>
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Screaming Frog URL Data Grid</h2>
           <p className="text-xs text-slate-500 mt-0.5">Explore full 32-parameter extracted data for all crawled website endpoints.</p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
           {/* Master Full Export Button */}
           <motion.button
             onClick={exportFullAuditToCSV}
@@ -294,11 +295,11 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             whileHover="hover"
             animate="rest"
             transition={spring.press}
-            className="btn-primary py-2 px-3.5 text-xs font-bold gap-2 disabled:opacity-50 shadow-xs"
+            className="btn-primary py-2 px-3 sm:px-3.5 text-xs font-bold gap-1.5 sm:gap-2 disabled:opacity-50 shadow-xs"
             title="Export full 35+ parameters for all pages into Excel"
           >
             <Download size={14} className="text-emerald-400" />
-            Export Full Audit (Excel)
+            <span className="hidden xs:inline">Export Full Audit</span> (Excel)
           </motion.button>
 
           {/* Current Filtered View Export */}
@@ -307,7 +308,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             disabled={!filteredPages || filteredPages.length === 0}
             whileTap={tapPress}
             transition={spring.press}
-            className="btn-secondary py-2 px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs"
+            className="btn-secondary py-2 px-2.5 sm:px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs"
             title="Export only currently filtered rows"
           >
             <FileSpreadsheet size={13} className="text-slate-600" />
@@ -317,46 +318,35 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       </div>
 
       {/* Controls Bar: Category Picker + Sub-view filter + Search */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 shrink-0">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3 shrink-0">
 
         {/* Category Selector */}
-        <div className="flex items-center gap-2 bg-white border border-slate-200 p-1 rounded-xl shadow-xs">
-          <span className="text-[10px] font-mono font-bold text-slate-500 uppercase px-2">Category:</span>
-          <select
-            value={activeCategory}
-            onChange={(e) => {
-              setActiveCategory(e.target.value);
-              setActiveView('All');
-              toast.info(`Switched category to ${e.target.value.replace(/_/g, ' ')}`);
-            }}
-            className="flex-1 bg-transparent text-xs font-bold text-indigo-600 outline-none cursor-pointer py-1.5"
-          >
-            {CATEGORIES.map(cat => (
-              <option key={cat} value={cat} className="text-slate-900 bg-white">
-                {cat.replace(/_/g, ' ')}
-              </option>
-            ))}
-          </select>
-        </div>
+        <CustomSelect
+          label="Category:"
+          value={activeCategory}
+          options={CATEGORIES}
+          onChange={(newCat) => {
+            setActiveCategory(newCat);
+            setActiveView('All');
+            toast.info(`Switched category to ${newCat.replace(/_/g, ' ')}`);
+          }}
+          valueClassName="text-indigo-600 font-bold"
+          searchPlaceholder="Search 30+ categories..."
+          showSearch={true}
+        />
 
         {/* Sub-view Selector */}
-        <div className="flex items-center gap-2 bg-white border border-slate-200 p-1 rounded-xl shadow-xs">
-          <span className="text-[10px] font-mono font-bold text-slate-500 uppercase px-2">View Filter:</span>
-          <select
-            value={activeView}
-            onChange={(e) => setActiveView(e.target.value)}
-            className="flex-1 bg-transparent text-xs font-bold text-emerald-700 outline-none cursor-pointer py-1.5"
-          >
-            {availableViews.map(view => (
-              <option key={view} value={view} className="text-slate-900 bg-white">
-                {view.replace(/_/g, ' ')}
-              </option>
-            ))}
-          </select>
-        </div>
+        <CustomSelect
+          label="View Filter:"
+          value={activeView}
+          options={availableViews}
+          onChange={(newView) => setActiveView(newView)}
+          valueClassName="text-emerald-700 font-bold"
+          searchPlaceholder="Filter views & columns..."
+        />
 
         {/* Live Search */}
-        <div className="relative">
+        <div className="relative sm:col-span-2 md:col-span-1">
           <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -371,7 +361,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       {/* Main TanStack Data Grid */}
       <div className="flex-1 bg-white border border-slate-200 rounded-2xl relative overflow-hidden flex flex-col shadow-xs">
         <div className="flex-1 overflow-auto custom-scrollbar">
-          <table className="w-full text-left text-xs text-slate-700 border-collapse">
+          <table className="w-full min-w-[700px] text-left text-xs text-slate-700 border-collapse">
             <thead className="bg-slate-50 sticky top-0 z-20 border-b border-slate-200">
               <tr>
                 <th className="px-4 py-3.5 font-bold font-mono text-slate-500 uppercase tracking-wider w-80 min-w-[280px]">

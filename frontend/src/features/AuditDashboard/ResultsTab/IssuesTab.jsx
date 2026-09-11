@@ -85,14 +85,14 @@ export default function IssuesTab({ pages, onIssueClick }) {
     <div className="flex flex-col h-full space-y-4 overflow-hidden">
 
       {/* Top Controls Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 shrink-0">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Audit Diagnostic Issues</h2>
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Audit Diagnostic Issues</h2>
           <p className="text-xs text-slate-500 mt-0.5">Prioritized diagnostic rules detected across all scanned pages with root-cause analysis.</p>
         </div>
 
         {/* Severity Filter Tabs */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0 overflow-x-auto custom-scrollbar max-w-full">
           <LayoutGroup id="issue-filters">
             {SEVERITY_FILTERS.map((f) => {
               const isActive = filterType === f.id;
@@ -103,7 +103,7 @@ export default function IssuesTab({ pages, onIssueClick }) {
                   whileTap={tapPress}
                   transition={spring.press}
                   aria-pressed={isActive}
-                  className={`relative px-3.5 py-1.5 rounded-lg text-xs font-bold outline-none cursor-pointer transition-colors duration-150 flex items-center justify-center ${
+                  className={`relative px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold outline-none cursor-pointer transition-colors duration-150 flex items-center justify-center shrink-0 whitespace-nowrap ${
                     isActive ? 'text-white' : `${f.idle} hover:text-slate-900`
                   }`}
                 >
@@ -139,7 +139,7 @@ export default function IssuesTab({ pages, onIssueClick }) {
       {/* Issues Table Container */}
       <div className="flex-1 bg-white border border-slate-200 relative overflow-hidden flex flex-col shadow-xs rounded-2xl">
         <div className="flex-1 overflow-auto custom-scrollbar">
-          <table className="w-full text-left text-xs text-slate-700 border-collapse">
+          <table className="w-full min-w-[650px] text-left text-xs text-slate-700 border-collapse">
             <thead className="bg-slate-50 sticky top-0 z-20 border-b border-slate-200">
               <tr>
                 <th className="px-5 py-3.5 font-bold font-mono text-slate-500 uppercase tracking-wider">Diagnostic Rule</th>

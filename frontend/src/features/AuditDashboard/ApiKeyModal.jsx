@@ -204,18 +204,19 @@ export default function ApiKeyModal({
     setError(null);
 
     try {
-      await axios.post(`${API_BASE_URL}/integrations/key`, {
+      const res = await axios.post(`${API_BASE_URL}/integrations/key`, {
         project_id: projectId,
         service: integration.id,
         service_name: integration.id,
         api_key: apiKey.trim()
       });
       setIsLoading(false);
+      const maskedKey = res.data?.masked_key;
       toast.success(`${integration.name} connected successfully!`, {
         description: 'Key saved and active for live audit enrichments.'
       });
-      if (onSuccess) onSuccess(integration.id);
-      if (onSaved) onSaved(integration.id);
+      if (onSuccess) onSuccess(integration.id, maskedKey);
+      if (onSaved) onSaved(integration.id, maskedKey);
       if (onClose) onClose();
       setApiKey('');
       setTestResult(null);

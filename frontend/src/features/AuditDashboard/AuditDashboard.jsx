@@ -254,10 +254,10 @@ export default function AuditDashboard() {
           initial="initial"
           animate="animate"
           exit="exit"
-          className="absolute right-0 top-0 bottom-0 z-50 flex h-full w-full flex-col border-l border-slate-200 bg-white text-slate-900 shadow-[0_0_60px_-12px_rgba(15,23,42,0.25)] will-change-transform md:relative md:w-[480px]"
+          className="fixed inset-y-0 right-0 z-50 flex h-full w-full flex-col border-l border-slate-200 bg-white text-slate-900 shadow-[0_0_60px_-12px_rgba(15,23,42,0.25)] will-change-transform sm:w-[420px] md:relative md:w-[440px] xl:w-[480px]"
         >
-          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 p-4">
-            <div className="max-w-[380px] truncate">
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 p-3.5 sm:p-4 shrink-0">
+            <div className="min-w-0 flex-1 pr-2">
               <span className="mb-0.5 block font-mono text-[10px] font-bold uppercase tracking-widest text-indigo-600">
                 URL Specs Inspector
               </span>
@@ -270,7 +270,7 @@ export default function AuditDashboard() {
                   whileHover={{ scale: 1.15 }}
                   whileTap={tapPress}
                   transition={spring.press}
-                  className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                  className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 shrink-0"
                   title="Copy URL"
                 >
                   <AnimatePresence mode="wait" initial={false}>
@@ -297,7 +297,7 @@ export default function AuditDashboard() {
               whileHover={{ scale: 1.1, rotate: 90 }}
               whileTap={tapPress}
               transition={spring.press}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700 shrink-0"
               aria-label="Close inspector"
             >
               <X size={18} />
@@ -394,7 +394,7 @@ export default function AuditDashboard() {
   const renderTabBody = () => {
     if (activeTab === 'integrations') {
       return (
-        <div className="custom-scrollbar h-full overflow-y-auto">
+        <div className="h-full w-full overflow-hidden">
           <IntegrationsPanel />
         </div>
       );
@@ -515,7 +515,7 @@ export default function AuditDashboard() {
         <Loading isBootloader onBootloaderComplete={() => setIsAppInitializing(false)} />
       )}
 
-      <div className="relative flex h-screen overflow-hidden bg-[#F8FAFC] font-sans text-slate-900">
+      <div className="relative flex h-screen h-[100dvh] w-full overflow-hidden bg-[#F8FAFC] font-sans text-slate-900">
         <div className="ambient-bg" />
 
         {/* ---------------------------------------------------------------- */}
@@ -541,7 +541,7 @@ export default function AuditDashboard() {
               animate="animate"
               exit="exit"
               onClick={() => setIsMobileSidebarOpen(false)}
-              className="fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-[2px] md:hidden"
+              className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs md:hidden"
             />
           )}
           {isMobileSidebarOpen && (
@@ -551,7 +551,7 @@ export default function AuditDashboard() {
               initial="initial"
               animate="animate"
               exit="exit"
-              className="fixed inset-y-0 left-0 z-40 w-[260px] will-change-transform md:hidden"
+              className="fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] will-change-transform md:hidden shadow-2xl bg-white"
             >
               <Sidebar
                 activeTab={activeTab}
@@ -567,6 +567,8 @@ export default function AuditDashboard() {
                   handleOpenSettings(t);
                   setIsMobileSidebarOpen(false);
                 }}
+                onCloseMobile={() => setIsMobileSidebarOpen(false)}
+                isMobile={true}
                 pagesCount={pages.length}
                 issuesCount={issuesReport.length}
               />
@@ -577,75 +579,76 @@ export default function AuditDashboard() {
         {/* ---------------------------------------------------------------- */}
         {/* Main column                                                      */}
         {/* ---------------------------------------------------------------- */}
-        <main className="relative z-10 flex flex-1 flex-col overflow-hidden">
+        <main className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden">
           <motion.header
             initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={tween(duration.panel, ease.outQuint)}
-            className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 shadow-xs backdrop-blur-md sm:px-6"
+            className="flex h-16 shrink-0 items-center justify-between gap-2.5 sm:gap-3.5 border-b border-slate-200 bg-white/90 px-3 sm:px-6 shadow-xs backdrop-blur-md"
           >
             <motion.button
               onClick={() => setIsMobileSidebarOpen(true)}
               whileTap={tapPress}
               transition={spring.press}
-              className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 md:hidden"
+              className="flex items-center justify-center rounded-lg p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 md:hidden shrink-0"
               aria-label="Open navigation"
             >
               <Menu size={20} />
             </motion.button>
 
-            <form onSubmit={startAudit} className="relative flex max-w-2xl flex-1 items-center">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+            <form
+              onSubmit={startAudit}
+              className="group relative flex w-full max-w-xl flex-1 items-center rounded-xl border border-slate-300 bg-white p-1 pl-3 shadow-xs transition-all focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 sm:max-w-2xl"
+            >
+              <div className="pointer-events-none flex shrink-0 items-center text-slate-400 group-focus-within:text-indigo-600 transition-colors mr-2">
                 <Globe size={16} />
               </div>
               <input
                 type="url"
-                className="glass-input w-full border-slate-300 bg-white py-2 pl-10 pr-28 font-mono text-xs font-medium text-slate-900 placeholder-slate-400 shadow-xs sm:pr-36"
+                className="w-full min-w-0 flex-1 bg-transparent py-1 font-mono text-xs font-medium text-slate-900 placeholder:text-slate-400 outline-none border-0 focus:outline-none focus:ring-0"
                 placeholder="Enter seed URL to crawl (e.g. https://bloomxsolutions.com/)..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 required
                 disabled={isAuditing}
               />
-              <div className="absolute inset-y-0 right-1.5 flex items-center">
-                <motion.button
-                  type="submit"
-                  disabled={isAuditing}
-                  whileTap={isAuditing ? undefined : tapPress}
-                  transition={spring.press}
-                  className="btn-primary h-8 px-3.5 text-xs font-bold shadow-xs sm:px-4"
-                >
-                  <AnimatePresence mode="wait" initial={false}>
-                    <motion.span
-                      key={isAuditing ? 'busy' : 'idle'}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={tween(duration.micro, ease.outQuart)}
-                      className="flex items-center gap-1.5"
-                    >
-                      {isAuditing ? (
-                        <>
-                          <Loader2 size={13} className="animate-spin text-emerald-400" />
-                          Crawling...
-                        </>
-                      ) : (
-                        'Run Audit'
-                      )}
-                    </motion.span>
-                  </AnimatePresence>
-                </motion.button>
-              </div>
+              <motion.button
+                type="submit"
+                disabled={isAuditing}
+                whileTap={isAuditing ? undefined : tapPress}
+                transition={spring.press}
+                className="btn-primary ml-1.5 h-8 shrink-0 rounded-lg px-3.5 text-xs font-bold shadow-xs sm:px-4"
+              >
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.span
+                    key={isAuditing ? 'busy' : 'idle'}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={tween(duration.micro, ease.outQuart)}
+                    className="flex items-center gap-1.5 whitespace-nowrap"
+                  >
+                    {isAuditing ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin text-emerald-400" />
+                        <span className="hidden xs:inline">Crawling...</span>
+                      </>
+                    ) : (
+                      'Run Audit'
+                    )}
+                  </motion.span>
+                </AnimatePresence>
+              </motion.button>
             </form>
 
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <motion.button
                 onClick={() => setIsAppInitializing(true)}
                 title="Replay the boot sequence"
                 whileHover={{ y: -1 }}
                 whileTap={tapPress}
                 transition={spring.press}
-                className="hidden items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 font-mono text-[11px] text-slate-600 shadow-xs hover:border-slate-300 hover:text-slate-900 sm:flex"
+                className="hidden items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 font-mono text-[11px] text-slate-600 shadow-xs hover:border-slate-300 hover:text-slate-900 md:flex"
               >
                 <RefreshCw size={12} className="text-indigo-600" />
                 <span>Intro</span>
@@ -656,7 +659,7 @@ export default function AuditDashboard() {
                 whileHover={{ y: -1 }}
                 whileTap={tapPress}
                 transition={spring.press}
-                className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-mono text-[11px] text-slate-600 shadow-xs hover:border-slate-300 hover:text-slate-900 lg:flex"
+                className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-mono text-[11px] text-slate-600 shadow-xs hover:border-slate-300 hover:text-slate-900 xl:flex"
               >
                 <Sliders size={13} className="text-indigo-600" />
                 <span>
@@ -669,9 +672,9 @@ export default function AuditDashboard() {
                 onClick={() => setIsExecutiveReportOpen(true)}
                 whileTap={tapPress}
                 transition={spring.press}
-                className="btn-secondary gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs"
+                className="btn-secondary gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs shrink-0"
               >
-                <FileText size={14} className="text-indigo-600" />
+                <FileText size={14} className="text-indigo-600 shrink-0" />
                 <span className="hidden sm:inline">PDF Report</span>
               </motion.button>
             </div>
@@ -687,7 +690,7 @@ export default function AuditDashboard() {
                 animate="animate"
                 exit="exit"
                 style={{ transformOrigin: 'top' }}
-                className="shimmer-active shrink-0 border-b border-indigo-100 bg-gradient-to-r from-indigo-50/80 to-emerald-50/80 px-6 py-3.5 shadow-xs"
+                className="shimmer-active shrink-0 border-b border-indigo-100 bg-gradient-to-r from-indigo-50/80 to-emerald-50/80 px-4 sm:px-6 py-3 sm:py-3.5 shadow-xs"
               >
                 <div className="mb-1.5 flex justify-between font-mono text-xs font-bold tracking-wide">
                   <span className="flex items-center gap-2 text-indigo-700">
@@ -729,14 +732,14 @@ export default function AuditDashboard() {
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                className="mx-6 mt-4 flex shrink-0 items-center justify-between rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 p-3.5 shadow-xs"
+                className="mx-3 sm:mx-6 mt-3 sm:mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 p-3.5 shadow-xs shrink-0"
               >
                 <div className="flex items-center gap-3">
                   <motion.div
                     initial={{ scale: 0, rotate: -90 }}
                     animate={{ scale: 1, rotate: 0 }}
                     transition={{ ...spring.soft, delay: 0.1 }}
-                    className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-xs"
+                    className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-xs shrink-0"
                   >
                     <CheckCircle2 size={18} />
                   </motion.div>
@@ -750,7 +753,7 @@ export default function AuditDashboard() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                   <motion.button
                     onClick={() => setIsExecutiveReportOpen(true)}
                     whileTap={tapPress}
@@ -775,7 +778,7 @@ export default function AuditDashboard() {
           </AnimatePresence>
 
           {/* Tab body */}
-          <div className="flex-1 overflow-hidden p-4 sm:p-6">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={`${activeTab}-${pages.length > 0}`}
@@ -783,7 +786,7 @@ export default function AuditDashboard() {
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                className="h-full"
+                className="h-full min-h-0"
               >
                 {renderTabBody()}
               </motion.div>

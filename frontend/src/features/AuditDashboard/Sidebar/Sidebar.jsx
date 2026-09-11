@@ -11,6 +11,7 @@ import {
   BookOpen,
   FileText,
   Layers,
+  X,
 } from 'lucide-react';
 import {
   duration,
@@ -33,6 +34,8 @@ export default function Sidebar({
   onOpenSettings,
   pagesCount = 0,
   issuesCount = 0,
+  onCloseMobile,
+  isMobile = false,
 }) {
   const reduced = useReducedMotion();
 
@@ -59,7 +62,7 @@ export default function Sidebar({
   const indicatorTransition = reduced ? { duration: 0 } : spring.snap;
 
   return (
-    <aside className="relative flex h-full w-full select-none flex-col border-r border-slate-200 bg-white px-3.5 py-5 shadow-sm">
+    <aside className="relative flex h-full w-full select-none flex-col border-r border-slate-200 bg-white px-3.5 py-5 shadow-sm overflow-y-auto custom-scrollbar">
       {/* ------------------------------------------------------------------ */}
       {/* Brand                                                              */}
       {/* ------------------------------------------------------------------ */}
@@ -67,7 +70,7 @@ export default function Sidebar({
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={tween(duration.panel, ease.outQuint)}
-        className="mb-7 px-2"
+        className="mb-7 flex items-center justify-between px-2 shrink-0"
       >
         <motion.div
           className="group flex cursor-pointer items-center"
@@ -77,6 +80,15 @@ export default function Sidebar({
         >
           <AuditProLogo size={38} animated={true} showText={true} />
         </motion.div>
+        {isMobile && onCloseMobile && (
+          <button
+            onClick={onCloseMobile}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden"
+            aria-label="Close navigation"
+          >
+            <X size={18} />
+          </button>
+        )}
       </motion.div>
 
       {/* ------------------------------------------------------------------ */}
@@ -136,7 +148,11 @@ export default function Sidebar({
                 )}
 
                 <span className="relative z-10 flex items-center gap-3">
-                  <span className={`flex transition-colors ${isActive ? 'text-emerald-400' : 'text-slate-500 group-hover:text-indigo-600'}`}>
+                  <span
+                    className={`flex transition-colors ${
+                      isActive ? 'text-emerald-400' : 'text-slate-500 group-hover:text-indigo-600'
+                    }`}
+                  >
                     <Icon size={18} />
                   </span>
                   <span className="truncate">{tab.label}</span>

@@ -225,17 +225,17 @@ export default function OverviewTab({ pages, onNavigateToExplorer }) {
   };
 
   return (
-    <div ref={containerRef} className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-2 space-y-6">
+    <div ref={containerRef} className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-1 sm:pr-2 space-y-5 sm:space-y-6">
 
       {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Executive Audit Telemetry</h2>
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Executive Audit Telemetry</h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Holistic intelligence across Technical SEO, AEO (Answer Engine Optimization), and GEO (Generative Local SERP).
           </p>
         </div>
-        <div className="flex items-center gap-2 font-mono text-xs text-slate-700 bg-white border border-slate-200 px-3.5 py-1.5 rounded-xl shadow-xs">
+        <div className="flex items-center gap-2 font-mono text-xs text-slate-700 bg-white border border-slate-200 px-3.5 py-1.5 rounded-xl shadow-xs self-start sm:self-auto shrink-0">
           <span>Engine Status:</span>
           <span className="text-emerald-700 font-bold flex items-center gap-1.5">
             <span className="live-dot w-2 h-2 rounded-full bg-emerald-500 text-emerald-500/60"></span> Live Analyzed
@@ -244,7 +244,7 @@ export default function OverviewTab({ pages, onNavigateToExplorer }) {
       </div>
 
       {/* 4 Score Bento Cards with React Spring 3D Tilt & Aceternity Spotlight */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
 
         {/* Health Index */}
         <SpringTiltBentoCard

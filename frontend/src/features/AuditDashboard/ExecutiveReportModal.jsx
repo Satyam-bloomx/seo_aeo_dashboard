@@ -167,27 +167,27 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
     <AnimatedModal isOpen={isOpen} onClose={onClose} size="xl" panelClassName="max-h-[92vh]">
 
       {/* Top Modal Navigation Header (Hidden on Print) */}
-      <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/90 no-print shrink-0">
+      <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/90 no-print shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs shrink-0">
             <FileText size={20} />
           </div>
           <div>
-            <DialogTitle as="h2" className="text-base font-bold text-slate-900">
+            <DialogTitle as="h2" className="text-sm sm:text-base font-bold text-slate-900">
               Executive Technical SEO & AEO Audit Report
             </DialogTitle>
-            <p className="text-xs text-slate-500">Client-ready comprehensive technical compliance, scorecards & remediation roadmap</p>
+            <p className="text-[11px] sm:text-xs text-slate-500">Client-ready comprehensive technical compliance, scorecards & remediation roadmap</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 ml-auto sm:ml-0">
           <motion.button
             onClick={handlePrint}
             whileTap={tapPress}
             transition={spring.press}
-            className="btn-primary h-9 px-4 text-xs font-bold gap-2 shadow-xs"
+            className="btn-primary h-9 px-3 sm:px-4 text-xs font-bold gap-1.5 sm:gap-2 shadow-xs shrink-0"
           >
-            <Printer size={15} /> Print / Save as PDF
+            <Printer size={15} /> <span className="hidden xs:inline">Print / Save as PDF</span><span className="xs:hidden">Print PDF</span>
           </motion.button>
           <motion.button
             onClick={onClose}
@@ -195,7 +195,7 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
             whileTap={tapPress}
             transition={spring.press}
             aria-label="Close report"
-            className="p-2 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+            className="p-2 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 shrink-0"
           >
             <X size={18} />
           </motion.button>
@@ -207,7 +207,7 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
         variants={staggerContainer(0.05, 0.1)}
         initial="initial"
         animate="animate"
-        className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-8 bg-white text-slate-800 print:p-0 print:overflow-visible print:space-y-6"
+        className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 custom-scrollbar space-y-6 sm:space-y-8 bg-white text-slate-800 print:p-0 print:overflow-visible print:space-y-6"
       >
 
         {/* 1. Official Audit Certificate Header */}
@@ -216,10 +216,10 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 mb-3">
               <Award size={14} className="text-emerald-600" /> Official Technical Site Audit Certificate
             </div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Executive Audit & Compliance Report</h1>
-            <p className="text-sm font-mono text-indigo-600 font-bold mt-1">Audited Domain: {targetUrl || 'Audited Website'}</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Executive Audit & Compliance Report</h1>
+            <p className="text-xs sm:text-sm font-mono text-indigo-600 font-bold mt-1">Audited Domain: {targetUrl || 'Audited Website'}</p>
           </div>
-          <div className="text-right text-xs text-slate-500 font-mono">
+          <div className="text-left sm:text-right text-xs text-slate-500 font-mono">
             <p>Generated: <strong className="text-slate-800">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</strong></p>
             <p className="mt-0.5">Engine: <strong className="text-slate-800">Screaming Frog Architecture v20.4</strong></p>
             <p className="mt-0.5">Verification ID: <strong className="text-emerald-700">OK-SECURE-{verificationHash}</strong></p>
@@ -227,32 +227,32 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
         </motion.div>
 
         {/* 2. Executive Key Performance Indicator (KPI) Scorecards */}
-        <motion.div variants={staggerItem} className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <motion.div variants={staggerItem} className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
 
-          <div className="p-5 rounded-2xl bg-slate-50 border border-emerald-200 text-center flex flex-col justify-center shadow-xs">
+          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 border border-emerald-200 text-center flex flex-col justify-center shadow-xs">
             <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">Site Health Index</span>
-            <div className="text-4xl font-black text-slate-900 my-1 tabular-nums">
+            <div className="text-3xl sm:text-4xl font-black text-slate-900 my-1 tabular-nums">
               {healthScore}<span className="text-sm text-slate-400 font-normal">/100</span>
             </div>
-            <span className="text-xs text-emerald-700 font-bold">Overall Technical Score</span>
+            <span className="text-[11px] sm:text-xs text-emerald-700 font-bold">Overall Technical Score</span>
           </div>
 
-          <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-center flex flex-col justify-center shadow-xs">
+          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 text-center flex flex-col justify-center shadow-xs">
             <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">Executive Grade</span>
-            <div className="text-4xl font-black text-emerald-600 my-1 font-mono">{grade.letter}</div>
-            <span className="text-xs text-slate-700 font-bold">{grade.label}</span>
+            <div className="text-3xl sm:text-4xl font-black text-emerald-600 my-1 font-mono">{grade.letter}</div>
+            <span className="text-[11px] sm:text-xs text-slate-700 font-bold">{grade.label}</span>
           </div>
 
-          <div className="p-5 rounded-2xl bg-slate-50 border border-indigo-200 text-center flex flex-col justify-center shadow-xs">
+          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 border border-indigo-200 text-center flex flex-col justify-center shadow-xs">
             <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">Crawled Inventory</span>
-            <div className="text-4xl font-black text-slate-900 my-1 tabular-nums">{pages?.length || 0}</div>
-            <span className="text-xs text-indigo-700 font-bold">{indexableCount} Indexable | {nonIndexableCount} Non-Index</span>
+            <div className="text-3xl sm:text-4xl font-black text-slate-900 my-1 tabular-nums">{pages?.length || 0}</div>
+            <span className="text-[11px] sm:text-xs text-indigo-700 font-bold">{indexableCount} Indexable | {nonIndexableCount} Non-Index</span>
           </div>
 
-          <div className="p-5 rounded-2xl bg-slate-50 border border-rose-200 text-center flex flex-col justify-center shadow-xs">
+          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 border border-rose-200 text-center flex flex-col justify-center shadow-xs">
             <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">Actionable Issues</span>
-            <div className="text-4xl font-black text-rose-600 my-1 tabular-nums">{criticalIssues.length}</div>
-            <span className="text-xs text-rose-700 font-bold">{warningIssues.length} Warnings | {opportunityIssues.length} Opps</span>
+            <div className="text-3xl sm:text-4xl font-black text-rose-600 my-1 tabular-nums">{criticalIssues.length}</div>
+            <span className="text-[11px] sm:text-xs text-rose-700 font-bold">{warningIssues.length} Warnings | {opportunityIssues.length} Opps</span>
           </div>
 
         </motion.div>

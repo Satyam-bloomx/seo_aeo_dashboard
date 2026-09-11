@@ -58,16 +58,16 @@ export default function SpiderLiveProgressScreen({
         variants={staggerContainer(0.06, 0.08)}
         initial="initial"
         animate="animate"
-        className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm"
+        className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 sm:p-6 md:p-8 shadow-sm"
       >
         {/* Ambient background glow */}
         <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
         <div className="absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
+        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6 sm:gap-8">
           
           {/* Left info & progress */}
-          <div className="flex-1 space-y-4 max-w-xl text-center md:text-left">
+          <div className="flex-1 space-y-4 max-w-xl text-center md:text-left w-full">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -77,7 +77,7 @@ export default function SpiderLiveProgressScreen({
             </div>
 
             <div>
-              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
                 Auditing Website Architecture
               </h2>
               <p className="text-xs sm:text-sm font-mono text-indigo-600 font-bold mt-1 truncate">
@@ -86,13 +86,13 @@ export default function SpiderLiveProgressScreen({
             </div>
 
             {/* Stage indicator */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1 text-left">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-slate-900 flex items-center gap-1.5">
-                  <Activity size={14} className="text-indigo-600 animate-pulse" />
-                  {currentStage.label}
+                  <Activity size={14} className="text-indigo-600 animate-pulse shrink-0" />
+                  <span className="truncate">{currentStage.label}</span>
                 </span>
-                <span className="font-mono font-bold text-emerald-700">{progress}%</span>
+                <span className="font-mono font-bold text-emerald-700 shrink-0 ml-2">{progress}%</span>
               </div>
               <p className="text-[11px] text-slate-500">{currentStage.sub}</p>
             </div>
@@ -116,7 +116,7 @@ export default function SpiderLiveProgressScreen({
           </div>
 
           {/* Right Kinetic Orbital Radar Scanner */}
-          <div className="relative flex items-center justify-center shrink-0 w-48 h-48 sm:w-56 sm:h-56">
+          <div className="relative flex items-center justify-center shrink-0 w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56">
             {/* Radar outer rings */}
             <motion.div
               animate={reduced ? undefined : { rotate: 360 }}
@@ -135,8 +135,8 @@ export default function SpiderLiveProgressScreen({
             />
 
             {/* Center pulsing core */}
-            <div className="relative z-10 flex flex-col items-center justify-center w-28 h-28 rounded-full bg-gradient-to-br from-slate-900 to-indigo-950 text-white shadow-xl border border-indigo-500/30">
-              <span className="text-3xl font-black font-mono tracking-tight text-emerald-400">
+            <div className="relative z-10 flex flex-col items-center justify-center w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-slate-900 to-indigo-950 text-white shadow-xl border border-indigo-500/30">
+              <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-emerald-400">
                 {progress}%
               </span>
               <span className="text-[9px] font-mono uppercase tracking-widest text-slate-400">
