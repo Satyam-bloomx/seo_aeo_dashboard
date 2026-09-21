@@ -336,6 +336,15 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
             return {"success": False, "status": "error", "detail": "Missing Google Search Console credentials (OAuth token or API key)"}
         
         token = api_key.strip()
+        
+        # Check for simulated development tokens
+        if token.startswith("oauth_token_") or token.startswith("mock_"):
+            return {
+                "success": False,
+                "status": "error",
+                "detail": "Connected with a simulated OAuth session token. To query live Google Search Console, please provide GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET in backend/.env for real Google login, or click 'Token / Key' to paste an authentic Google Access Token (starts with ya29...)."
+            }
+            
         headers = {}
         params = {}
         if token.startswith("AIzaSy"):
@@ -356,8 +365,8 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                     site_examples = [s.get("siteUrl", "") for s in sites[:2]]
                     example_txt = f" (e.g. {', '.join(site_examples)})" if site_examples else ""
                     return {
-                        "success": True,
-                        "status": "ok",
+                        "success": True, 
+                        "status": "ok", 
                         "message": f"Google Search Console API authenticated! {site_count} verified web properties accessible{example_txt} ({latency}ms).",
                         "latency_ms": latency
                     }
@@ -371,7 +380,7 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                     }
                 else:
                     return {
-                        "success": True,
+                        "success": True, 
                         "status": "ok",
                         "message": f"Search Console API connection received status {res.status_code}. Ready for URL inspection & query telemetry.",
                         "latency_ms": latency
@@ -430,6 +439,7 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
 @router.get("/google/auth")
 async def google_auth_redirect(request: Request, project_id: int, service: str, redirect_uri: Optional[str] = None):
     # Dynamically determine the frontend host from request headers or redirect_uri
+    google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
     origin = request.headers.get("origin") or ""
     referer = request.headers.get("referer") or ""
     
@@ -444,15 +454,48 @@ async def google_auth_redirect(request: Request, project_id: int, service: str, 
     else:
         base_host = "http://localhost:3000"
         
-    callback_url = f"{base_host}/integrations/callback?project_id={project_id}&service={service}&code=mock_google_oauth_auth_code_789"
-    accept = request.headers.get("accept", "")
-    if "application/json" in accept and "text/html" not in accept:
-        return {"auth_url": callback_url, "status": "ok"}
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url=callback_url)
+    frontend_callback = f"{base_host}/integrations/callback"
+    
+    if google_client_id:
+        from urllib.parse import urlencode
+        scope = (
+            "https://www.googleapis.com/auth/webmasters.readonly openid email profile"
+            if service == "search_console"
+            else "https://www.googleapis.com/auth/analytics.readonly openid email profile"
+        )
+        params = {
+            "client_id": google_client_id,
+            "redirect_uri": frontend_callback,
+            "response_type": "code",
+            "scope": scope,
+            "access_type": "offline",
+            "prompt": "consent",
+            "state": f"{project_id}:{service}",
+            "include_granted_scopes": "true",
+        }
+        auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+        return {"configured": True, "auth_url": auth_url, "status": "ok"}
+    else:
+        callback_url = f"{frontend_callback}?project_id={project_id}&service={service}&code=mock_google_oauth_auth_code_789"
+        accept = request.headers.get("accept", "")
+        if "application/json" in accept and "text/html" not in accept:
+            return {
+                "configured": False, 
+                "auth_url": callback_url, 
+                "status": "missing_credentials",
+                "message": "Google Cloud OAuth credentials not configured in backend/.env. Add GOOGLE_CLIENT_ID for live sign-in, or click 'Token / Key' to paste a Google Access Token directly."
+            }
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=callback_url)
 
 @router.post("/google/callback")
-async def google_auth_callback(project_id: int, service: str, code: str, db: AsyncSession = Depends(get_db)):
+async def google_auth_callback(
+    project_id: int, 
+    service: str, 
+    code: str, 
+    redirect_uri: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
     if not code:
         raise HTTPException(status_code=400, detail="Missing auth code")
         
@@ -475,13 +518,54 @@ async def google_auth_callback(project_id: int, service: str, code: str, db: Asy
             )
             db.add(integration)
             
+        google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+        google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+        
+        access_token = None
+        refresh_token = None
+        expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=30)
+        
+        # Real Google OAuth token exchange:
+        if google_client_id and google_client_secret and not code.startswith("mock_"):
+            token_endpoint = "https://oauth2.googleapis.com/token"
+            data = {
+                "client_id": google_client_id,
+                "client_secret": google_client_secret,
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": redirect_uri or "http://localhost:3000/integrations/callback",
+            }
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(token_endpoint, data=data)
+                if res.status_code == 200:
+                    payload = res.json()
+                    access_token = payload.get("access_token")
+                    refresh_token = payload.get("refresh_token")
+                    expires_in = payload.get("expires_in", 3600)
+                    expires_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=expires_in)
+                else:
+                    err_text = res.text
+                    try:
+                        err_text = res.json().get("error_description", err_text)
+                    except Exception:
+                        pass
+                    raise HTTPException(status_code=400, detail=f"Google OAuth token exchange failed: {err_text}")
+        else:
+            # Development / simulated token
+            access_token = f"oauth_token_{service}_{datetime.datetime.utcnow().strftime('%Y%m%d%H%M')}"
+            refresh_token = f"refresh_token_{service}_secure"
+            
         integration.connected = True
-        integration.access_token = f"oauth_token_{service}_{datetime.datetime.utcnow().strftime('%Y%m%d%H%M')}"
-        integration.refresh_token = f"refresh_token_{service}_secure"
-        integration.expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=30)
+        integration.access_token = access_token
+        if refresh_token:
+            integration.refresh_token = refresh_token
+        integration.expires_at = expires_at
         
         await db.commit()
         return {"status": "success", "message": f"{service} connected and authenticated successfully!"}
+    except HTTPException:
+        await db.rollback()
+        raise
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to authenticate {service}: {str(e)}")

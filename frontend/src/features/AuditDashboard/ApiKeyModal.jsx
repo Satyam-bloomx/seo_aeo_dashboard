@@ -129,44 +129,49 @@ const GUIDES = {
   },
   search_console: {
     docUrl: 'https://search.google.com/search-console',
-    title: 'Google Search Console API & Token Setup',
+    title: 'Google Search Console Access Token & OAuth Setup',
     steps: [
       {
         step: 1,
-        title: 'Verify Domain in Google Search Console',
-        desc: 'Ensure your target domain (URL prefix or Domain property) is verified in Google Search Console.',
-        link: 'https://search.google.com/search-console',
-        linkLabel: 'Open Google Search Console'
+        title: 'Option 1: Instant 30-Second Token via Google OAuth Playground (Recommended)',
+        desc: 'Open the Google OAuth 2.0 Playground, scroll to "Google Search Console API v3", check "https://www.googleapis.com/auth/webmasters.readonly", click "Authorize APIs", sign in with your Google account, and click "Exchange authorization code for tokens".',
+        link: 'https://developers.google.com/oauthplayground/#step1&apisSelect=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fwebmasters.readonly',
+        linkLabel: 'Open Google OAuth 2.0 Playground'
       },
       {
         step: 2,
-        title: 'Enable Google Search Console API in Google Cloud',
-        desc: 'In Google Cloud Console, enable "Google Search Console API" on your Google Cloud project.',
-        link: 'https://console.cloud.google.com/apis/library/searchconsole.googleapis.com',
-        linkLabel: 'Enable Search Console API'
+        title: 'Copy the Access Token (starts with ya29...)',
+        desc: 'Copy the Access Token string (starts with "ya29..."), paste it into the input field below, test the connection, and click Connect & Save.',
       },
       {
         step: 3,
-        title: 'Provide Access Token or API Key',
-        desc: 'Paste your OAuth2 Bearer Access Token or Google Cloud API Key below to activate live URL inspection and 30-day organic performance queries.'
+        title: 'Option 2: Enable One-Click Google Sign-In for Your Team',
+        desc: 'To allow one-click Google Sign-in via the "Connect" button, create an OAuth 2.0 Web Client ID in Google Cloud Console with redirect URI http://localhost:3000/integrations/callback, then add GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET to backend/.env.',
+        link: 'https://console.cloud.google.com/apis/credentials',
+        linkLabel: 'Open Google Cloud Credentials Console'
       }
     ]
   },
   google_analytics: {
     docUrl: 'https://analytics.google.com/',
-    title: 'Google Analytics 4 (GA4) API Setup',
+    title: 'Google Analytics 4 (GA4) Access Token & OAuth Setup',
     steps: [
       {
         step: 1,
-        title: 'Enable Google Analytics Data API',
-        desc: 'In Google Cloud Console, enable the "Google Analytics Data API".',
-        link: 'https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com',
-        linkLabel: 'Enable GA4 Data API'
+        title: 'Generate GA4 Access Token via OAuth Playground',
+        desc: 'Open Google OAuth 2.0 Playground, select "Google Analytics Data API v1beta" -> "https://www.googleapis.com/auth/analytics.readonly", authorize with your Google account, and exchange code for tokens.',
+        link: 'https://developers.google.com/oauthplayground/#step1&apisSelect=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fanalytics.readonly',
+        linkLabel: 'Open GA4 in Google OAuth Playground'
       },
       {
         step: 2,
-        title: 'Provide GA4 Access Token',
-        desc: 'Paste your OAuth2 Bearer token below to import live sessions, bounce rates, and zombie page signals.'
+        title: 'Copy & Paste ya29... Token Below',
+        desc: 'Copy the Access Token (starts with "ya29...") and paste it into the field below to activate live sessions and bounce rate enrichments.'
+      },
+      {
+        step: 3,
+        title: 'Enable Native One-Click Google Sign-In',
+        desc: 'Add GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET to backend/.env to log in seamlessly with your Google account in one click.'
       }
     ]
   },
@@ -445,7 +450,9 @@ export default function ApiKeyModal({
           {/* API Key Input */}
           <div>
             <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-2">
-              Enter {integration.name} API Key
+              {integration.authType === 'oauth'
+                ? `Enter ${integration.name} Access Token (starts with ya29...)`
+                : `Enter ${integration.name} API Key`}
             </label>
             <div className="relative flex items-center">
               <input
@@ -456,7 +463,10 @@ export default function ApiKeyModal({
                   setTestResult(null);
                   setError(null);
                 }}
-                placeholder={integration.placeholder || 'AIzaSy... / sk-...'}
+                placeholder={
+                  integration.placeholder ||
+                  (integration.authType === 'oauth' ? 'ya29.a0A... (Google OAuth Access Token)' : 'AIzaSy... / sk-...')
+                }
                 className="w-full glass-input pl-3.5 pr-10 py-2.5 font-mono text-sm bg-slate-50/50"
                 autoFocus
               />

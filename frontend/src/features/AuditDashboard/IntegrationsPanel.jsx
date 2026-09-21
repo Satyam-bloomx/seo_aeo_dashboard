@@ -91,7 +91,8 @@ const API_INTEGRATIONS = [
     description: 'Imports live page sessions, bounce rates, average engagement duration, and organic conversion paths for crawled URLs.',
     authType: 'oauth',
     icon: <BarChart3 className="text-orange-500" size={24} />,
-    docUrl: 'https://analytics.google.com/'
+    docUrl: 'https://analytics.google.com/',
+    placeholder: 'ya29.a0A... (Google OAuth Bearer Access Token)'
   },
   {
     id: 'search_console',
@@ -101,7 +102,8 @@ const API_INTEGRATIONS = [
     description: 'Imports verified search queries, organic impressions, clicks, average SERP position, and Google URL indexation status.',
     authType: 'oauth',
     icon: <Globe className="text-blue-600" size={24} />,
-    docUrl: 'https://search.google.com/search-console'
+    docUrl: 'https://search.google.com/search-console',
+    placeholder: 'ya29.a0A... (Google OAuth Bearer Access Token)'
   }
 ];
 
@@ -221,14 +223,24 @@ export default function IntegrationsPanel({ projectId = 1 }) {
         `${API_BASE_URL}/integrations/google/auth?project_id=${projectId}&service=${provider}&redirect_uri=${encodeURIComponent(redirectUri)}`
       );
       toast.dismiss('oauth-toast');
-      if (res.data?.auth_url) {
+      
+      if (res.data?.configured && res.data?.auth_url) {
         window.location.href = res.data.auth_url;
-      } else {
-        window.location.href = `/integrations/callback?status=success&service=${provider}&project_id=${projectId}&code=mock_code_123`;
+      } else if (res.data?.status === 'missing_credentials' || res.data?.configured === false) {
+        toast.warning(`Google OAuth Client ID not configured in .env`, {
+          description: `Please add GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET to backend/.env, or enter your Access Token (ya29...) below.`,
+          duration: 7000
+        });
+        const targetItem = API_INTEGRATIONS.find(i => i.id === provider);
+        if (targetItem) {
+          setActiveModal(targetItem);
+        }
+      } else if (res.data?.auth_url) {
+        window.location.href = res.data.auth_url;
       }
     } catch (e) {
       toast.dismiss('oauth-toast');
-      window.location.href = `/integrations/callback?status=success&service=${provider}&project_id=${projectId}&code=mock_code_123`;
+      toast.error(`Failed to connect to ${providerTitle}.`);
     }
   };
 
