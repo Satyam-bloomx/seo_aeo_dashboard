@@ -582,16 +582,6 @@ class CrawlerService:
         }
         
         if hasattr(self, 'active_integrations'):
-            if "google_analytics" in self.active_integrations:
-                metrics["audit_data"].setdefault("Analytics", {})
-                metrics["audit_data"]["Analytics"]["Sessions"] = 150
-                metrics["audit_data"]["Analytics"]["Bounce Rate"] = 45.5
-            
-            if "search_console" in self.active_integrations:
-                metrics["audit_data"].setdefault("Search_Console", {})
-                metrics["audit_data"]["Search_Console"]["Clicks"] = 32
-                metrics["audit_data"]["Search_Console"]["Impressions"] = 450
-                
             if "pagespeed" in self.active_integrations:
                 if current_depth == 0:
                     try:

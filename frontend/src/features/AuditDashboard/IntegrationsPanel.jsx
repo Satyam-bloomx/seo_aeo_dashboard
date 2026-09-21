@@ -523,17 +523,15 @@ export default function IntegrationsPanel({ projectId = 1 }) {
                     </motion.button>
 
                     <div className="flex items-center gap-2">
-                      {item.authType === 'api_key' && (
-                        <motion.button
-                          onClick={() => setActiveModal(item)}
-                          whileTap={tapPress}
-                          transition={spring.press}
-                          className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 font-semibold px-2.5 py-1 rounded-lg hover:bg-slate-100 transition-colors"
-                        >
-                          <Edit3 size={12} />
-                          Update
-                        </motion.button>
-                      )}
+                      <motion.button
+                        onClick={() => setActiveModal(item)}
+                        whileTap={tapPress}
+                        transition={spring.press}
+                        className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 font-semibold px-2.5 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+                      >
+                        <Edit3 size={12} />
+                        Update
+                      </motion.button>
                       <motion.button
                         onClick={() => handleDisconnect(item.id)}
                         whileTap={tapPress}
@@ -557,14 +555,25 @@ export default function IntegrationsPanel({ projectId = 1 }) {
                         <Key size={14} /> Configure API Key
                       </motion.button>
                     ) : (
-                      <motion.button
-                        onClick={() => handleOAuthConnect(item.id)}
-                        whileTap={tapPress}
-                        transition={spring.press}
-                        className="w-full btn-secondary py-2 text-xs font-bold gap-2 text-slate-800 shadow-xs cursor-pointer hover:bg-slate-100"
-                      >
-                        <Globe size={14} className="text-indigo-600" /> Connect via Google OAuth
-                      </motion.button>
+                      <div className="grid grid-cols-2 gap-2 w-full">
+                        <motion.button
+                          onClick={() => setActiveModal(item)}
+                          whileTap={tapPress}
+                          transition={spring.press}
+                          className="btn-primary py-2 text-[11px] font-bold gap-1.5 shadow-xs cursor-pointer truncate"
+                          title="Enter Bearer token or API key directly"
+                        >
+                          <Key size={13} /> Token / Key
+                        </motion.button>
+                        <motion.button
+                          onClick={() => handleOAuthConnect(item.id)}
+                          whileTap={tapPress}
+                          transition={spring.press}
+                          className="btn-secondary py-2 text-[11px] font-bold gap-1.5 text-slate-800 shadow-xs cursor-pointer hover:bg-slate-100 truncate"
+                        >
+                          <Globe size={13} className="text-indigo-600" /> Google OAuth
+                        </motion.button>
+                      </div>
                     )}
                   </>
                 )}

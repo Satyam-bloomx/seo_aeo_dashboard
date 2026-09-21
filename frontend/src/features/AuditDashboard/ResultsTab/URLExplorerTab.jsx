@@ -80,8 +80,12 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       base.push('High Traffic at Risk');
     }
     if (activeCategory === 'Search_Console' || activeCategory === 'Internal') {
+      base.push('Indexed & Rank Eligible');
       base.push('Crawled - Not Indexed');
       base.push('Excluded by Google');
+      base.push('Canonical Mismatches');
+      base.push('High Impressions Low CTR');
+      base.push('Striking Distance (11-20)');
     }
     return Array.from(new Set(base));
   }, [dynamicColumns, activeCategory]);
@@ -99,11 +103,44 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     if (activeView === 'High Traffic at Risk') {
       return result.filter(p => (p.status_code || 200) >= 400 && p.audit_data?.Google_Analytics?.Revenue_At_Risk?.includes('P0'));
     }
+    if (activeView === 'Indexed & Rank Eligible') {
+      return result.filter(p => p.audit_data?.Search_Console?.Google_Index_Status?.toLowerCase().includes('indexed'));
+    }
     if (activeView === 'Crawled - Not Indexed') {
       return result.filter(p => p.audit_data?.Search_Console?.Index_Coverage_State?.toLowerCase().includes('not indexed'));
     }
     if (activeView === 'Excluded by Google') {
-      return result.filter(p => p.audit_data?.Search_Console?.Google_Index_Status?.toLowerCase().includes('excluded'));
+      return result.filter(p => {
+        const gsc = p.audit_data?.Search_Console;
+        return (gsc?.Google_Index_Status || '').toLowerCase().includes('excluded') || 
+               (gsc?.Index_Coverage_State || '').toLowerCase().includes('excluded');
+      });
+    }
+    if (activeView === 'Canonical Mismatches') {
+      return result.filter(p => p.audit_data?.Search_Console?.Canonical_Mismatch === true);
+    }
+    if (activeView === 'High Impressions Low CTR') {
+      return result.filter(p => {
+        const gsc = p.audit_data?.Search_Console;
+        if (!gsc) return false;
+        const imp = gsc.Impressions_Num !== undefined 
+          ? gsc.Impressions_Num 
+          : parseInt(String(gsc.Search_Impressions || '0').replace(/,/g, ''), 10) || 0;
+        const ctr = gsc.CTR_Num !== undefined 
+          ? gsc.CTR_Num 
+          : parseFloat(String(gsc.Average_CTR || '0').replace('%', '')) || 0;
+        return imp >= 80 && ctr > 0 && ctr < 1.5;
+      });
+    }
+    if (activeView === 'Striking Distance (11-20)') {
+      return result.filter(p => {
+        const gsc = p.audit_data?.Search_Console;
+        if (!gsc) return false;
+        const pos = gsc.Position_Num !== undefined 
+          ? gsc.Position_Num 
+          : parseFloat(String(gsc.Average_SERP_Position || '0')) || 0;
+        return pos >= 10.5 && pos <= 20.4;
+      });
     }
 
     if (activeView === 'Errors') {

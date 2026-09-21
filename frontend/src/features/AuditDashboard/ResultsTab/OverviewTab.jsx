@@ -292,6 +292,48 @@ export default function OverviewTab({ pages, onNavigateToExplorer }) {
     };
   }, [pages]);
 
+  const gscSummary = useMemo(() => {
+    if (!pages || pages.length === 0) return null;
+    let totalClicks = 0;
+    let totalImpressions = 0;
+    let indexedCount = 0;
+    let excludedCount = 0;
+    let canonicalMismatches = 0;
+    let isLive = false;
+
+    pages.forEach(p => {
+      const gsc = p.audit_data?.Search_Console;
+      if (!gsc) return;
+      if (gsc.Is_Live_GSC) isLive = true;
+      const clicks = gsc.Clicks_Num !== undefined 
+        ? gsc.Clicks_Num 
+        : parseInt(String(gsc.Organic_Clicks_30d || '0').replace(/,/g, ''), 10) || 0;
+      const imp = gsc.Impressions_Num !== undefined 
+        ? gsc.Impressions_Num 
+        : parseInt(String(gsc.Search_Impressions || '0').replace(/,/g, ''), 10) || 0;
+      totalClicks += clicks;
+      totalImpressions += imp;
+
+      const status = (gsc.Google_Index_Status || '').toLowerCase();
+      if (status.includes('indexed')) indexedCount++;
+      else if (status.includes('excluded')) excludedCount++;
+
+      if (gsc.Canonical_Mismatch) canonicalMismatches++;
+    });
+
+    const avgCtr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(1) : '0.0';
+    return {
+      totalClicks,
+      totalImpressions,
+      avgCtr,
+      indexedCount,
+      excludedCount,
+      canonicalMismatches,
+      isLive,
+      source: isLive ? 'Live Google Search Console API' : (pages[0]?.audit_data?.Search_Console?.Live_GSC_Inspection || 'Search Console Intelligence')
+    };
+  }, [pages]);
+
 
   // Spotlight mouse-follow handler
   const handleMouseMoveSpotlight = (e) => {
@@ -497,10 +539,102 @@ export default function OverviewTab({ pages, onNavigateToExplorer }) {
 
       </div>
 
-      {/* Real-World AI Search & Core Web Vitals Intelligence Suite */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {/* Real-World Search Engine, AI Search & Core Web Vitals Intelligence Suite */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         
-        {/* Card 1: Perplexity AI Citations & Google SERP Features */}
+        {/* Card 1: Google Search Console Performance & Indexation */}
+        <div className="gsap-section glass-card p-5 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-xs">
+                  <Globe size={16} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">Google Search Console</h4>
+                  <p className="text-[11px] text-slate-500">Organic clicks, impressions & indexation health</p>
+                </div>
+              </div>
+              <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border ${
+                gscSummary?.isLive
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-blue-50 text-blue-700 border-blue-200'
+              }`}>
+                {gscSummary?.isLive ? 'Live GSC API' : 'GSC Enriched'}
+              </span>
+            </div>
+
+            {/* 3 KPI metric gauges */}
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-100 text-center">
+                <span className="text-[10px] font-mono text-blue-800 font-bold block uppercase">Clicks (30d)</span>
+                <span className="text-base font-extrabold text-slate-900 mt-0.5 block">
+                  {gscSummary ? gscSummary.totalClicks.toLocaleString() : '0'}
+                </span>
+                <span className="text-[10px] text-slate-500 font-semibold">Organic</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-indigo-50/60 border border-indigo-100 text-center">
+                <span className="text-[10px] font-mono text-indigo-800 font-bold block uppercase">Impressions</span>
+                <span className="text-base font-extrabold text-slate-900 mt-0.5 block">
+                  {gscSummary ? gscSummary.totalImpressions.toLocaleString() : '0'}
+                </span>
+                <span className="text-[10px] text-slate-500 font-semibold">SERP Views</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-purple-50/60 border border-purple-100 text-center">
+                <span className="text-[10px] font-mono text-purple-800 font-bold block uppercase">Avg CTR</span>
+                <span className="text-base font-extrabold text-slate-900 mt-0.5 block">
+                  {gscSummary?.avgCtr || '0.0'}%
+                </span>
+                <span className="text-[10px] text-slate-500 font-semibold">Click Rate</span>
+              </div>
+            </div>
+
+            {/* Coverage & Canonical Matrix */}
+            <div className="space-y-2 mb-3">
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                <span className="text-slate-600 font-medium">Google Index State:</span>
+                <span className="font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[11px]">
+                  {gscSummary?.indexedCount || 0} Indexed / {gscSummary?.excludedCount || 0} Excluded
+                </span>
+              </div>
+              {gscSummary?.canonicalMismatches > 0 ? (
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                  <span className="font-medium flex items-center gap-1.5">
+                    <AlertTriangle size={13} className="text-amber-600" /> Canonical Mismatches:
+                  </span>
+                  <span className="font-mono font-bold px-2 py-0.5 rounded text-[11px] bg-amber-100 border border-amber-300">
+                    {gscSummary.canonicalMismatches} URLs
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50/50 border border-emerald-100 text-xs text-emerald-800">
+                  <span className="font-medium flex items-center gap-1.5">
+                    <CheckCircle2 size={13} className="text-emerald-600" /> Canonical Alignment:
+                  </span>
+                  <span className="font-mono font-bold text-[11px]">100% Synchronized</span>
+                </div>
+              )}
+            </div>
+
+            <motion.button
+              onClick={() => onNavigateToExplorer('Search_Console')}
+              whileHover={{ y: -1 }}
+              whileTap={tapPress}
+              transition={spring.press}
+              className="w-full btn-secondary py-1.5 text-xs font-bold gap-1.5 text-blue-700 hover:text-blue-800 shadow-2xs"
+            >
+              Explore GSC Queries & Index Status
+              <ArrowUpRight size={13} />
+            </motion.button>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-500">
+            <span className="truncate max-w-[200px]">{gscSummary?.source || 'Search Console Ready'}</span>
+            <span className="text-emerald-600 font-bold">{gscSummary?.isLive ? 'API Verified' : 'Live Sync'}</span>
+          </div>
+        </div>
+        
+        {/* Card 2: Perplexity AI Citations & Google SERP Features */}
         <div className="gsap-section glass-card p-5 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">

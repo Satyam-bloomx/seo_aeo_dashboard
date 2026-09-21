@@ -201,6 +201,46 @@ export const RULE_METADATA = {
     rootCause: 'Uncaught JavaScript runtime errors or console exceptions were thrown during browser page rendering.',
     impact: 'Can break client-side interactivity, dynamic content rendering, and client-side routing for users and bots.',
     fixGuide: 'Debug browser console logs and fix syntax errors, undefined variable references, or failed API calls.'
+  },
+  'Search Console: Excluded from Google Index': {
+    rootCause: 'Google Search Console reports this page is explicitly excluded from the Google index due to crawl errors, redirects, or noindex directives.',
+    impact: 'URL receives zero organic search traffic, cannot rank for queries, and wastes crawl budget.',
+    fixGuide: 'Check the URL inspection report in GSC, verify if the exclusion was intended, remove accidental noindex tags, or fix HTTP errors.'
+  },
+  'Search Console: Crawled - Currently Not Indexed': {
+    rootCause: 'Googlebot has crawled the page, but Google chose not to index it. This indicates low perceived quality, duplicate content, or a domain-level quality threshold.',
+    impact: 'The page will not rank or appear in Google SERPs despite being crawled and technically reachable.',
+    fixGuide: 'Enrich page with original value, FAQs, unique copy, and high-authority internal links from top-ranking pages.'
+  },
+  'Search Console: Canonical Mismatch (Google Chose Different Canonical)': {
+    rootCause: 'Google ignored the declared canonical tag and selected a different URL as the authoritative source.',
+    impact: 'Google splits link equity, ranks the wrong URL in search results, and ignores the intended page version.',
+    fixGuide: 'Align internal links, sitemaps, and on-page content so signals point unambiguously to the declared canonical URL.'
+  },
+  'Search Console: High Impressions with Low CTR (< 1.5%)': {
+    rootCause: 'The page ranks within search results and accumulates high impressions, but users rarely click on the snippet headline or description.',
+    impact: 'Massive organic traffic is left on the table despite already ranking in Google SERPs.',
+    fixGuide: 'A/B test title tags and meta descriptions with stronger conversion hooks, emotional value props, and schema rich snippets.'
+  },
+  'Search Console: Striking Distance Opportunity (Position 11–20)': {
+    rootCause: 'The page ranks on page 2 of Google search results (average position 11 to 20).',
+    impact: 'Less than 2% of total searchers visit page 2, making these high-potential keywords invisible.',
+    fixGuide: 'Add 2–3 contextual internal links from your highest-authority pages with keyword-rich anchor text to push into the top 10.'
+  },
+  'PageSpeed: Core Web Vitals Failing (LCP > 2.5s or CLS > 0.1)': {
+    rootCause: 'Largest Contentful Paint (LCP) takes longer than 2.5 seconds or Cumulative Layout Shift (CLS) exceeds 0.1 on mobile devices.',
+    impact: 'Fails Google\'s page experience ranking signal, increases bounce rates, and lowers mobile conversion rates.',
+    fixGuide: 'Compress images to WebP/AVIF, eliminate render-blocking CSS/JS, and set explicit width/height dimensions on images and banners.'
+  },
+  'Google Analytics: Critical Revenue Risk (Broken High-Traffic Page)': {
+    rootCause: 'A URL that historically drove high organic search sessions is currently returning an HTTP 4xx or 5xx error code.',
+    impact: 'Direct revenue loss and immediate loss of keyword rankings if Google recrawls the error.',
+    fixGuide: 'Immediately restore the page template or implement a permanent 301 redirect to the nearest equivalent live product or category.'
+  },
+  'Google Analytics: Zombie Page Detected (0 Visits in 90 Days)': {
+    rootCause: 'Page has zero visits in Google Analytics over the past 90 days and has thin content or deep crawl depth.',
+    impact: 'Drains crawl budget and dilutes domain topical authority across search engines.',
+    fixGuide: 'Consolidate thin content into a parent topic guide, 301 redirect to relevant category, or apply a noindex directive.'
   }
 };
 
@@ -276,6 +316,115 @@ const RULES = [
     type: 'Issue',
     priority: 'High',
     evaluate: (page) => page.status_code >= 500
+  },
+  // --- GOOGLE SEARCH CONSOLE DIAGNOSTIC RULES ---
+  {
+    name: 'Search Console: Excluded from Google Index',
+    ruleName: 'Excluded from Google Index',
+    category: 'Search_Console',
+    type: 'Issue',
+    priority: 'High',
+    evaluate: (page) => {
+      const gsc = page.audit_data?.Search_Console;
+      if (!gsc) return false;
+      const status = (gsc.Google_Index_Status || '').toLowerCase();
+      const state = (gsc.Index_Coverage_State || '').toLowerCase();
+      return status.includes('excluded') || state.includes('excluded') || status.includes('not indexed');
+    }
+  },
+  {
+    name: 'Search Console: Crawled - Currently Not Indexed',
+    ruleName: 'Crawled - Currently Not Indexed',
+    category: 'Search_Console',
+    type: 'Warning',
+    priority: 'High',
+    evaluate: (page) => {
+      const gsc = page.audit_data?.Search_Console;
+      return (gsc?.Index_Coverage_State || '').toLowerCase().includes('not indexed');
+    }
+  },
+  {
+    name: 'Search Console: Canonical Mismatch (Google Chose Different Canonical)',
+    ruleName: 'Canonical Mismatch (Google Chose Different Canonical)',
+    category: 'Search_Console',
+    type: 'Issue',
+    priority: 'High',
+    evaluate: (page) => {
+      const gsc = page.audit_data?.Search_Console;
+      return gsc?.Canonical_Mismatch === true;
+    }
+  },
+  {
+    name: 'Search Console: High Impressions with Low CTR (< 1.5%)',
+    ruleName: 'High Impressions with Low CTR (< 1.5%)',
+    category: 'Search_Console',
+    type: 'Opportunity',
+    priority: 'Medium',
+    evaluate: (page) => {
+      const gsc = page.audit_data?.Search_Console;
+      if (!gsc) return false;
+      const imp = gsc.Impressions_Num !== undefined 
+        ? gsc.Impressions_Num 
+        : parseInt(String(gsc.Search_Impressions || '0').replace(/,/g, ''), 10) || 0;
+      const ctr = gsc.CTR_Num !== undefined 
+        ? gsc.CTR_Num 
+        : parseFloat(String(gsc.Average_CTR || '0').replace('%', '')) || 0;
+      return imp >= 80 && ctr > 0 && ctr < 1.5;
+    }
+  },
+  {
+    name: 'Search Console: Striking Distance Opportunity (Position 11–20)',
+    ruleName: 'Striking Distance Opportunity (Position 11–20)',
+    category: 'Search_Console',
+    type: 'Opportunity',
+    priority: 'Medium',
+    evaluate: (page) => {
+      const gsc = page.audit_data?.Search_Console;
+      if (!gsc) return false;
+      const pos = gsc.Position_Num !== undefined 
+        ? gsc.Position_Num 
+        : parseFloat(String(gsc.Average_SERP_Position || '0')) || 0;
+      return pos >= 10.5 && pos <= 20.4;
+    }
+  },
+  // --- PAGESPEED / CORE WEB VITALS RULES ---
+  {
+    name: 'PageSpeed: Core Web Vitals Failing (LCP > 2.5s or CLS > 0.1)',
+    ruleName: 'Core Web Vitals Failing (LCP > 2.5s or CLS > 0.1)',
+    category: 'PageSpeed',
+    type: 'Warning',
+    priority: 'High',
+    evaluate: (page) => {
+      const metrics = page.audit_data?.PageSpeed?.mobile?.metrics;
+      if (!metrics) return false;
+      const lcp = parseFloat(String(metrics.lcp || '0').replace('s', '').trim());
+      const cls = parseFloat(String(metrics.cls || '0').trim());
+      return lcp > 2.5 || cls > 0.1;
+    }
+  },
+  // --- GOOGLE ANALYTICS (GA4) RULES ---
+  {
+    name: 'Google Analytics: Critical Revenue Risk (Broken High-Traffic Page)',
+    ruleName: 'Critical Revenue Risk (Broken High-Traffic Page)',
+    category: 'Google_Analytics',
+    type: 'Issue',
+    priority: 'High',
+    evaluate: (page) => {
+      const ga = page.audit_data?.Google_Analytics;
+      const isErr = (page.status_code || 200) >= 400;
+      return isErr && Boolean(ga?.Revenue_At_Risk && (ga.Revenue_At_Risk.includes('Critical') || ga.Revenue_At_Risk.includes('P0')));
+    }
+  },
+  {
+    name: 'Google Analytics: Zombie Page Detected (0 Visits in 90 Days)',
+    ruleName: 'Zombie Page Detected (0 Visits in 90 Days)',
+    category: 'Google_Analytics',
+    type: 'Opportunity',
+    priority: 'Medium',
+    evaluate: (page) => {
+      const ga = page.audit_data?.Google_Analytics;
+      return ga?.Is_Zombie_Page === true;
+    }
   }
 ];
 

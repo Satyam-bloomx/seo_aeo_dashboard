@@ -126,6 +126,67 @@ const GUIDES = {
         desc: 'Copy your key, paste it below, and test connection.'
       }
     ]
+  },
+  search_console: {
+    docUrl: 'https://search.google.com/search-console',
+    title: 'Google Search Console API & Token Setup',
+    steps: [
+      {
+        step: 1,
+        title: 'Verify Domain in Google Search Console',
+        desc: 'Ensure your target domain (URL prefix or Domain property) is verified in Google Search Console.',
+        link: 'https://search.google.com/search-console',
+        linkLabel: 'Open Google Search Console'
+      },
+      {
+        step: 2,
+        title: 'Enable Google Search Console API in Google Cloud',
+        desc: 'In Google Cloud Console, enable "Google Search Console API" on your Google Cloud project.',
+        link: 'https://console.cloud.google.com/apis/library/searchconsole.googleapis.com',
+        linkLabel: 'Enable Search Console API'
+      },
+      {
+        step: 3,
+        title: 'Provide Access Token or API Key',
+        desc: 'Paste your OAuth2 Bearer Access Token or Google Cloud API Key below to activate live URL inspection and 30-day organic performance queries.'
+      }
+    ]
+  },
+  google_analytics: {
+    docUrl: 'https://analytics.google.com/',
+    title: 'Google Analytics 4 (GA4) API Setup',
+    steps: [
+      {
+        step: 1,
+        title: 'Enable Google Analytics Data API',
+        desc: 'In Google Cloud Console, enable the "Google Analytics Data API".',
+        link: 'https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com',
+        linkLabel: 'Enable GA4 Data API'
+      },
+      {
+        step: 2,
+        title: 'Provide GA4 Access Token',
+        desc: 'Paste your OAuth2 Bearer token below to import live sessions, bounce rates, and zombie page signals.'
+      }
+    ]
+  },
+  google_business: {
+    docUrl: 'https://developers.google.com/my-business',
+    title: 'Google Places / Business Profile Setup',
+    steps: [
+      {
+        step: 1,
+        title: 'Enable Places API in Google Cloud',
+        desc: 'Enable the "Places API" or "Geocoding API" on your Google Cloud Console project.',
+        link: 'https://console.cloud.google.com/apis/library/places-backend.googleapis.com',
+        linkLabel: 'Enable Places API'
+      },
+      {
+        step: 2,
+        title: 'Copy & Paste API Key',
+        desc: 'Create an API Key under Credentials and paste it below to verify NAP consistency and Google Maps pins.'
+      }
+    ]
   }
 };
 
