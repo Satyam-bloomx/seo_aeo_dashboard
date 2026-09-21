@@ -13,6 +13,7 @@ import ExecutiveReportModal from './ExecutiveReportModal';
 import ExportAuditModal from './ExportAuditModal';
 import SettingsModal from './SettingsModal/SettingsModal';
 import IntegrationsPanel from './IntegrationsPanel';
+import NarutoSamplePanel from './NarutoSample/NarutoSamplePanel';
 import SpiderLiveProgressScreen from './SpiderLiveProgressScreen';
 import Loading from '../../app/loading';
 import { API_BASE_URL } from '@/api/client';
@@ -46,6 +47,7 @@ import {
   Menu,
   CheckCircle2,
   RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 
 const fireCelebrationCannons = () => {
@@ -418,6 +420,12 @@ export default function AuditDashboard() {
       );
     }
 
+    if (activeTab === 'naruto') {
+      return (
+        <NarutoSamplePanel onExit={() => setActiveTab('overview')} />
+      );
+    }
+
     if (activeTab === 'overview') {
       if (isAuditing || status === 'running') {
         return (
@@ -675,6 +683,18 @@ export default function AuditDashboard() {
               >
                 <RefreshCw size={12} className="text-indigo-600" />
                 <span>Intro</span>
+              </motion.button>
+
+              <motion.button
+                onClick={() => setActiveTab('naruto')}
+                title="Switch to Naruto Theme Sample"
+                whileHover={{ y: -1 }}
+                whileTap={tapPress}
+                transition={spring.press}
+                className="hidden items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50/80 px-2.5 py-1.5 font-mono text-[11px] font-semibold text-amber-800 shadow-xs hover:border-amber-300 hover:bg-amber-100 sm:flex"
+              >
+                <Sparkles size={12} className="text-amber-600" />
+                <span>Naruto Theme</span>
               </motion.button>
 
               <motion.button

@@ -12,6 +12,7 @@ import {
   FileText,
   FileSpreadsheet,
   Layers,
+  Sparkles,
   X,
 } from 'lucide-react';
 import {
@@ -59,6 +60,13 @@ export default function Sidebar({
     },
     { id: 'performance', label: 'Speed & Vitals', icon: Zap, badge: 'Lighthouse' },
     { id: 'integrations', label: 'API Integrations', icon: Layers, badge: 'SEO/AEO' },
+    {
+      id: 'naruto',
+      label: 'Naruto Sample',
+      icon: Sparkles,
+      badge: 'Theme',
+      badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
+    },
   ];
 
   const indicatorTransition = reduced ? { duration: 0 } : spring.snap;
