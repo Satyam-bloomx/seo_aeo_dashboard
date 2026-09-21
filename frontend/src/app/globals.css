@@ -436,18 +436,61 @@ body {
 }
 
 /* ==========================================================================
-   Print
+   Print & A4 Pagination
    ========================================================================== */
 
+@page {
+  size: A4 portrait;
+  margin: 10mm 12mm;
+}
+
 @media print {
-  body {
+  html, body {
     background: #ffffff !important;
     color: #0f172a !important;
     overflow: visible !important;
+    height: auto !important;
+    min-height: 100% !important;
+    position: static !important;
   }
 
-  .ambient-bg, header, aside, nav, button, .no-print { display: none !important; }
-  .print-only { display: block !important; }
+  /* Unroll all fixed/dialog wrappers so print engine paginates properly */
+  .fixed, [role="dialog"], [role="dialog"] > div, [data-headlessui-state] {
+    position: static !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    inset: auto !important;
+  }
+
+  .ambient-bg, header, aside, nav, button, .no-print, [aria-hidden="true"] {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .page-break-before {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+
+  .page-break-after {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
 
   .glass-panel, .glass-card, .spotlight-card {
     background: #ffffff !important;
@@ -457,3 +500,4 @@ body {
     transform: none !important;
   }
 }
+

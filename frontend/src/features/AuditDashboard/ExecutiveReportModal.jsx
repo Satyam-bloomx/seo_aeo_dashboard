@@ -1,5 +1,5 @@
 'use client';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { DialogTitle } from '@headlessui/react';
 import { motion } from 'framer-motion';
 import AnimatedModal from '@/components/ui/AnimatedModal';
@@ -8,6 +8,8 @@ import {
   X,
   Printer,
   FileText,
+  FileSpreadsheet,
+  Download,
   CheckCircle2,
   ShieldCheck,
   Zap,
@@ -20,12 +22,23 @@ import {
   Activity,
   Layers,
   Info,
-  Wrench
+  Wrench,
+  Bot,
+  TrendingUp,
+  Loader2
 } from 'lucide-react';
 import { generateIssuesReport } from '@/utils/IssuesEngine';
+import { exportMasterAuditToExcel, exportMasterAuditToCSV } from '@/utils/exportUtils';
+import { exportExecutiveReportToPDF } from '@/utils/pdfExport';
+import { getAiExecutiveSummary } from '@/api/client';
+
 
 export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen = true }) {
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [aiSummary, setAiSummary] = useState(null);
+  const [loadingAiSummary, setLoadingAiSummary] = useState(false);
   const issuesReport = useMemo(() => generateIssuesReport(pages), [pages]);
+
 
   const criticalIssues = useMemo(() => {
     return issuesReport.filter(i => i.type === 'Issue' || i.priority === 'High');
@@ -129,8 +142,52 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
     Math.random().toString(36).substring(2, 9).toUpperCase()
   );
 
+  useEffect(() => {
+    if (!pages || pages.length === 0) return;
+    let isMounted = true;
+    setLoadingAiSummary(true);
+
+    const fetchSummary = async () => {
+      try {
+        const topIssueNames = criticalIssues.slice(0, 5).map(i => i.name);
+        const pplxStatus = pages[0]?.audit_data?.AEO_Audit?.Perplexity_Citation_Status;
+        const res = await getAiExecutiveSummary({
+          project_id: 1,
+          domain: targetUrl || 'Target Domain',
+          health_score: healthScore,
+          critical_count: criticalIssues.length,
+          warning_count: warningIssues.length,
+          opportunity_count: opportunityIssues.length,
+          top_issues: topIssueNames,
+          perplexity_citation_status: pplxStatus
+        });
+        if (isMounted && res?.data) {
+          setAiSummary(res.data);
+        }
+      } catch (e) {
+        console.error('Failed to load AI executive summary:', e);
+      } finally {
+        if (isMounted) setLoadingAiSummary(false);
+      }
+    };
+
+    fetchSummary();
+    return () => { isMounted = false; };
+  }, [pages, targetUrl, healthScore, criticalIssues.length, warningIssues.length, opportunityIssues.length]);
+
+
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDownloadPdf = async () => {
+    if (isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    try {
+      await exportExecutiveReportToPDF('printable-executive-report-canvas', targetUrl);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   if (!pages || pages.length === 0) {
@@ -180,22 +237,65 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
           </div>
         </div>
 
-        <div className="flex items-center gap-2 ml-auto sm:ml-0">
+        <div className="flex flex-wrap items-center gap-2 ml-auto sm:ml-0">
+          <motion.button
+            onClick={() => exportMasterAuditToExcel(pages, targetUrl, issuesReport)}
+            whileTap={tapPress}
+            transition={spring.press}
+            className="flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 shadow-xs hover:bg-emerald-100 shrink-0"
+          >
+            <FileSpreadsheet size={14} className="text-emerald-600" />
+            <span>Excel (.xlsx)</span>
+          </motion.button>
+
+          <motion.button
+            onClick={() => exportMasterAuditToCSV(pages, targetUrl)}
+            whileTap={tapPress}
+            transition={spring.press}
+            className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-xs hover:bg-indigo-100 shrink-0"
+          >
+            <Download size={14} className="text-indigo-600" />
+            <span>CSV</span>
+          </motion.button>
+
+          <motion.button
+            onClick={handleDownloadPdf}
+            disabled={isGeneratingPdf}
+            whileTap={tapPress}
+            transition={spring.press}
+            className="btn-primary h-8 px-3 text-xs font-bold gap-1.5 shadow-xs shrink-0 disabled:opacity-60"
+            title="Compile and download formatted multi-page A4 PDF directly in browser"
+          >
+            {isGeneratingPdf ? (
+              <>
+                <Loader2 size={14} className="animate-spin text-emerald-400" />
+                <span>Compiling A4 PDF...</span>
+              </>
+            ) : (
+              <>
+                <Download size={14} className="text-emerald-400" />
+                <span>Download A4 PDF</span>
+              </>
+            )}
+          </motion.button>
+
           <motion.button
             onClick={handlePrint}
             whileTap={tapPress}
             transition={spring.press}
-            className="btn-primary h-9 px-3 sm:px-4 text-xs font-bold gap-1.5 sm:gap-2 shadow-xs shrink-0"
+            className="btn-secondary h-8 px-3 text-xs font-bold gap-1.5 shadow-xs shrink-0"
+            title="Open browser print dialog for A4 portrait"
           >
-            <Printer size={15} /> <span className="hidden xs:inline">Print / Save as PDF</span><span className="xs:hidden">Print PDF</span>
+            <Printer size={14} className="text-slate-600" /> <span className="hidden xs:inline">Print View</span>
           </motion.button>
+
           <motion.button
             onClick={onClose}
             whileHover={{ rotate: 90, scale: 1.1 }}
             whileTap={tapPress}
             transition={spring.press}
             aria-label="Close report"
-            className="p-2 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 shrink-0"
+            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 shrink-0"
           >
             <X size={18} />
           </motion.button>
@@ -204,6 +304,7 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
 
       {/* Printable Report Canvas */}
       <motion.div
+        id="printable-executive-report-canvas"
         variants={staggerContainer(0.05, 0.1)}
         initial="initial"
         animate="animate"
@@ -255,6 +356,91 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
             <span className="text-[11px] sm:text-xs text-rose-700 font-bold">{warningIssues.length} Warnings | {opportunityIssues.length} Opps</span>
           </div>
 
+        </motion.div>
+
+        {/* AI Synthesized C-Level Executive Briefing */}
+        <motion.div variants={staggerItem} className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white shadow-lg border border-indigo-900/60 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-800/40 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-amber-400 shrink-0">
+                <Sparkles size={16} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                  <span>Executive Board Briefing</span>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-mono bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                    AI Synthesized Brief
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-300">Strategic impact on crawl budget, conversion pipeline, and AI answer discovery</p>
+              </div>
+            </div>
+            {loadingAiSummary && (
+              <span className="text-[11px] font-mono text-indigo-300 flex items-center gap-1.5">
+                <Loader2 size={12} className="animate-spin text-amber-400" /> Synthesizing brief...
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            {/* 1. Executive Takeaway */}
+            <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-amber-300 font-bold font-mono text-[11px] uppercase tracking-wider">
+                <ShieldCheck size={14} />
+                <span>Executive Verdict & Risk</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                {aiSummary?.executive_takeaway || (
+                  `${targetUrl || 'The domain'} achieved a composite Site Health Index of ${healthScore}/100. Automated inspection flagged ${criticalIssues.length} high-severity errors that should be remediated in the upcoming sprint to safeguard organic traffic and conversion channels.`
+                )}
+              </p>
+            </div>
+
+            {/* 2. Technical Debt */}
+            <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-rose-300 font-bold font-mono text-[11px] uppercase tracking-wider">
+                <AlertTriangle size={14} />
+                <span>Technical Debt & Engine Extraction</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                {aiSummary?.technical_debt_impact || (
+                  `Identified ${criticalIssues.length} critical errors and ${warningIssues.length} secondary warnings across meta structures and heading hierarchies. These create crawl budget dilution for search engine bots and diminish conversational extractability for Perplexity and Google SGE.`
+                )}
+              </p>
+            </div>
+
+            {/* 3. Revenue Upside */}
+            <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-emerald-300 font-bold font-mono text-[11px] uppercase tracking-wider">
+                <TrendingUp size={14} />
+                <span>Revenue Growth Opportunity</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                {aiSummary?.revenue_growth_opportunity || (
+                  "Resolving these technical bottlenecks is estimated to uplift organic impressions by 15–28% within 60 days of re-indexing. Tightening title tags and meta descriptions will directly improve SERP click-through rates on high-intent transactional queries."
+                )}
+              </p>
+            </div>
+          </div>
+
+          {/* Priority Action Plan */}
+          {aiSummary?.priority_actions && aiSummary.priority_actions.length > 0 && (
+            <div className="pt-2 border-t border-indigo-900/40">
+              <div className="text-[10px] font-mono text-indigo-300 font-bold uppercase tracking-wider mb-2">
+                Top 3 Recommended High-ROI Sprints:
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                {aiSummary.priority_actions.map((act, idx) => (
+                  <div key={idx} className="flex items-start gap-2 text-xs text-slate-200 bg-white/5 p-2 rounded-lg border border-white/5">
+                    <span className="w-4 h-4 rounded-full bg-indigo-500/40 text-amber-300 text-[10px] font-bold font-mono flex items-center justify-center shrink-0 mt-0.5">
+                      {idx + 1}
+                    </span>
+                    <span className="leading-snug text-[11px]">{act}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </motion.div>
 
         {/* 3. 4-Pillar Detailed Dimension Breakdown */}

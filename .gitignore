@@ -40,3 +40,10 @@ Thumbs.db
 # Temporary test logs
 *.log
 *.zip
+
+# Standalone / experiment directories
+new-frontend/
+
+# Cache files
+*.pagespeed_cache.json
+.pagespeed_cache.json

@@ -55,7 +55,7 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
     px_width = calculate_pixel_width(title_text)
     
     title_data = {
-        "Missing": len(titles) == 0,
+        "Missing": len(titles) == 0 or not bool(title_text),
         "Duplicate": False, 
         "Over 60 Characters": t_len > 60,
         "Below 30 Characters": t_len > 0 and t_len < 30,
@@ -66,15 +66,30 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
         "Outside <head>": any(t.find_parent("head") is None for t in titles)
     }
     metrics["title_1"] = title_text
+    metrics["title_1_length"] = t_len
+    metrics["title_1_pixel_width"] = px_width
 
-    # 7. Meta Description
+    # 7. Meta Description (supports name="description", property="description", and og:description fallback)
     meta_descs = soup.find_all("meta", attrs={"name": re.compile(r"^description$", re.I)})
-    desc_text = (meta_descs[0].get("content") or "").strip() if meta_descs else ""
+    if not meta_descs:
+        meta_descs = soup.find_all("meta", attrs={"property": re.compile(r"^description$", re.I)})
+    
+    desc_text = ""
+    for m in meta_descs:
+        c = (m.get("content") or "").strip()
+        if c:
+            desc_text = c
+            break
+
+    og_descs = soup.find_all("meta", attrs={"property": re.compile(r"^og:description$", re.I)})
+    if not desc_text and og_descs:
+        desc_text = (og_descs[0].get("content") or "").strip()
+
     d_len = len(desc_text)
     d_px_width = calculate_pixel_width(desc_text)
     
     desc_data = {
-        "Missing": len(meta_descs) == 0,
+        "Missing": not bool(desc_text),
         "Duplicate": False, 
         "Over 155 Characters": d_len > 155,
         "Below 70 Characters": d_len > 0 and d_len < 70,
@@ -83,21 +98,28 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
         "Multiple": len(meta_descs) > 1,
         "Outside <head>": any(m.find_parent("head") is None for m in meta_descs)
     }
+    metrics["meta_desc_1"] = desc_text
+    metrics["meta_desc_1_length"] = d_len
+    metrics["meta_desc_1_pixel_width"] = d_px_width
 
     # 8. Meta Keywords
     meta_kws = soup.find_all("meta", attrs={"name": re.compile(r"^keywords$", re.I)})
+    kw_text = (meta_kws[0].get("content") or "").strip() if meta_kws else ""
     kw_data = {
-        "Missing": len(meta_kws) == 0,
-        "Duplicate": False,
+        "Missing": len(meta_kws) == 0 or not bool(kw_text),
+        "Duplicate": False, 
         "Multiple": len(meta_kws) > 1
     }
+    metrics["meta_keyword_1"] = kw_text
+    metrics["meta_keyword_1_length"] = len(kw_text)
 
     # 9. H1
     h1s = soup.find_all("h1")
     h1_text = h1s[0].get_text(strip=True) if h1s else ""
+    h1_2_text = h1s[1].get_text(strip=True) if len(h1s) > 1 else ""
     
     h1_data = {
-        "Missing": len(h1s) == 0,
+        "Missing": len(h1s) == 0 or not bool(h1_text),
         "Duplicate": False, 
         "Over 70 Characters": len(h1_text) > 70,
         "Multiple": len(h1s) > 1,
@@ -105,19 +127,28 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
         "Non-Sequential": False
     }
     title_data["Same as H1"] = (title_text == h1_text and len(title_text) > 0)
+    metrics["h1_1"] = h1_text
+    metrics["h1_1_length"] = len(h1_text)
+    metrics["h1_2"] = h1_2_text
+    metrics["h1_2_length"] = len(h1_2_text)
     
     # 10. H2
     h2s = soup.find_all("h2")
     h2_text = h2s[0].get_text(strip=True) if h2s else ""
+    h2_2_text = h2s[1].get_text(strip=True) if len(h2s) > 1 else ""
     h2_data = {
-        "Missing": len(h2s) == 0,
-        "Duplicate": False,
+        "Missing": len(h2s) == 0 or not bool(h2_text),
+        "Duplicate": False, 
         "Over 70 Characters": len(h2_text) > 70,
         "Multiple": len(h2s) > 1,
         "Non-Sequential": False
     }
     if h2s and not h1s:
         h1_data["Non-Sequential"] = True
+    metrics["h2_1"] = h2_text
+    metrics["h2_1_length"] = len(h2_text)
+    metrics["h2_2"] = h2_2_text
+    metrics["h2_2_length"] = len(h2_2_text)
         
     # 11. Content
     for script in soup(["script", "style", "noscript", "svg"]):
@@ -164,6 +195,7 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
         "Contains Fragment URL": "#" in c_href,
         "Outside <head>": any(c.find_parent("head") is None for c in canonicals)
     }
+    metrics["canonical_link_element_1"] = c_href
 
     # 15. Directives
     robots_meta = soup.find_all("meta", attrs={"name": re.compile(r"^robots$", re.I)})
@@ -184,6 +216,14 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
         if "nosnippet" in content: directives_data["NoSnippet"] = True
         if "noimageindex" in content: directives_data["NoImageIndex"] = True
         if "notranslate" in content: directives_data["NoTranslate"] = True
+
+    metrics["meta_robots_1"] = ", ".join([r.get("content", "") for r in robots_meta if r.get("content")])
+    metrics["dir_index"] = directives_data["Index"]
+    metrics["dir_noindex"] = directives_data["NoIndex"]
+    metrics["dir_follow"] = directives_data["Follow"]
+    metrics["dir_nofollow"] = directives_data["Nofollow"]
+    metrics["dir_noarchive"] = directives_data["NoArchive"]
+    metrics["dir_nosnippet"] = directives_data["NoSnippet"]
 
     # 30. Validation
     validation_data = {
@@ -266,42 +306,57 @@ def extract_links_and_images(html_content: str, base_url: str) -> Tuple[List[Dic
     links = []
     images = []
     
-    base_domain = urlparse(base_url).netloc
+    base_domain = urlparse(base_url).netloc.lower()
     if base_domain.startswith("www."): base_domain = base_domain[4:]
     
+    ignored_schemes = ("javascript:", "mailto:", "tel:", "whatsapp:", "sms:", "callto:", "viber:", "data:", "skype:", "market:")
+    
     for a in soup.find_all("a", href=True):
-        href = a["href"].strip()
-        if href.startswith(("javascript:", "mailto:", "tel:")): continue
+        href = (a.get("href") or "").strip()
+        if not href or href == "#" or href.lower().startswith(ignored_schemes):
+            continue
             
-        full_url = urljoin(base_url, href)
-        full_url = full_url.split("#")[0]
-        
-        dest_domain = urlparse(full_url).netloc
-        if dest_domain.startswith("www."): dest_domain = dest_domain[4:]
-        is_internal = (dest_domain == base_domain)
-        is_nofollow = "nofollow" in a.get("rel", [])
-        
-        links.append({
-            "destination_url": full_url,
-            "anchor_text": a.get_text(strip=True)[:500],
-            "is_follow": not is_nofollow,
-            "link_type": "A",
-            "is_internal": is_internal
-        })
+        try:
+            full_url = urljoin(base_url, href)
+            full_url = full_url.split("#")[0].strip()
+            
+            parsed = urlparse(full_url)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                continue
+                
+            dest_domain = parsed.netloc.lower()
+            if dest_domain.startswith("www."): dest_domain = dest_domain[4:]
+            is_internal = (dest_domain == base_domain)
+            is_nofollow = "nofollow" in a.get("rel", [])
+            
+            links.append({
+                "destination_url": full_url,
+                "anchor_text": a.get_text(strip=True)[:500],
+                "is_follow": not is_nofollow,
+                "link_type": "A",
+                "is_internal": is_internal
+            })
+        except Exception:
+            continue
         
     for img in soup.find_all("img", src=True):
-        src = img["src"].strip()
-        full_url = urljoin(base_url, src)
-        alt_text = img.get("alt")
-        
-        images.append({
-            "url": full_url,
-            "alt_text": alt_text or "",
-            "Missing_Alt_Text": alt_text == "",
-            "Missing_Alt_Attribute": alt_text is None,
-            "Alt_Text_Over_100_Characters": len(alt_text) > 100 if alt_text else False,
-            "Missing_Size_Attributes": not img.get("width") or not img.get("height"),
-            "size_bytes": 0 
-        })
+        src = (img.get("src") or "").strip()
+        if not src or src.startswith("data:"):
+            continue
+        try:
+            full_url = urljoin(base_url, src)
+            alt_text = img.get("alt")
+            
+            images.append({
+                "url": full_url,
+                "alt_text": alt_text or "",
+                "Missing_Alt_Text": alt_text == "",
+                "Missing_Alt_Attribute": alt_text is None,
+                "Alt_Text_Over_100_Characters": len(alt_text) > 100 if alt_text else False,
+                "Missing_Size_Attributes": not img.get("width") or not img.get("height"),
+                "size_bytes": 0 
+            })
+        except Exception:
+            continue
         
     return links, images

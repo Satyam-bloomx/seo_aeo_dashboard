@@ -10,6 +10,7 @@ import {
   Settings,
   BookOpen,
   FileText,
+  FileSpreadsheet,
   Layers,
   X,
 } from 'lucide-react';
@@ -31,6 +32,7 @@ export default function Sidebar({
   activeTab,
   setActiveTab,
   onOpenExecutiveReport,
+  onOpenExport,
   onOpenSettings,
   pagesCount = 0,
   issuesCount = 0,
@@ -192,7 +194,7 @@ export default function Sidebar({
         className="mt-auto space-y-2 border-t border-slate-200 pt-4"
       >
         <motion.button
-          onClick={onOpenExecutiveReport}
+          onClick={onOpenExport || onOpenExecutiveReport}
           whileTap={tapPressSoft}
           initial="rest"
           whileHover="hover"
@@ -206,9 +208,9 @@ export default function Sidebar({
             className="pointer-events-none absolute inset-y-0 w-1/2 skew-x-[-20deg] bg-white/15"
           />
           <span className="relative flex text-emerald-400">
-            <FileText size={15} />
+            <FileSpreadsheet size={15} />
           </span>
-          <span className="relative">Executive PDF Report</span>
+          <span className="relative">Export (CSV / XLS)</span>
         </motion.button>
 
         <motion.button

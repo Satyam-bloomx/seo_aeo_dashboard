@@ -2,6 +2,11 @@
 // Evaluates pages and produces actionable issues with root causes, search impacts, and fixes.
 
 export const RULE_METADATA = {
+  'Response Codes: Redirection (3xx)': {
+    rootCause: 'The server returned an HTTP 3xx redirection response (e.g. 301 Moved Permanently or 302 Found). Internal links on the site are pointing to legacy or un-normalized URLs instead of direct final destinations.',
+    impact: 'Adds latency to page load speed, causes redirect chains, and consumes unnecessary crawl budget.',
+    fixGuide: 'Update internal links throughout the website and CMS templates to point directly to the final 200 destination URL instead of going through a redirect.'
+  },
   'Response Codes: Client Error (4xx)': {
     rootCause: 'The server returned a 4xx HTTP status (such as 404 Not Found or 403 Forbidden). This happens when internal links point to deleted, moved, or misspelled URLs without appropriate redirect headers.',
     impact: 'Wastes crawler budget, causes broken user navigation experiences, drops link equity (PageRank), and triggers soft penalties in search indexing.',
@@ -249,6 +254,14 @@ const CATEGORY_CONFIGS = {
 
 const RULES = [
   {
+    name: 'Response Codes: Redirection (3xx)',
+    ruleName: 'Redirection (3xx)',
+    category: 'Response_Codes',
+    type: 'Warning',
+    priority: 'Medium',
+    evaluate: (page) => (page.status_code >= 300 && page.status_code < 400) || page.audit_data?.Response_Codes?.['3xx'] === true
+  },
+  {
     name: 'Response Codes: Client Error (4xx)',
     ruleName: 'Client Error (4xx)',
     category: 'Response_Codes',
@@ -286,6 +299,8 @@ Object.entries(CATEGORY_CONFIGS).forEach(([category, rulesMap]) => {
          impact: meta.impact || `Affects technical health, crawlability, and indexing performance in search engines.`,
          fixGuide: meta.fixGuide || `Audit and update page templates to resolve ${ruleName} for affected URLs.`,
          evaluate: (page) => {
+             // Screaming Frog standard: On-page SEO rules only apply to 200 OK pages
+             if (page.status_code && page.status_code !== 200) return false;
              const val = page.audit_data?.[category]?.[ruleName];
              return val === true;
          }

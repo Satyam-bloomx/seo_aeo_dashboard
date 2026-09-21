@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+const rawApiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api').trim().replace(/^["']|["']$/g, '');
+export const API_BASE_URL = rawApiUrl.replace(/\/+$/, '');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -31,4 +32,20 @@ export const getOutlinks = async (pageId) => {
   return response.data;
 };
 
+export const getAiRemediation = async (params) => {
+  const response = await api.post('/audits/ai-remediate', params);
+  return response.data;
+};
+
+export const getAiExecutiveSummary = async (params) => {
+  const response = await api.post('/audits/ai-executive-summary', params);
+  return response.data;
+};
+
+export const analyzePerformance = async (url, projectId = 1) => {
+  const response = await api.post('/performance/analyze', { url, project_id: projectId });
+  return response.data;
+};
+
 export default api;
+

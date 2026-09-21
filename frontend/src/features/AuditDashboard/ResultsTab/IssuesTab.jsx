@@ -18,8 +18,10 @@ import {
   Info,
   Wrench,
   Flame,
-  ListTree
+  ListTree,
+  Sparkles
 } from 'lucide-react';
+import AiRemediationModal from '../AiRemediationModal';
 
 const SEVERITY_FILTERS = [
   { id: 'ALL', label: 'All', countKey: 'Total', active: 'bg-slate-900', idle: 'text-slate-600' },
@@ -33,8 +35,10 @@ export default function IssuesTab({ pages, onIssueClick }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedIssue, setExpandedIssue] = useState(null);
   const [copiedUrl, setCopiedUrl] = useState(null);
+  const [aiModalIssue, setAiModalIssue] = useState(null);
 
   const reduced = useReducedMotion();
+
 
   const issuesReport = useMemo(() => generateIssuesReport(pages), [pages]);
 
@@ -204,22 +208,38 @@ export default function IssuesTab({ pages, onIssueClick }) {
                           {issue.percentage}%
                         </td>
                         <td className="px-5 py-3.5 text-center">
-                          <motion.button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onIssueClick({
-                                category: issue.category,
-                                name: issue.ruleName || issue.name
-                              });
-                            }}
-                            whileHover={{ y: -1 }}
-                            whileTap={tapPress}
-                            transition={spring.press}
-                            className="btn-secondary px-3 py-1 text-[11px] font-bold flex items-center gap-1 mx-auto shadow-xs"
-                            title="Explore affected URLs in Grid"
-                          >
-                            Explore <ExternalLink size={12} />
-                          </motion.button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <motion.button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAiModalIssue(issue);
+                              }}
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={tapPress}
+                              transition={spring.press}
+                              className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white border border-indigo-200 transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
+                              title="Generate 1-Click AI Fix with GPT-4o"
+                            >
+                              <Sparkles size={11} className="text-amber-500" />
+                              <span>Fix with AI</span>
+                            </motion.button>
+                            <motion.button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onIssueClick({
+                                  category: issue.category,
+                                  name: issue.ruleName || issue.name
+                                });
+                              }}
+                              whileHover={{ y: -1 }}
+                              whileTap={tapPress}
+                              transition={spring.press}
+                              className="btn-secondary px-2.5 py-1 text-[11px] font-bold flex items-center gap-1 shadow-xs"
+                              title="Explore affected URLs in Grid"
+                            >
+                              Explore <ExternalLink size={11} />
+                            </motion.button>
+                          </div>
                         </td>
                       </motion.tr>
 
@@ -238,6 +258,32 @@ export default function IssuesTab({ pages, onIssueClick }) {
                               className="overflow-hidden"
                             >
                               <div className="px-6 py-5 space-y-4">
+
+                                {/* Top AI 1-Click Remediation Launch Banner */}
+                                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-3.5 rounded-2xl border border-indigo-800/40 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                  <div className="flex items-center gap-3 text-white">
+                                    <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-amber-400 shrink-0">
+                                      <Sparkles size={16} />
+                                    </div>
+                                    <div>
+                                      <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                                        <span>Automated AI Technical Remediation</span>
+                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-indigo-500/30 text-indigo-300 border border-indigo-400/30">
+                                          GPT-4o
+                                        </span>
+                                      </h5>
+                                      <p className="text-[11px] text-slate-300 mt-0.5">
+                                        Synthesize production-ready markup, meta tags, and H1 restructuring directly for this error.
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => setAiModalIssue(issue)}
+                                    className="px-3.5 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors shrink-0 cursor-pointer"
+                                  >
+                                    <Sparkles size={13} className="text-amber-300" /> Launch AI Fix Assistant
+                                  </button>
+                                </div>
 
                                 {/* 3-Pillar Diagnostic Analysis Bento */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
@@ -379,6 +425,14 @@ export default function IssuesTab({ pages, onIssueClick }) {
           </table>
         </div>
       </div>
+
+      {/* AI Remediation Slide-Over Modal */}
+      <AiRemediationModal
+        isOpen={Boolean(aiModalIssue)}
+        issue={aiModalIssue}
+        pages={pages}
+        onClose={() => setAiModalIssue(null)}
+      />
     </div>
   );
 }

@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import httpx
 import time
 import json
+from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.domain import Page, Link, Image, Crawl, IndexabilityStatus
@@ -38,8 +39,15 @@ except ImportError:
     HAS_CURL_CFFI = False
 
 
+NON_PAGE_EXTENSIONS = (
+    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp', '.tiff', '.avif',
+    '.pdf', '.zip', '.rar', '.tar', '.gz', '.7z', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    '.mp4', '.mp3', '.avi', '.mov', '.wmv', '.wav', '.ogg', '.webm',
+    '.css', '.js', '.woff', '.woff2', '.ttf', '.eot', '.map'
+)
+
 class CrawlerService:
-    def __init__(self, crawl_id: int, seed_url: str, db_session: AsyncSession, max_depth: int = 100, max_concurrent: int = 5, js_rendering: bool = False, max_pages: int = 500, stealth_delay: float = 0.0, ignore_url_params: bool = True, check_external_links: bool = False, exclude_paths: str = "", ignore_robots: bool = False, user_agent: str = "SEO-Spider-Bot"):
+    def __init__(self, crawl_id: int, seed_url: str, db_session: AsyncSession, max_depth: int = 100, max_concurrent: int = 5, js_rendering: bool = False, max_pages: int = 500, stealth_delay: float = 0.0, ignore_url_params: bool = False, check_external_links: bool = False, exclude_paths: str = "", ignore_robots: bool = False, user_agent: str = "SEO-Spider-Bot"):
         self.crawl_id = crawl_id
         self.seed_url = seed_url
         self.db = db_session
@@ -138,20 +146,31 @@ class CrawlerService:
                 for w in workers:
                     w.cancel()
             
-        from app.services.post_processor import PostProcessor
-        processor = PostProcessor(self.crawl_id, self.db)
-        await processor.run()
+        try:
+            from app.services.post_processor import PostProcessor
+            processor = PostProcessor(self.crawl_id, self.db)
+            await processor.run()
+        except Exception as e:
+            print(f"PostProcessor warning for crawl {self.crawl_id}: {e}")
         
-        from app.services.enrichment_service import EnrichmentService
-        enricher = EnrichmentService(self.crawl_id, self.db)
-        await enricher.run()
+        try:
+            from app.services.enrichment_service import EnrichmentService
+            enricher = EnrichmentService(self.crawl_id, self.db)
+            await enricher.run()
+        except Exception as e:
+            print(f"EnrichmentService warning for crawl {self.crawl_id}: {e}")
         
         # Update crawl status
         async with self.db_lock:
-            crawl = await self.db.get(Crawl, self.crawl_id)
-            if crawl:
-                crawl.status = "completed"
-                await self.db.commit()
+            try:
+                crawl = await self.db.get(Crawl, self.crawl_id)
+                if crawl:
+                    crawl.status = "completed"
+                    crawl.completed_at = datetime.utcnow()
+                    await self.db.commit()
+            except Exception as e:
+                await self.db.rollback()
+                print(f"Failed to update completed crawl status: {e}")
 
     async def _curl_worker(self, client, worker_id: int):
         while True:
@@ -203,7 +222,25 @@ class CrawlerService:
                 response_time_ms = int((time.time() - start_time) * 1000)
                 status_code = response.status_code
                 content_type = response.headers.get("content-type", "")
+                final_url = str(response.url)
                 
+                # Check for 3xx redirect
+                has_redirect = (final_url.rstrip('/') != url.rstrip('/'))
+                if has_redirect:
+                    await self._save_redirect_page(url, current_depth, 301, final_url)
+                    clean_final = self._clean_crawl_url(final_url)
+                    parsed_final = urlparse(clean_final)
+                    if parsed_final.netloc == self.allowed_domain:
+                        if clean_final not in self.visited_urls:
+                            if len(self.visited_urls) < self.max_pages:
+                                self.visited_urls.add(clean_final)
+                                if "text/html" in content_type.lower() and status_code < 400:
+                                    html_content = response.text
+                                    await self._process_page_data(clean_final, current_depth, html_content, status_code, content_type, response_time_ms)
+                                elif status_code >= 400:
+                                    await self._save_error_page(clean_final, current_depth, status_code=status_code, error_reason="Client/Server Error")
+                    continue
+
                 if status_code >= 400:
                     await self._save_error_page(url, current_depth, status_code=status_code, error_reason="Client/Server Error")
                     continue
@@ -268,15 +305,32 @@ class CrawlerService:
                     # Cloudflare / anti-bot bypass using Playwright
                     pw_data = await self._fetch_with_playwright_single(url)
                     if pw_data and pw_data.get("status_code", 0) < 400:
-                        await self._process_page_data(
-                            url, 
-                            current_depth, 
-                            pw_data["html_content"], 
-                            pw_data["status_code"], 
-                            pw_data["content_type"], 
-                            pw_data["response_time_ms"]
-                        )
-                        continue
+                        pw_final = pw_data.get("final_url", url)
+                        if pw_final.rstrip('/') != url.rstrip('/'):
+                            await self._save_redirect_page(url, current_depth, 301, pw_final)
+                            clean_pw_final = self._clean_crawl_url(pw_final)
+                            if urlparse(clean_pw_final).netloc == self.allowed_domain:
+                                if clean_pw_final not in self.visited_urls and len(self.visited_urls) < self.max_pages:
+                                    self.visited_urls.add(clean_pw_final)
+                                    await self._process_page_data(
+                                        clean_pw_final, 
+                                        current_depth, 
+                                        pw_data["html_content"], 
+                                        pw_data["status_code"], 
+                                        pw_data["content_type"], 
+                                        pw_data["response_time_ms"]
+                                    )
+                            continue
+                        else:
+                            await self._process_page_data(
+                                url, 
+                                current_depth, 
+                                pw_data["html_content"], 
+                                pw_data["status_code"], 
+                                pw_data["content_type"], 
+                                pw_data["response_time_ms"]
+                            )
+                            continue
                     else:
                         st = pw_data["status_code"] if pw_data else (response.status_code if response else 0)
                         await self._save_error_page(url, current_depth, status_code=st, error_reason="Blocked or Rate Limited")
@@ -285,6 +339,26 @@ class CrawlerService:
                 response_time_ms = int((time.time() - start_time) * 1000)
                 status_code = response.status_code
                 content_type = response.headers.get("content-type", "")
+                final_url = str(response.url)
+                
+                # Check for 3xx redirect hops in response history
+                has_redirect = len(response.history) > 0 or (final_url.rstrip('/') != url.rstrip('/'))
+                if has_redirect:
+                    first_hop_status = response.history[0].status_code if response.history else 301
+                    await self._save_redirect_page(url, current_depth, first_hop_status, final_url)
+                    
+                    clean_final = self._clean_crawl_url(final_url)
+                    parsed_final = urlparse(clean_final)
+                    if parsed_final.netloc == self.allowed_domain:
+                        if clean_final not in self.visited_urls:
+                            if len(self.visited_urls) < self.max_pages:
+                                self.visited_urls.add(clean_final)
+                                if "text/html" in content_type.lower() and status_code < 400:
+                                    html_content = response.text
+                                    await self._process_page_data(clean_final, current_depth, html_content, status_code, content_type, response_time_ms)
+                                elif status_code >= 400:
+                                    await self._save_error_page(clean_final, current_depth, status_code=status_code, error_reason="Client/Server Error")
+                    continue
                 
                 if status_code >= 400:
                     await self._save_error_page(url, current_depth, status_code=status_code, error_reason="Client/Server Error")
@@ -442,6 +516,21 @@ class CrawlerService:
                     if vid == "html-has-lang": accessibility["Lang Attribute Requires Valid Value"] = True
                     if "aria" in vid: accessibility["Required ARIA Attributes Must Be Provided"] = True
                 
+                # Check for 3xx redirect in Playwright
+                final_url = page.url
+                has_redirect = (final_url.rstrip('/') != url.rstrip('/'))
+                if has_redirect:
+                    await self._save_redirect_page(url, current_depth, 301, final_url)
+                    clean_final = self._clean_crawl_url(final_url)
+                    parsed_final = urlparse(clean_final)
+                    if parsed_final.netloc == self.allowed_domain:
+                        if clean_final not in self.visited_urls:
+                            if len(self.visited_urls) < self.max_pages:
+                                self.visited_urls.add(clean_final)
+                                await self._process_page_data(clean_final, current_depth, html_content, status_code, content_type, response_time_ms, metrics)
+                    await page.close()
+                    continue
+
                 await self._process_page_data(url, current_depth, html_content, status_code, content_type, response_time_ms, metrics)
 
             except asyncio.CancelledError:
@@ -451,6 +540,25 @@ class CrawlerService:
             finally:
                 if item_fetched:
                     self.queue.task_done()
+
+    def _clean_crawl_url(self, dest: str) -> str:
+        try:
+            parsed = urlparse(dest)
+            scheme = parsed.scheme.lower()
+            netloc = parsed.netloc.lower()
+            path = parsed.path or "/"
+            if getattr(self, 'ignore_url_params', False):
+                return f"{scheme}://{netloc}{path}"
+            if parsed.query:
+                from urllib.parse import parse_qsl, urlencode
+                tracking_prefixes = ('utm_', 'fbclid', 'gclid', 'msclkid', 'mc_cid', 'mc_eid', '_ga')
+                clean_queries = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+                                 if not any(k.lower().startswith(p) for p in tracking_prefixes)]
+                new_query = urlencode(clean_queries)
+                return f"{scheme}://{netloc}{path}" + (f"?{new_query}" if new_query else "")
+            return f"{scheme}://{netloc}{path}"
+        except Exception:
+            return dest
 
     async def _process_page_data(self, url, current_depth, html_content, status_code, content_type, response_time_ms, pre_metrics=None):
         if pre_metrics:
@@ -518,17 +626,14 @@ class CrawlerService:
                 page_kwargs[k] = v
                 
         db_page = Page(**page_kwargs)
-        async with self.db_lock:
-            self.db.add(db_page)
-            await self.db.commit()
-            await self.db.refresh(db_page)
         
         db_links = []
         for link in links:
+            dest_url = link["destination_url"]
             db_links.append(Link(
                 crawl_id=self.crawl_id,
-                source_page_id=db_page.id,
-                destination_url=link["destination_url"],
+                source_page_id=0, # will be populated below
+                destination_url=dest_url,
                 anchor_text=link["anchor_text"],
                 is_follow=link["is_follow"],
                 link_type=link["link_type"],
@@ -536,14 +641,14 @@ class CrawlerService:
             ))
             
             if link["is_internal"] and current_depth < self.max_depth:
-                dest = link["destination_url"]
+                dest = self._clean_crawl_url(dest_url)
+                path_lower = urlparse(dest).path.lower()
                 
-                # 1. Ignore URL Params
-                if getattr(self, 'ignore_url_params', True):
-                    parsed = urlparse(dest)
-                    dest = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                # Skip non-HTML binary asset files from being queued as crawlable pages
+                if path_lower.endswith(NON_PAGE_EXTENSIONS):
+                    continue
                     
-                # 2. Check Exclude Paths
+                # Check Exclude Paths
                 is_excluded = False
                 for exclude_path in getattr(self, 'exclude_paths_list', []):
                     if exclude_path in dest:
@@ -559,16 +664,61 @@ class CrawlerService:
         for img in images:
             db_images.append(Image(
                 crawl_id=self.crawl_id,
-                page_id=db_page.id,
+                page_id=0, # will be populated below
                 url=img["url"],
                 alt_text=img["alt_text"],
                 size_bytes=img["size_bytes"]
             ))
             
         async with self.db_lock:
-            self.db.add_all(db_links)
-            self.db.add_all(db_images)
-            await self.db.commit()
+            try:
+                self.db.add(db_page)
+                await self.db.flush()
+                for l in db_links:
+                    l.source_page_id = db_page.id
+                for i in db_images:
+                    i.page_id = db_page.id
+                if db_links:
+                    self.db.add_all(db_links)
+                if db_images:
+                    self.db.add_all(db_images)
+                await self.db.commit()
+            except Exception as e:
+                print(f"Error saving page {url} to DB: {e}")
+                await self.db.rollback()
+
+    async def _save_redirect_page(self, url: str, depth: int, status_code: int, redirect_url: str):
+        status_name = "Moved Permanently" if status_code == 301 else ("Found" if status_code == 302 else ("Temporary Redirect" if status_code == 307 else "Permanent Redirect"))
+        audit_data = {
+            "Response_Codes": {
+                "3xx": True,
+                "Status Code": status_code,
+                "Redirect URL": redirect_url
+            },
+            "Indexability": {
+                "Indexable": False,
+                "Non-Indexable Reason": f"Redirect ({status_code})"
+            }
+        }
+        page = Page(
+            crawl_id=self.crawl_id,
+            url=url,
+            status_code=status_code,
+            status_name=status_name,
+            indexability=IndexabilityStatus.NON_INDEXABLE,
+            indexability_status=f"Redirect ({status_code})",
+            canonical_link_element_1=redirect_url,
+            crawl_depth=depth,
+            folder_depth=urlparse(url).path.count("/"),
+            audit_data=audit_data
+        )
+        async with self.db_lock:
+            try:
+                self.db.add(page)
+                await self.db.commit()
+            except Exception as e:
+                print(f"Error saving redirect page {url} to DB: {e}")
+                await self.db.rollback()
 
     async def _save_error_page(self, url: str, depth: int, status_code: int, error_reason: str):
         page = Page(
@@ -581,5 +731,9 @@ class CrawlerService:
             folder_depth=urlparse(url).path.count("/")
         )
         async with self.db_lock:
-            self.db.add(page)
-            await self.db.commit()
+            try:
+                self.db.add(page)
+                await self.db.commit()
+            except Exception as e:
+                print(f"Error saving error page {url} to DB: {e}")
+                await self.db.rollback()

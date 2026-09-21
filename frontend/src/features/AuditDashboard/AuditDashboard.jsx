@@ -10,6 +10,7 @@ import IssuesTab from './ResultsTab/IssuesTab';
 import URLExplorerTab from './ResultsTab/URLExplorerTab';
 import PerformanceTab from './ResultsTab/PerformanceTab';
 import ExecutiveReportModal from './ExecutiveReportModal';
+import ExportAuditModal from './ExportAuditModal';
 import SettingsModal from './SettingsModal/SettingsModal';
 import IntegrationsPanel from './IntegrationsPanel';
 import SpiderLiveProgressScreen from './SpiderLiveProgressScreen';
@@ -37,6 +38,7 @@ import {
   X,
   ChevronRight,
   FileText,
+  FileSpreadsheet,
   Globe,
   Sliders,
   Copy,
@@ -81,6 +83,7 @@ export default function AuditDashboard() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('presets');
   const [isExecutiveReportOpen, setIsExecutiveReportOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [showCompletionBanner, setShowCompletionBanner] = useState(false);
@@ -157,14 +160,24 @@ export default function AuditDashboard() {
         }),
       });
 
+      if (!response.ok) {
+        let errMessage = `Server responded with status ${response.status}`;
+        try {
+          const errData = await response.json();
+          if (errData?.detail) errMessage = errData.detail;
+        } catch (_) {}
+        throw new Error(errMessage);
+      }
+
       const data = await response.json();
+      if (!data?.id) throw new Error('Server returned invalid crawl response.');
       setCrawlId(data.id);
     } catch (error) {
       console.error('Failed to start audit:', error);
       setStatus('failed');
       setIsAuditing(false);
       toast.error('Failed to start audit crawl', {
-        description: 'Please check backend server connection.',
+        description: error.message || 'Please check backend server connection.',
       });
     }
   };
@@ -178,7 +191,10 @@ export default function AuditDashboard() {
     if (!crawlId) return;
     try {
       const response = await fetch(`${API_BASE_URL}/crawls/${crawlId}/pages`);
-      setPages(await response.json());
+      if (response.ok) {
+        const pagesData = await response.json();
+        setPages(Array.isArray(pagesData) ? pagesData : []);
+      }
     } catch (error) {
       console.error('Failed to fetch pages:', error);
     }
@@ -192,7 +208,9 @@ export default function AuditDashboard() {
 
       try {
         const response = await fetch(`${API_BASE_URL}/crawls/${crawlId}/status`);
+        if (!response.ok) return;
         const data = await response.json();
+        if (!data || typeof data !== 'object') return;
 
         setStatus(data.status);
         setPagesCrawled(data.pages_crawled);
@@ -525,6 +543,7 @@ export default function AuditDashboard() {
           <Sidebar
             activeTab={activeTab}
             setActiveTab={setActiveTab}
+            onOpenExport={() => setIsExportModalOpen(true)}
             onOpenExecutiveReport={() => setIsExecutiveReportOpen(true)}
             onOpenSettings={handleOpenSettings}
             pagesCount={pages.length}
@@ -557,6 +576,10 @@ export default function AuditDashboard() {
                 activeTab={activeTab}
                 setActiveTab={(tab) => {
                   setActiveTab(tab);
+                  setIsMobileSidebarOpen(false);
+                }}
+                onOpenExport={() => {
+                  setIsExportModalOpen(true);
                   setIsMobileSidebarOpen(false);
                 }}
                 onOpenExecutiveReport={() => {
@@ -669,13 +692,13 @@ export default function AuditDashboard() {
               </motion.button>
 
               <motion.button
-                onClick={() => setIsExecutiveReportOpen(true)}
+                onClick={() => setIsExportModalOpen(true)}
                 whileTap={tapPress}
                 transition={spring.press}
                 className="btn-secondary gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs shrink-0"
               >
-                <FileText size={14} className="text-indigo-600 shrink-0" />
-                <span className="hidden sm:inline">PDF Report</span>
+                <FileSpreadsheet size={14} className="text-emerald-600 shrink-0" />
+                <span className="hidden sm:inline">Export (CSV / XLS)</span>
               </motion.button>
             </div>
           </motion.header>
@@ -755,12 +778,12 @@ export default function AuditDashboard() {
 
                 <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                   <motion.button
-                    onClick={() => setIsExecutiveReportOpen(true)}
+                    onClick={() => setIsExportModalOpen(true)}
                     whileTap={tapPress}
                     transition={spring.press}
-                    className="btn-primary gap-1 px-3 py-1.5 text-xs font-bold shadow-xs"
+                    className="btn-primary gap-1.5 px-3 py-1.5 text-xs font-bold shadow-xs"
                   >
-                    <FileText size={13} className="text-emerald-400" /> View PDF
+                    <FileSpreadsheet size={13} className="text-emerald-400" /> Export Data (CSV / XLS)
                   </motion.button>
                   <motion.button
                     onClick={() => setShowCompletionBanner(false)}
@@ -812,6 +835,17 @@ export default function AuditDashboard() {
           onClose={() => setIsExecutiveReportOpen(false)}
           pages={pages}
           targetUrl={url}
+        />
+
+        <ExportAuditModal
+          isOpen={isExportModalOpen}
+          onClose={() => setIsExportModalOpen(false)}
+          pages={pages}
+          targetUrl={url}
+          onOpenPdfReport={() => {
+            setIsExportModalOpen(false);
+            setIsExecutiveReportOpen(true);
+          }}
         />
       </div>
     </>

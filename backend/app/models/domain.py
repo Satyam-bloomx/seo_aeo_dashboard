@@ -1,5 +1,6 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, Text, Enum, JSON
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 import enum
 from app.core.database import Base
@@ -101,8 +102,8 @@ class Page(Base):
     dir_nootranstale = Column(Boolean, default=False)
     dir_noimageindex = Column(Boolean, default=False)
     
-    # 5. Advanced Audit Data (Store all 32 parameters as nested JSON)
-    audit_data = Column(JSON, nullable=True)
+    # 5. Advanced Audit Data (Store all 32 parameters as nested JSON / JSONB)
+    audit_data = Column(JSON().with_variant(JSONB, 'postgresql'), nullable=True)
 
     crawl = relationship("Crawl", back_populates="pages")
 
@@ -147,7 +148,7 @@ class Integration(Base):
     access_token = Column(Text, nullable=True)
     refresh_token = Column(Text, nullable=True)
     expires_at = Column(DateTime, nullable=True)
-    config_json = Column(JSON, nullable=True)
+    config_json = Column(JSON().with_variant(JSONB, 'postgresql'), nullable=True)
 
     project = relationship("Project", backref="integrations")
 
