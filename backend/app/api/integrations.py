@@ -429,18 +429,20 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
 
 @router.get("/google/auth")
 async def google_auth_redirect(request: Request, project_id: int, service: str, redirect_uri: Optional[str] = None):
-    # Dynamically determine the frontend host from request headers
+    # Dynamically determine the frontend host from request headers or redirect_uri
+    origin = request.headers.get("origin") or ""
     referer = request.headers.get("referer") or ""
-    if "localhost:3000" in referer or "127.0.0.1:3000" in referer:
-        base_host = "http://localhost:3000"
-    elif "localhost:3001" in referer or "127.0.0.1:3001" in referer:
-        base_host = "http://localhost:3001"
-    elif "localhost:3002" in referer or "127.0.0.1:3002" in referer:
-        base_host = "http://localhost:3002"
-    elif redirect_uri:
+    
+    if redirect_uri and redirect_uri.strip():
         base_host = redirect_uri.rstrip("/")
+    elif origin and origin.strip():
+        base_host = origin.rstrip("/")
+    elif referer and referer.strip():
+        from urllib.parse import urlparse
+        parsed = urlparse(referer)
+        base_host = f"{parsed.scheme}://{parsed.netloc}"
     else:
-        base_host = "http://localhost:3001"
+        base_host = "http://localhost:3000"
         
     callback_url = f"{base_host}/integrations/callback?project_id={project_id}&service={service}&code=mock_google_oauth_auth_code_789"
     accept = request.headers.get("accept", "")

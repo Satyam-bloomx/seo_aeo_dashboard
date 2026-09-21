@@ -216,7 +216,10 @@ export default function IntegrationsPanel({ projectId = 1 }) {
     const providerTitle = provider === 'search_console' ? 'Google Search Console' : 'Google Analytics 4';
     toast.loading(`Connecting to ${providerTitle}...`, { id: 'oauth-toast' });
     try {
-      const res = await axios.get(`${API_BASE_URL}/integrations/google/auth?project_id=${projectId}&service=${provider}`);
+      const redirectUri = window.location.origin;
+      const res = await axios.get(
+        `${API_BASE_URL}/integrations/google/auth?project_id=${projectId}&service=${provider}&redirect_uri=${encodeURIComponent(redirectUri)}`
+      );
       toast.dismiss('oauth-toast');
       if (res.data?.auth_url) {
         window.location.href = res.data.auth_url;
