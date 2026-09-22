@@ -335,10 +335,16 @@ def evaluate_audits(raw_data):
         return int((earned_weight / total_possible_weight) * 100)
 
     seo_score = calc_score("SEO")
-    aeo_score = calc_score("AEO")
-    geo_score = calc_score("GEO")
     
-    overall = int((seo_score + aeo_score + geo_score) / 3) if total_checks > 0 else 0
+    # Only calculate AEO/GEO if respective engines have active checks
+    has_aeo_checks = any(c.audit_type == "AEO" for c in checks)
+    aeo_score = calc_score("AEO") if has_aeo_checks else None
+    
+    has_geo_checks = any(c.audit_type == "GEO" for c in checks)
+    geo_score = calc_score("GEO") if has_geo_checks else None
+    
+    # Core overall score reflects authentic Technical SEO Health
+    overall = seo_score
 
     return {
         "summary": {

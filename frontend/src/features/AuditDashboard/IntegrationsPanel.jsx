@@ -25,6 +25,7 @@ import { spring, staggerContainer, staggerItem, tapPress } from '@/lib/motion';
 import axios from 'axios';
 import { toast } from 'sonner';
 import ApiKeyModal from './ApiKeyModal';
+import IntegrationsWorkspace from './IntegrationsWorkspace';
 import { API_BASE_URL } from '@/api/client';
 
 const API_INTEGRATIONS = [
@@ -109,7 +110,7 @@ const API_INTEGRATIONS = [
 
 const CATEGORIES = ['All', 'Speed & Vitals', 'AEO Voice & LLM', 'GEO Local Search', 'Analytics & Traffic'];
 
-export default function IntegrationsPanel({ projectId = 1 }) {
+export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedUrl = null }) {
   const [integrations, setIntegrations] = useState({});
   const [activeModal, setActiveModal] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
@@ -117,6 +118,8 @@ export default function IntegrationsPanel({ projectId = 1 }) {
   const [testResults, setTestResults] = useState({});
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [copiedKeyId, setCopiedKeyId] = useState(null);
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'workspace'
+  const [workspaceService, setWorkspaceService] = useState('search_console');
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -261,6 +264,18 @@ export default function IntegrationsPanel({ projectId = 1 }) {
     return API_INTEGRATIONS.filter(item => item.category === selectedCategory);
   }, [selectedCategory]);
 
+  if (viewMode === 'workspace') {
+    return (
+      <IntegrationsWorkspace
+        projectId={projectId}
+        crawlId={crawlId}
+        initialService={workspaceService}
+        onBackToGrid={() => setViewMode('grid')}
+        integrationsStatus={integrations}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-2 gap-5 pb-6">
 
@@ -276,28 +291,56 @@ export default function IntegrationsPanel({ projectId = 1 }) {
           </p>
         </div>
 
-        <motion.button
-          onClick={() => {
-            fetchStatus();
-            toast.info('Refreshed API statuses.');
-          }}
-          disabled={loadingStatus}
-          whileTap={tapPress}
-          initial="rest"
-          whileHover="hover"
-          animate="rest"
-          transition={spring.press}
-          className="btn-secondary px-3.5 py-2 text-xs font-bold gap-2 self-start sm:self-auto shadow-xs"
-        >
-          <motion.span
-            variants={{ rest: { rotate: 0 }, hover: { rotate: -90 } }}
+        <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-2xs">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'grid' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Layers size={13} />
+              Connections
+            </button>
+            <button
+              onClick={() => setViewMode('workspace')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'workspace' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <BarChart3 size={13} />
+              Live Workspace
+              {connectedCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-50 text-indigo-700 font-mono font-bold">
+                  {connectedCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          <motion.button
+            onClick={() => {
+              fetchStatus();
+              toast.info('Refreshed API statuses.');
+            }}
+            disabled={loadingStatus}
+            whileTap={tapPress}
+            initial="rest"
+            whileHover="hover"
+            animate="rest"
             transition={spring.press}
-            className="flex"
+            className="btn-secondary px-3.5 py-2 text-xs font-bold gap-2 shadow-xs"
           >
-            <RefreshCw size={14} className={loadingStatus ? 'animate-spin text-indigo-600' : 'text-slate-500'} />
-          </motion.span>
-          Refresh Status
-        </motion.button>
+            <motion.span
+              variants={{ rest: { rotate: 0 }, hover: { rotate: -90 } }}
+              transition={spring.press}
+              className="flex"
+            >
+              <RefreshCw size={14} className={loadingStatus ? 'animate-spin text-indigo-600' : 'text-slate-500'} />
+            </motion.span>
+            Refresh Status
+          </motion.button>
+        </div>
       </div>
 
       {/* Live Status Telemetry Banner */}
@@ -526,18 +569,31 @@ export default function IntegrationsPanel({ projectId = 1 }) {
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                 {isConnected ? (
                   <>
-                    <motion.button
-                      onClick={() => handleTestConnection(item.id)}
-                      disabled={isTesting}
-                      whileTap={tapPress}
-                      transition={spring.press}
-                      className="btn-secondary py-1.5 px-3 text-xs font-bold gap-1.5 text-slate-700 shadow-2xs"
-                    >
-                      <Play size={12} className={isTesting ? "animate-spin text-indigo-600" : "text-indigo-600"} />
-                      {isTesting ? "Testing..." : "Test Live"}
-                    </motion.button>
-
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      <motion.button
+                        onClick={() => {
+                          setWorkspaceService(item.id);
+                          setViewMode('workspace');
+                        }}
+                        whileTap={tapPress}
+                        transition={spring.press}
+                        className="btn-primary py-1.5 px-2.5 text-xs font-bold gap-1 shadow-xs cursor-pointer"
+                        title="Open live telemetry and database reports"
+                      >
+                        <BarChart3 size={12} />
+                        View Reports ↗
+                      </motion.button>
+
+                      <motion.button
+                        onClick={() => handleTestConnection(item.id)}
+                        disabled={isTesting}
+                        whileTap={tapPress}
+                        transition={spring.press}
+                        className="btn-secondary py-1.5 px-2.5 text-xs font-bold gap-1.5 text-slate-700 shadow-2xs"
+                      >
+                        <Play size={12} className={isTesting ? "animate-spin text-indigo-600" : "text-indigo-600"} />
+                        {isTesting ? "Testing..." : "Test"}
+                      </motion.button>
                       {item.authType === 'oauth' && (
                         <motion.button
                           onClick={() => handleOAuthConnect(item.id)}

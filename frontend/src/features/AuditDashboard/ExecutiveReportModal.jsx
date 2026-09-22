@@ -91,34 +91,56 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
       };
     }
 
+    const total = pages.length;
+
     // 1. Technical SEO
     const techIssues = issuesReport.filter(i => 
-      ['Response_Codes', 'Canonicals', 'Directives', 'Security', 'Structured_Data', 'Validation', 'Internal'].includes(i.category)
+      ['Response_Codes', 'Canonicals', 'Directives', 'Security', 'Structured_Data', 'Page_Titles', 'H1'].includes(i.category)
     );
-    const non200Ratio = pages.filter(p => (p.status_code || 200) >= 300).length / Math.max(1, pages.length);
-    const seoScore = Math.max(15, Math.min(100, Math.round(100 - (techIssues.length * 5) - (non200Ratio * 25))));
+    let techDeductions = 0;
+    techIssues.forEach(i => {
+      const affected = i.affected_pages?.length || i.count || 0;
+      const ratio = affected / total;
+      const weight = i.type === 'Issue' ? 18 : (i.type === 'Warning' ? 8 : 2);
+      techDeductions += Math.min(15, ratio * weight);
+    });
+    const non200Ratio = pages.filter(p => (p.status_code || 200) >= 300).length / total;
+    const seoScore = Math.max(15, Math.min(100, Math.round(100 - techDeductions - (non200Ratio * 20))));
 
     // 2. Content & Headings
     const contentIssues = issuesReport.filter(i => 
-      ['Page_Titles', 'Meta_Description', 'Meta_Keywords', 'H1', 'H2', 'Content', 'Images'].includes(i.category)
+      ['Meta_Description', 'Meta_Keywords', 'H2', 'Content', 'Images'].includes(i.category)
     );
-    const contentScore = Math.max(15, Math.min(100, Math.round(100 - (contentIssues.length * 5))));
+    let contentDeductions = 0;
+    contentIssues.forEach(i => {
+      const affected = i.affected_pages?.length || i.count || 0;
+      const ratio = affected / total;
+      contentDeductions += Math.min(12, ratio * 10);
+    });
+    const contentScore = Math.max(20, Math.min(100, Math.round(100 - contentDeductions)));
 
-    // 3. AEO Voice & LLM Readiness
-    const aeoScores = pages
-      .map(p => p.audit_data?.AEO_Audit?.AEO_Readability_Score || p.audit_data?.AEO_Audit?.aeo_score)
-      .filter(s => typeof s === 'number');
-    let aeoScore = aeoScores.length > 0 
-      ? Math.round(aeoScores.reduce((a, b) => a + b, 0) / aeoScores.length)
-      : Math.max(20, Math.min(98, healthScore - 2));
+    // 3. AEO Voice & LLM Readiness (requires live connected AI)
+    let aeoScore = null;
+    for (const p of pages) {
+      const aeo = p.audit_data?.AEO_Audit;
+      if (aeo?.is_ai_connected && typeof aeo.aeo_score === 'number') {
+        aeoScore = aeo.aeo_score;
+        break;
+      }
+    }
 
-    // 4. GEO Local & Core Web Vitals
-    const verifiedNapCount = pages.filter(p => p.audit_data?.GEO_Audit?.Local_NAP_Consistency?.includes('Verified')).length;
-    let geoScore = verifiedNapCount > 0
-      ? Math.min(99, 78 + (verifiedNapCount * 4))
-      : Math.max(20, Math.min(96, healthScore - 3));
+    // 4. GEO Local & Core Web Vitals (requires live GBP or SerpAPI)
+    let geoScore = null;
+    for (const p of pages) {
+      const geo = p.audit_data?.GEO_Audit;
+      if (geo?.is_geo_connected) {
+        geoScore = geo.Local_NAP_Consistency?.includes('100%') ? 95 : 82;
+        break;
+      }
+    }
 
     const getGradeLabel = (score) => {
+      if (score === null || score === undefined) return 'NOT CONNECTED';
       if (score >= 90) return 'EXCELLENT';
       if (score >= 80) return 'GOOD';
       if (score >= 70) return 'MODERATE';
@@ -136,7 +158,7 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
       aeoGrade: getGradeLabel(aeoScore),
       geoGrade: getGradeLabel(geoScore),
     };
-  }, [pages, issuesReport, healthScore]);
+  }, [pages, issuesReport]);
 
   const [verificationHash] = useState(() =>
     Math.random().toString(36).substring(2, 9).toUpperCase()
@@ -490,7 +512,9 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
                 <div className="flex items-center gap-2 text-purple-600 font-bold text-xs mb-1">
                   <Sparkles size={15} /> AEO & LLM Search
                 </div>
-                <div className="text-2xl font-black text-slate-900 font-mono mt-1">{pillarScores.aeo} / 100</div>
+                <div className="text-2xl font-black text-slate-900 font-mono mt-1">
+                  {pillarScores.aeo !== null ? `${pillarScores.aeo} / 100` : '-- / 100'}
+                </div>
                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                   Direct answer extractability, FAQ Schema, and citation readiness for Perplexity & GPT.
                 </p>
@@ -506,7 +530,9 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
                 <div className="flex items-center gap-2 text-amber-600 font-bold text-xs mb-1">
                   <Zap size={15} /> Speed & Local SERP
                 </div>
-                <div className="text-2xl font-black text-slate-900 font-mono mt-1">{pillarScores.geo} / 100</div>
+                <div className="text-2xl font-black text-slate-900 font-mono mt-1">
+                  {pillarScores.geo !== null ? `${pillarScores.geo} / 100` : '-- / 100'}
+                </div>
                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                   Core Web Vitals (LCP/CLS/INP), Google Maps Local Pack signals & NAP consistency.
                 </p>

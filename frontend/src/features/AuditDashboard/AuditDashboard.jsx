@@ -425,7 +425,7 @@ export default function AuditDashboard() {
     if (activeTab === 'integrations') {
       return (
         <div className="h-full w-full overflow-hidden">
-          <IntegrationsPanel />
+          <IntegrationsPanel projectId={1} crawlId={crawlId} seedUrl={url} />
         </div>
       );
     }
@@ -456,6 +456,7 @@ export default function AuditDashboard() {
             key={`overview-${crawlId || 'ready'}-${pages.length}`}
             pages={pages}
             onNavigateToExplorer={handleNavigateToExplorer}
+            onNavigateToTab={(tab) => setActiveTab(tab)}
           />
         );
       }

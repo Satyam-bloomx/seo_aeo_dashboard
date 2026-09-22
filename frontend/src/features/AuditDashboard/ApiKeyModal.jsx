@@ -521,11 +521,11 @@ export default function ApiKeyModal({
               Your key is encrypted per-project and used exclusively for live crawler enrichments.
             </p>
             {integration.authType === 'oauth' && apiKey.trim().startsWith('AIza') && (
-              <div className="mt-2.5 p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 text-xs font-medium flex items-start gap-2">
-                <AlertCircle size={15} className="text-rose-600 shrink-0 mt-0.5" />
+              <div className="mt-2.5 p-3 rounded-xl border border-indigo-200 bg-indigo-50/70 text-indigo-900 text-xs font-medium flex items-start gap-2">
+                <Globe size={15} className="text-indigo-600 shrink-0 mt-0.5" />
                 <div>
-                  <strong className="block font-bold">Google API Key Detected (starts with AIza)</strong>
-                  Google Search Console does not support API keys. Please click the <strong>1-Click Google OAuth Sign-In</strong> button above to connect your account directly, or paste a <code className="font-mono bg-white px-1 py-0.5 rounded border border-rose-200">ya29...</code> OAuth token.
+                  <strong className="block font-bold">Google Cloud API Key Detected</strong>
+                  Your API Key will be verified with Google Cloud for URL inspection. You can also use the <strong>1-Click Google OAuth Sign-In</strong> button above for verified domain analytics.
                 </div>
               </div>
             )}

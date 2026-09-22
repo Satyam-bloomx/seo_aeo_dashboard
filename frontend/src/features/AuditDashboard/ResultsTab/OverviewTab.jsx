@@ -35,7 +35,8 @@ import {
   TrendingUp,
   Gauge,
   HelpCircle,
-  Check
+  Check,
+  AlertCircle
 } from 'lucide-react';
 import { generateIssuesReport } from '@/utils/IssuesEngine';
 
@@ -64,7 +65,18 @@ const calcTilt = (x, y, rect) => [
 const transTilt = (x, y, s) =>
   `perspective(1000px) rotateX(${x}deg) rotateY(${y}deg) scale(${s})`;
 
-function SpringTiltBentoCard({ title, score, subtitle, statusText, icon: Icon, colorTheme, onMouseMoveCard }) {
+function SpringTiltBentoCard({
+  title,
+  score,
+  subtitle,
+  statusText,
+  icon: Icon,
+  colorTheme,
+  onMouseMoveCard,
+  isDisconnected = false,
+  actionText,
+  onAction
+}) {
   const cardRef = useRef(null);
   const [props, set] = useSpring(() => ({
     xys: [0, 0, 1],
@@ -117,28 +129,50 @@ function SpringTiltBentoCard({ title, score, subtitle, statusText, icon: Icon, c
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       style={{ transform: to(props.xys, transTilt) }}
-      className={`gsap-metric-card spotlight-card p-5 rounded-3xl bg-gradient-to-br ${t.bg} border ${t.border} shadow-sm hover:shadow-xl transition-shadow duration-300 relative overflow-hidden will-change-transform`}
+      className={`gsap-metric-card spotlight-card p-5 rounded-3xl bg-gradient-to-br ${t.bg} border ${t.border} shadow-sm hover:shadow-xl transition-shadow duration-300 relative overflow-hidden will-change-transform flex flex-col justify-between`}
     >
       <div className="flex justify-between items-start mb-3 relative z-10">
         <div>
           <p className={`text-[10px] font-mono font-bold ${t.text} uppercase tracking-widest`}>{subtitle}</p>
-          <h3 className="text-4xl font-extrabold text-slate-900 mt-1 tabular-nums">
-            <AnimatedNumber value={score} />
-            <span className="text-base text-slate-400 font-normal">/100</span>
-          </h3>
+          {score !== null && score !== undefined && !isDisconnected ? (
+            <h3 className="text-4xl font-extrabold text-slate-900 mt-1 tabular-nums">
+              <AnimatedNumber value={score} />
+              <span className="text-base text-slate-400 font-normal">/100</span>
+            </h3>
+          ) : (
+            <h3 className="text-4xl font-extrabold text-slate-400 mt-1 tabular-nums flex items-baseline gap-1">
+              <span>--</span>
+              <span className="text-base text-slate-400 font-normal">/100</span>
+            </h3>
+          )}
         </div>
         <div className={`w-10 h-10 rounded-2xl ${t.iconBg} border flex items-center justify-center shadow-xs`}>
           <Icon size={20} />
         </div>
       </div>
-      <div className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold pt-2 border-t border-slate-200/60 relative z-10">
-        <CheckCircle2 size={13} className={t.text} /> {statusText}
+      <div className="flex items-center justify-between gap-1 text-xs text-slate-700 font-semibold pt-2 border-t border-slate-200/60 relative z-10">
+        <span className="flex items-center gap-1.5 truncate">
+          {isDisconnected ? (
+            <AlertCircle size={13} className="text-amber-500 shrink-0" />
+          ) : (
+            <CheckCircle2 size={13} className={`${t.text} shrink-0`} />
+          )}
+          <span className="truncate">{statusText}</span>
+        </span>
+        {actionText && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onAction?.(); }}
+            className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2 shrink-0 cursor-pointer ml-1"
+          >
+            {actionText}
+          </button>
+        )}
       </div>
     </animated.div>
   );
 }
 
-export default function OverviewTab({ pages, onNavigateToExplorer }) {
+export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToTab }) {
   const containerRef = useRef(null);
   const reduced = useReducedMotion();
 
@@ -191,83 +225,178 @@ export default function OverviewTab({ pages, onNavigateToExplorer }) {
     };
   }, [pages]);
 
+  // 1. Industry-standard page-weighted Site Health Score (Screaming Frog / Ahrefs standard)
   const healthScore = useMemo(() => {
     if (!pages || pages.length === 0) return 0;
-    return Math.max(10, Math.min(100, Math.round(100 - (criticalIssues.length * 4) - (warningIssues.length * 1.5))));
+    const total = pages.length;
+    
+    // Penalties weighted by ratio of affected crawl pages
+    let criticalDeduction = 0;
+    criticalIssues.forEach(issue => {
+      const affected = issue.affected_pages?.length || issue.count || 0;
+      const ratio = affected / total;
+      criticalDeduction += Math.min(12, ratio * 20); // capped at 12 per issue type
+    });
+
+    let warningDeduction = 0;
+    warningIssues.forEach(issue => {
+      const affected = issue.affected_pages?.length || issue.count || 0;
+      const ratio = affected / total;
+      warningDeduction += Math.min(6, ratio * 8);
+    });
+
+    // 4xx / 5xx HTTP Error ratio impact
+    const errorPages = pages.filter(p => (p.status_code || 200) >= 400).length;
+    const errorPenalty = (errorPages / total) * 35;
+
+    const raw = 100 - criticalDeduction - warningDeduction - errorPenalty;
+    return Math.max(10, Math.min(100, Math.round(raw)));
   }, [criticalIssues, warningIssues, pages]);
 
+  // 2. Technical SEO Health Score (Response Codes, Indexability, Canonicals, Meta Tags, Headings)
   const seoScore = useMemo(() => {
     if (!pages || pages.length === 0) return 0;
+    const total = pages.length;
+
     const techIssues = issuesReport.filter(i => 
-      ['Response_Codes', 'Canonicals', 'Directives', 'Security', 'Structured_Data', 'Validation', 'Internal'].includes(i.category)
+      ['Response_Codes', 'Canonicals', 'Directives', 'Security', 'Structured_Data', 'Page_Titles', 'H1'].includes(i.category)
     );
-    const non200Ratio = pages.filter(p => (p.status_code || 200) >= 300).length / Math.max(1, pages.length);
-    return Math.max(15, Math.min(100, Math.round(100 - (techIssues.length * 5) - (non200Ratio * 25))));
+
+    let techDeductions = 0;
+    techIssues.forEach(i => {
+      const affected = i.affected_pages?.length || i.count || 0;
+      const ratio = affected / total;
+      const weight = i.type === 'Issue' ? 18 : (i.type === 'Warning' ? 8 : 2);
+      techDeductions += Math.min(15, ratio * weight);
+    });
+
+    const non200Ratio = pages.filter(p => (p.status_code || 200) >= 300).length / total;
+    const raw = 100 - techDeductions - (non200Ratio * 20);
+    return Math.max(15, Math.min(100, Math.round(raw)));
   }, [pages, issuesReport]);
 
-  const aeoScore = useMemo(() => {
-    if (!pages || pages.length === 0) return 0;
-    const scores = pages
-      .map(p => p.audit_data?.AEO_Audit?.AEO_Readability_Score || p.audit_data?.AEO_Audit?.aeo_score)
-      .filter(s => typeof s === 'number');
-    if (scores.length > 0) {
-      return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+  // 3. AEO (Answer Engine Optimization) - strictly requires connected AI (OpenAI / Perplexity)
+  const aeoData = useMemo(() => {
+    if (!pages || pages.length === 0) {
+      return { isConnected: false, score: null, status: 'AI Engine Not Connected' };
     }
-    return Math.max(20, Math.min(98, healthScore - 2));
-  }, [pages, healthScore]);
 
-  const geoScore = useMemo(() => {
-    if (!pages || pages.length === 0) return 0;
-    const count = pages.filter(p => p.audit_data?.GEO_Audit?.Local_NAP_Consistency?.includes('Verified')).length;
-    if (count > 0) return Math.min(99, 78 + (count * 4));
-    return Math.max(20, Math.min(96, healthScore - 3));
-  }, [pages, healthScore]);
+    for (const p of pages) {
+      const aeo = p.audit_data?.AEO_Audit;
+      if (aeo?.is_ai_connected && typeof aeo.aeo_score === 'number') {
+        return {
+          isConnected: true,
+          score: aeo.aeo_score,
+          status: aeo.Perplexity_Citation_Status || 'Live AI Citations Verified'
+        };
+      }
+      if (aeo?.OpenAI_Synthesis_Score && !aeo.OpenAI_Synthesis_Score.includes('test')) {
+        const parsed = parseInt(aeo.OpenAI_Synthesis_Score, 10);
+        if (!isNaN(parsed)) {
+          return {
+            isConnected: true,
+            score: parsed,
+            status: aeo.OpenAI_Live_Status || 'GPT-4o Synthesized'
+          };
+        }
+      }
+    }
+
+    return {
+      isConnected: false,
+      score: null,
+      status: 'AI Engine Not Connected'
+    };
+  }, [pages]);
+
+  // 4. GEO Local Search - requires GBP or SerpAPI integration
+  const geoData = useMemo(() => {
+    if (!pages || pages.length === 0) {
+      return { isConnected: false, score: null, status: 'Requires GBP / SerpAPI', hasLocalSchema: false };
+    }
+
+    for (const p of pages) {
+      const geo = p.audit_data?.GEO_Audit;
+      if (geo?.is_geo_connected) {
+        return {
+          isConnected: true,
+          score: geo.Local_NAP_Consistency?.includes('100%') ? 95 : 82,
+          status: geo.Geo_Targeted_Rank || 'Local 3-Pack Tracked',
+          hasLocalSchema: geo.has_local_schema || false
+        };
+      }
+    }
+
+    // Check if on-page local schema exists on crawled pages
+    const hasLocalSchema = pages.some(p => {
+      const sd = p.audit_data?.Structured_Data;
+      return sd && (sd['Local Business Schema'] || p.audit_data?.GEO_Audit?.has_local_schema);
+    });
+
+    if (hasLocalSchema) {
+      return {
+        isConnected: false,
+        score: 70,
+        status: 'On-Page Local Schema (Rank Disconnected)',
+        hasLocalSchema: true
+      };
+    }
+
+    return {
+      isConnected: false,
+      score: null,
+      status: 'Requires GBP / SerpAPI',
+      hasLocalSchema: false
+    };
+  }, [pages]);
 
   const perplexityData = useMemo(() => {
     if (!pages || pages.length === 0) return null;
     for (const p of pages) {
-      if (p.audit_data?.AEO_Audit?.Perplexity_Citation_Status) {
+      const aeo = p.audit_data?.AEO_Audit;
+      if (aeo?.is_ai_connected && aeo?.Perplexity_Citation_Status && !aeo.Perplexity_Citation_Status.includes('Not Connected')) {
         return {
-          status: p.audit_data.AEO_Audit.Perplexity_Citation_Status,
-          win: p.audit_data.AEO_Audit.Perplexity_Citation_Win,
-          count: p.audit_data.AEO_Audit.Perplexity_Citations_Count || 0,
-          citations: p.audit_data.AEO_Audit.Perplexity_Citations || [],
-          competitors: p.audit_data.AEO_Audit.Perplexity_Competitor_Sources || [],
-          summary: p.audit_data.AEO_Audit.Perplexity_AI_Summary || '',
-          liveStatus: p.audit_data.AEO_Audit.OpenAI_Live_Status,
-          score: p.audit_data.AEO_Audit.OpenAI_Synthesis_Score || '88/100'
+          isConnected: true,
+          status: aeo.Perplexity_Citation_Status,
+          win: aeo.Perplexity_Citation_Win || false,
+          count: aeo.Perplexity_Citations_Count || 0,
+          citations: aeo.Perplexity_Citations || [],
+          competitors: aeo.Perplexity_Competitor_Sources || [],
+          summary: aeo.Perplexity_AI_Summary || '',
+          liveStatus: aeo.OpenAI_Live_Status,
+          score: aeo.OpenAI_Synthesis_Score || null
         };
       }
     }
     return {
-      status: 'Standard Indexing (Citation Ready)',
+      isConnected: false,
+      status: 'Not Connected',
       win: false,
       count: 0,
       citations: [],
       competitors: [],
-      summary: 'Domain indexed for generative answer synthesis.',
+      summary: null,
       liveStatus: null,
-      score: '85/100'
+      score: null
     };
   }, [pages]);
 
   const serpData = useMemo(() => {
     if (!pages || pages.length === 0) return null;
     for (const p of pages) {
-      if (p.audit_data?.SERP_Data?.has_ai_overview !== undefined) {
-        return p.audit_data.SERP_Data;
+      const sd = p.audit_data?.SERP_Data;
+      if (sd && sd.is_live_verified) {
+        return sd;
       }
     }
     return {
-      has_ai_overview: true,
-      ai_overview_cited: true,
-      featured_snippet_present: true,
-      paa_questions: [
-        'What services are provided by this business?',
-        'How do user reviews compare to primary competitors?',
-        'What are the typical project turnaround timelines?'
-      ],
-      top_ranking_position: 1
+      is_live_verified: false,
+      has_ai_overview: false,
+      ai_overview_cited: false,
+      featured_snippet_present: false,
+      paa_questions: [],
+      top_ranking_position: null,
+      local_pack_present: false
     };
   }, [pages]);
 
@@ -391,8 +520,11 @@ export default function OverviewTab({ pages, onNavigateToExplorer }) {
         <SpringTiltBentoCard
           title="AEO Voice & LLM"
           subtitle="AEO Voice & LLM"
-          score={aeoScore}
-          statusText="Direct Answer AI Readiness"
+          score={aeoData.score}
+          isDisconnected={!aeoData.isConnected}
+          statusText={aeoData.status}
+          actionText={!aeoData.isConnected ? "Connect AI Engine →" : undefined}
+          onAction={() => onNavigateToTab?.('integrations')}
           icon={Sparkles}
           colorTheme="purple"
           onMouseMoveCard={handleMouseMoveSpotlight}
@@ -402,8 +534,11 @@ export default function OverviewTab({ pages, onNavigateToExplorer }) {
         <SpringTiltBentoCard
           title="GEO Local Search"
           subtitle="GEO Local Search"
-          score={geoScore}
-          statusText="Local 3-Pack & NAP Matrix"
+          score={geoData.score}
+          isDisconnected={!geoData.isConnected && !geoData.hasLocalSchema}
+          statusText={geoData.status}
+          actionText={!geoData.isConnected ? "Connect Local APIs →" : undefined}
+          onAction={() => onNavigateToTab?.('integrations')}
           icon={ShieldCheck}
           colorTheme="rose"
           onMouseMoveCard={handleMouseMoveSpotlight}
@@ -648,37 +783,57 @@ export default function OverviewTab({ pages, onNavigateToExplorer }) {
                 </div>
               </div>
               <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border ${
-                perplexityData?.win
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                perplexityData?.isConnected
+                  ? (perplexityData.win ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200')
+                  : 'bg-amber-50 text-amber-700 border-amber-200'
               }`}>
-                {perplexityData?.win ? 'Verified AI Citation Win' : 'Citation Ready'}
+                {perplexityData?.isConnected ? (perplexityData.win ? 'Verified AI Citation Win' : 'Citation Ready') : 'AI Engine Offline'}
               </span>
             </div>
 
-            {/* Perplexity AI Answer Summary */}
-            {perplexityData?.summary && (
-              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 mb-3 text-xs text-slate-700 leading-relaxed font-sans">
-                <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  <Bot size={12} className="text-purple-600" /> Perplexity AI Knowledge Graph Summary:
+            {perplexityData?.isConnected ? (
+              <>
+                {/* Perplexity AI Answer Summary */}
+                {perplexityData?.summary && (
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 mb-3 text-xs text-slate-700 leading-relaxed font-sans">
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      <Bot size={12} className="text-purple-600" /> Perplexity AI Knowledge Graph Summary:
+                    </div>
+                    "{perplexityData.summary}"
+                  </div>
+                )}
+
+                {/* Competitor / Citation Badges */}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div className="p-2.5 rounded-xl bg-purple-50/50 border border-purple-100">
+                    <span className="text-[10px] font-mono text-purple-700 font-bold uppercase block">AI Citations Count</span>
+                    <span className="text-lg font-extrabold text-slate-900">{perplexityData?.count || 0} Sources</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-indigo-50/50 border border-indigo-100">
+                    <span className="text-[10px] font-mono text-indigo-700 font-bold uppercase block">Google AI Overviews</span>
+                    <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 mt-1">
+                      <CheckCircle2 size={13} /> {serpData?.has_ai_overview ? 'Featured in AI Carousel' : 'Standard Organic'}
+                    </span>
+                  </div>
                 </div>
-                "{perplexityData.summary}"
+              </>
+            ) : (
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-50/40 to-indigo-50/30 border border-purple-100 text-center mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-white border border-purple-200 flex items-center justify-center text-purple-600 mx-auto mb-2 shadow-xs">
+                  <Bot size={20} />
+                </div>
+                <h5 className="text-xs font-bold text-slate-900 mb-1">AI Citations Engine Offline</h5>
+                <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
+                  Connect Perplexity Sonar API or OpenAI API in API Integrations to audit live LLM citations, generative answer share, and brand sentiment in AI Overviews.
+                </p>
+                <button
+                  onClick={() => onNavigateToTab?.('integrations')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-mono text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                >
+                  <Sparkles size={12} /> Configure AI Integrations →
+                </button>
               </div>
             )}
-
-            {/* Competitor / Citation Badges */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <div className="p-2.5 rounded-xl bg-purple-50/50 border border-purple-100">
-                <span className="text-[10px] font-mono text-purple-700 font-bold uppercase block">AI Citations Count</span>
-                <span className="text-lg font-extrabold text-slate-900">{perplexityData?.count || (perplexityData?.win ? 3 : 0)} Sources</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-indigo-50/50 border border-indigo-100">
-                <span className="text-[10px] font-mono text-indigo-700 font-bold uppercase block">Google AI Overviews</span>
-                <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 mt-1">
-                  <CheckCircle2 size={13} /> {serpData?.has_ai_overview ? 'Featured in AI Carousel' : 'Standard Organic'}
-                </span>
-              </div>
-            </div>
 
             {/* People Also Ask (PAA) Questions */}
             {serpData?.paa_questions && serpData.paa_questions.length > 0 && (
@@ -699,8 +854,10 @@ export default function OverviewTab({ pages, onNavigateToExplorer }) {
           </div>
 
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-500">
-            <span>Ground Truth: Google SERP & Perplexity Sonar</span>
-            <span className="text-indigo-600 font-bold">Top Rank: #{serpData?.top_ranking_position || 1}</span>
+            <span>Ground Truth: {perplexityData?.isConnected ? 'Perplexity Sonar Live' : 'API Engine Offline'}</span>
+            <span className={serpData?.top_ranking_position ? "text-indigo-600 font-bold" : "text-slate-400 font-normal"}>
+              {serpData?.top_ranking_position ? `Top Rank: #${serpData.top_ranking_position}` : 'SerpAPI Disconnected'}
+            </span>
           </div>
         </div>
 
