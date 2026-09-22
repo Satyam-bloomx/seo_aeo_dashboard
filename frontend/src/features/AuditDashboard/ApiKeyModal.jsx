@@ -20,7 +20,8 @@ import {
   ChevronUp,
   HelpCircle,
   Copy,
-  Maximize2
+  Maximize2,
+  Globe
 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -201,7 +202,8 @@ export default function ApiKeyModal({
   projectId = 1,
   onClose,
   onSuccess,
-  onSaved
+  onSaved,
+  onOAuthConnect
 }) {
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -326,6 +328,29 @@ export default function ApiKeyModal({
 
         {/* Modal Body with Step-by-Step Visual Guide */}
         <form onSubmit={handleSave} className="p-6 space-y-5 bg-white max-h-[82vh] overflow-y-auto custom-scrollbar">
+
+          {/* 1-Click Google Sign-In Banner for OAuth integrations */}
+          {integration.authType === 'oauth' && onOAuthConnect && (
+            <div className="p-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/80 via-white to-blue-50/60 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <Globe size={15} className="text-indigo-600" />
+                  Recommended: 1-Click Google OAuth Sign-In
+                </h4>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  Connect your Google account directly without copying manual tokens.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onOAuthConnect}
+                className="btn-primary py-2 px-4 text-xs font-bold gap-1.5 shrink-0 shadow-xs cursor-pointer"
+              >
+                <Globe size={13} />
+                Connect with Google
+              </button>
+            </div>
+          )}
 
           {/* Interactive Step-by-Step Guide Box with Cropped Screenshots */}
           {guide && (
@@ -495,6 +520,15 @@ export default function ApiKeyModal({
             <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
               Your key is encrypted per-project and used exclusively for live crawler enrichments.
             </p>
+            {integration.authType === 'oauth' && apiKey.trim().startsWith('AIza') && (
+              <div className="mt-2.5 p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 text-xs font-medium flex items-start gap-2">
+                <AlertCircle size={15} className="text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-bold">Google API Key Detected (starts with AIza)</strong>
+                  Google Search Console does not support API keys. Please click the <strong>1-Click Google OAuth Sign-In</strong> button above to connect your account directly, or paste a <code className="font-mono bg-white px-1 py-0.5 rounded border border-rose-200">ya29...</code> OAuth token.
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Modal Action Buttons */}

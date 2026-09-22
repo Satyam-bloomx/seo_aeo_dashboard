@@ -103,6 +103,11 @@ async def save_api_key(req: ApiKeyRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Service identifier is required")
     if not req.api_key or not req.api_key.strip():
         raise HTTPException(status_code=400, detail="API Key cannot be empty")
+    if service == "search_console" and req.api_key.strip().startswith("AIza"):
+        raise HTTPException(
+            status_code=400, 
+            detail="Google Search Console requires an OAuth Access Token (ya29...), not an API Key (AIza...). Please click 'Google OAuth' to connect with 1-click."
+        )
         
     try:
         from app.models.domain import Project
@@ -345,12 +350,15 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                 "detail": "Connected with a simulated OAuth session token. To query live Google Search Console, please provide GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET in backend/.env for real Google login, or click 'Token / Key' to paste an authentic Google Access Token (starts with ya29...)."
             }
             
-        headers = {}
+        if token.startswith("AIza"):
+            return {
+                "success": False,
+                "status": "error",
+                "detail": "Google Search Console requires an OAuth Access Token (ya29...), not an API Key (AIza...). Please click 'OAuth Sign-In' to connect in 1 click, or paste a ya29... token."
+            }
+            
+        headers = {"Authorization": f"Bearer {token}"}
         params = {}
-        if token.startswith("AIzaSy"):
-            params["key"] = token
-        else:
-            headers["Authorization"] = f"Bearer {token}"
             
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:

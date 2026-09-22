@@ -537,7 +537,19 @@ export default function IntegrationsPanel({ projectId = 1 }) {
                       {isTesting ? "Testing..." : "Test Live"}
                     </motion.button>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {item.authType === 'oauth' && (
+                        <motion.button
+                          onClick={() => handleOAuthConnect(item.id)}
+                          whileTap={tapPress}
+                          transition={spring.press}
+                          className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-semibold px-2.5 py-1 rounded-lg hover:bg-indigo-50 border border-indigo-200 transition-colors"
+                          title="Sign in with Google OAuth directly"
+                        >
+                          <Globe size={12} />
+                          OAuth
+                        </motion.button>
+                      )}
                       <motion.button
                         onClick={() => setActiveModal(item)}
                         whileTap={tapPress}
@@ -628,6 +640,11 @@ export default function IntegrationsPanel({ projectId = 1 }) {
               }
             }));
             fetchStatus();
+          }}
+          onOAuthConnect={() => {
+            const svc = activeModal?.id;
+            setActiveModal(null);
+            if (svc) handleOAuthConnect(svc);
           }}
         />
       )}
