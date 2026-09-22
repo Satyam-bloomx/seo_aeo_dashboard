@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import axios from 'axios';
 import { CheckCircle2, Loader2, XCircle, ShieldCheck } from 'lucide-react';
@@ -10,41 +10,84 @@ function CallbackContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   
-  const projectId = searchParams.get('project_id') || '1';
-  const service = searchParams.get('service');
-  const code = searchParams.get('code') || 'mock_code_123';
-  
+  // Extract state, service, project_id, code and error parameters
+  // Google OAuth passes state as "{project_id}:{service}" e.g. "1:search_console"
+  const stateParam = searchParams.get('state') || '';
+  let serviceParam = searchParams.get('service');
+  let projectIdParam = searchParams.get('project_id');
+  const codeParam = searchParams.get('code');
+  const errorParam = searchParams.get('error');
+  const errorDesc = searchParams.get('error_description');
+
+  if (stateParam) {
+    if (stateParam.includes(':')) {
+      const [stateProj, stateSvc] = stateParam.split(':');
+      if (!projectIdParam && stateProj) projectIdParam = stateProj;
+      if (!serviceParam && stateSvc) serviceParam = stateSvc;
+    } else if (!serviceParam) {
+      serviceParam = stateParam;
+    }
+  }
+
+  const projectId = projectIdParam || '1';
+  const service = serviceParam;
+  const code = codeParam;
+
   const [status, setStatus] = useState('loading');
-  const [message, setMessage] = useState('Connecting to ' + (service ? service.replace(/_/g, ' ').toUpperCase() : 'service') + '...');
+  const serviceDisplayName = service ? service.replace(/_/g, ' ').toUpperCase() : 'GOOGLE SERVICE';
+  const [message, setMessage] = useState(`Verifying OAuth credentials for ${serviceDisplayName}...`);
+  const exchangeAttemptedRef = useRef(false);
 
   useEffect(() => {
+    // 1. Google returned an error query (e.g. access_denied)
+    if (errorParam) {
+      setStatus('error');
+      setMessage(errorDesc || errorParam || 'Google authorization was cancelled or denied.');
+      return;
+    }
+
+    // 2. Validate service identifier
     if (!service) {
       setStatus('error');
       setMessage('Invalid callback parameters. Missing service identifier.');
       return;
     }
 
+    // 3. Validate auth code
+    if (!code) {
+      setStatus('error');
+      setMessage('No authorization code returned from Google OAuth.');
+      return;
+    }
+
+    // Guard against React Strict Mode double-invocation (single-use OAuth code)
+    if (exchangeAttemptedRef.current) return;
+    exchangeAttemptedRef.current = true;
+
     const completeAuth = async () => {
       try {
-        await axios.post(`${API_BASE_URL}/integrations/google/callback?project_id=${projectId}&service=${service}&code=${code}`);
+        setMessage(`Authenticating ${serviceDisplayName} with Google Cloud...`);
+        
+        const redirectUri = `${window.location.origin}/integrations/callback`;
+        const endpoint = `${API_BASE_URL}/integrations/google/callback?project_id=${encodeURIComponent(projectId)}&service=${encodeURIComponent(service)}&code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+
+        const res = await axios.post(endpoint);
         setStatus('success');
-        setMessage(`Successfully connected to ${service.replace(/_/g, ' ').toUpperCase()}!`);
+        setMessage(res.data?.message || `Successfully connected to ${serviceDisplayName}!`);
         
         setTimeout(() => {
-          router.push('/');
+          router.push('/?tab=integrations');
         }, 1800);
       } catch (err) {
-        console.error(err);
-        setStatus('success');
-        setMessage(`Successfully connected to ${service.replace(/_/g, ' ').toUpperCase()}! (Cached authorization)`);
-        setTimeout(() => {
-          router.push('/');
-        }, 1800);
+        console.error("OAuth token exchange error:", err);
+        const detail = err.response?.data?.detail || err.message || 'Token exchange failed.';
+        setStatus('error');
+        setMessage(`Authentication failed: ${detail}`);
       }
     };
 
     completeAuth();
-  }, [projectId, service, code, router]);
+  }, [projectId, service, code, errorParam, errorDesc, router, serviceDisplayName]);
 
   return (
     <div className="glass-card p-10 flex flex-col items-center max-w-md w-full text-center border border-slate-200 bg-white shadow-xl rounded-2xl text-slate-900">
@@ -72,7 +115,7 @@ function CallbackContent() {
       
       {status === 'error' && (
         <button 
-          onClick={() => router.push('/')}
+          onClick={() => router.push('/?tab=integrations')}
           className="mt-6 btn-primary py-2 px-5 text-xs font-bold shadow-xs"
         >
           Return to Dashboard

@@ -82,6 +82,16 @@ export default function AuditDashboard() {
   const [url, setUrl] = useState('');
   const [isAuditing, setIsAuditing] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab) {
+        setActiveTab(tab);
+      }
+    }
+  }, []);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('presets');
   const [isExecutiveReportOpen, setIsExecutiveReportOpen] = useState(false);
