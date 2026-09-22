@@ -1,6 +1,9 @@
 import sys
 import asyncio
 
+from dotenv import load_dotenv
+load_dotenv()
+
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
