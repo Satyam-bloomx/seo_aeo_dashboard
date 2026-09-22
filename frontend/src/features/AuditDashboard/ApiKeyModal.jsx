@@ -21,7 +21,8 @@ import {
   HelpCircle,
   Copy,
   Maximize2,
-  Globe
+  Globe,
+  ShieldCheck
 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -331,24 +332,73 @@ export default function ApiKeyModal({
 
           {/* 1-Click Google Sign-In Banner for OAuth integrations */}
           {integration.authType === 'oauth' && onOAuthConnect && (
-            <div className="p-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/80 via-white to-blue-50/60 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div>
-                <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                  <Globe size={15} className="text-indigo-600" />
-                  Recommended: 1-Click Google OAuth Sign-In
-                </h4>
-                <p className="text-[11px] text-slate-600 mt-0.5">
-                  Connect your Google account directly without copying manual tokens.
-                </p>
+            <div className="flex flex-col gap-3">
+              <div className="p-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/80 via-white to-blue-50/60 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <Globe size={15} className="text-indigo-600" />
+                    Recommended: 1-Click Google OAuth Sign-In
+                  </h4>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    Connect your Google account directly without copying manual tokens.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onOAuthConnect}
+                  className="btn-primary py-2 px-4 text-xs font-bold gap-1.5 shrink-0 shadow-xs cursor-pointer"
+                >
+                  <Globe size={13} />
+                  Connect with Google
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={onOAuthConnect}
-                className="btn-primary py-2 px-4 text-xs font-bold gap-1.5 shrink-0 shadow-xs cursor-pointer"
-              >
-                <Globe size={13} />
-                Connect with Google
-              </button>
+
+              {/* Google Cloud Console Setup Checklist & Redirect URI */}
+              <div className="p-3.5 rounded-xl border border-indigo-200/80 bg-indigo-50/50 text-xs">
+                <div className="font-bold text-indigo-950 flex items-center gap-1.5 mb-1.5">
+                  <ShieldCheck size={14} className="text-indigo-600" />
+                  Google Cloud Console Configuration Checklist
+                </div>
+                <div className="space-y-2 text-slate-600 mt-1">
+                  <div>
+                    <span className="font-semibold text-slate-800 block text-[11px]">
+                      1. Authorized Redirect URI (Prevents "Error 400: redirect_uri_mismatch"):
+                    </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <code className="bg-white px-2 py-1 rounded border border-indigo-200 text-[11px] font-mono text-indigo-900 select-all font-semibold">
+                        {typeof window !== 'undefined' ? `${window.location.origin}/integrations/callback` : 'http://localhost:3000/integrations/callback'}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const uri = typeof window !== 'undefined' ? `${window.location.origin}/integrations/callback` : 'http://localhost:3000/integrations/callback';
+                          navigator.clipboard.writeText(uri);
+                          toast.success('Redirect URI copied to clipboard!');
+                        }}
+                        className="px-2.5 py-1 text-[11px] font-mono font-bold rounded bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer transition-colors shadow-2xs"
+                      >
+                        Copy URI
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Add this exact URL in Google Cloud Console &gt; <strong>APIs & Services</strong> &gt; <strong>Credentials</strong> &gt; <strong>OAuth 2.0 Client IDs</strong> &gt; <strong>Authorized redirect URIs</strong>.
+                    </p>
+                  </div>
+
+                  <div className="pt-1 border-t border-indigo-100">
+                    <span className="font-semibold text-slate-800 block text-[11px]">
+                      2. Team Member Access (Why Google blocks other emails):
+                    </span>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                      While your app's publishing status is in <strong>"Testing"</strong> mode, Google blocks anyone not in your <strong>Test users</strong> list. To allow your team members to sign in:
+                      <br />
+                      • Go to <strong>OAuth consent screen</strong> &gt; scroll to <strong>Test users</strong> &gt; click <strong>+ ADD USERS</strong> and add their email (e.g. <code className="bg-white px-1 py-0.2 rounded border font-mono">mitalis@bloomxsolutions.com</code>).
+                      <br />
+                      • Or set User Type to <strong>Internal</strong> if you are using Google Workspace (@bloomxsolutions.com).
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

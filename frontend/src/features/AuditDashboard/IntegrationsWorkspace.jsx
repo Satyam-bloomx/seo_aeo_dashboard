@@ -512,6 +512,9 @@ export default function IntegrationsWorkspace({
           {/* ============================================================== */}
           {/* 2. GOOGLE ANALYTICS 4 WORKSPACE                                */}
           {/* ============================================================== */}
+          {/* ============================================================== */}
+          {/* 2. GOOGLE ANALYTICS 4 WORKSPACE                                */}
+          {/* ============================================================== */}
           {selectedService === 'google_analytics' && data && (
             <motion.div
               key="google_analytics"
@@ -520,111 +523,155 @@ export default function IntegrationsWorkspace({
               exit={{ opacity: 0, y: -6 }}
               className="flex flex-col gap-5"
             >
+              {/* Google Permission / Account Status Banner */}
+              {data.google_permission_error && (
+                <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-wider font-mono text-amber-800">
+                        Google Analytics 4 Status Notice
+                      </h4>
+                      <p className="text-xs mt-0.5 text-amber-900 leading-relaxed font-sans">
+                        {data.google_permission_error}
+                      </p>
+                      {data.auth_account && (
+                        <p className="text-[11px] font-mono text-amber-700 mt-1">
+                          Connected Account: <span className="font-bold underline">{data.auth_account}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Summary Metric Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
                 <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
                   <div className="flex items-center justify-between text-slate-500 mb-1">
-                    <span className="text-xs font-bold uppercase tracking-wider font-mono">30d Organic Sessions</span>
+                    <span className="text-xs font-bold uppercase tracking-wider font-mono">30d Total Sessions</span>
                     <TrendingUp size={16} className="text-emerald-600" />
                   </div>
                   <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-                    {data.summary?.organic_sessions_30d?.toLocaleString() || 0}
+                    {data.summary?.total_sessions?.toLocaleString() || 0}
                   </div>
                   <span className="text-[11px] text-emerald-700 font-semibold mt-1">
-                    Organic Google Traffic
+                    Organic Search: {data.summary?.organic_sessions_30d?.toLocaleString() || 0}
                   </span>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
                   <div className="flex items-center justify-between text-slate-500 mb-1">
-                    <span className="text-xs font-bold uppercase tracking-wider font-mono">90d Organic Sessions</span>
+                    <span className="text-xs font-bold uppercase tracking-wider font-mono">Engaged Sessions</span>
                     <BarChart3 size={16} className="text-blue-600" />
                   </div>
                   <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-                    {data.summary?.organic_sessions_90d?.toLocaleString() || 0}
+                    {data.summary?.engaged_sessions?.toLocaleString() || 0}
                   </div>
                   <span className="text-[11px] text-blue-700 font-semibold mt-1">
-                    Quarterly Organic Trend
+                    90d Total: {data.summary?.organic_sessions_90d?.toLocaleString() || 0}
                   </span>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
                   <div className="flex items-center justify-between text-slate-500 mb-1">
-                    <span className="text-xs font-bold uppercase tracking-wider font-mono">Avg Bounce Rate</span>
-                    <AlertTriangle size={16} className="text-amber-600" />
+                    <span className="text-xs font-bold uppercase tracking-wider font-mono">Engagement Rate</span>
+                    <CheckCircle2 size={16} className="text-emerald-600" />
                   </div>
                   <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-                    {data.summary?.average_bounce_rate || '0%'}
+                    {data.summary?.engagement_rate || '0.0%'}
                   </div>
-                  <span className="text-[11px] text-emerald-700 font-semibold mt-1">
-                    Healthy Retention Benchmark
+                  <span className="text-[11px] text-slate-500 font-semibold mt-1">
+                    Bounce Rate: {data.summary?.average_bounce_rate || '0.0%'}
                   </span>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
                   <div className="flex items-center justify-between text-slate-500 mb-1">
-                    <span className="text-xs font-bold uppercase tracking-wider font-mono">Engagement Time</span>
+                    <span className="text-xs font-bold uppercase tracking-wider font-mono">Avg Engagement Time</span>
                     <Clock size={16} className="text-indigo-600" />
                   </div>
                   <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-                    {data.summary?.average_engagement_time || '0m 00s'}
+                    {data.summary?.average_engagement_time || '0s'}
                   </div>
                   <span className="text-[11px] text-indigo-700 font-semibold mt-1">
-                    Active User Duration
+                    Per Session Duration
                   </span>
                 </div>
               </div>
 
-              {/* Traffic Channel Acquisition & Zombie Pages */}
+              {/* Traffic Channel Acquisition & Top Landing Pages */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* Traffic Channels */}
                 <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col gap-3">
-                  <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                    <Layers size={16} className="text-orange-600" />
-                    Traffic Channel Attribution
-                  </h3>
-                  <div className="space-y-3 font-mono text-xs mt-1">
-                    {data.channels?.map((c, idx) => (
-                      <div key={idx} className="space-y-1">
-                        <div className="flex justify-between text-slate-700">
-                          <span className="font-bold">{c.channel}</span>
-                          <span className="font-extrabold text-slate-900">{c.sessions?.toLocaleString()} ({c.percentage})</span>
-                        </div>
-                        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className={`h-2 rounded-full ${idx === 0 ? 'bg-emerald-500' : idx === 1 ? 'bg-blue-500' : 'bg-purple-500'}`}
-                            style={{ width: c.percentage }}
-                          />
-                        </div>
-                      </div>
-                    ))}
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                      <Layers size={16} className="text-orange-600" />
+                      Traffic Channel Attribution
+                    </h3>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                      Last 30 Days
+                    </span>
                   </div>
+                  {data.channels && data.channels.length > 0 ? (
+                    <div className="space-y-3 font-mono text-xs mt-1">
+                      {data.channels.map((c, idx) => (
+                        <div key={idx} className="space-y-1">
+                          <div className="flex justify-between text-slate-700">
+                            <span className="font-bold">{c.channel}</span>
+                            <span className="font-extrabold text-slate-900">
+                              {c.sessions?.toLocaleString()} ({c.percentage})
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className={`h-2 rounded-full ${
+                                idx === 0 ? 'bg-emerald-500' :
+                                idx === 1 ? 'bg-blue-500' :
+                                idx === 2 ? 'bg-purple-500' :
+                                idx === 3 ? 'bg-amber-500' : 'bg-slate-400'
+                              }`}
+                              style={{ width: c.percentage }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-xs text-slate-400 font-mono">
+                      No traffic channel data available for this GA4 property.
+                    </div>
+                  )}
                 </div>
 
-                {/* Zombie Pages Alert */}
+                {/* Top Landing Pages */}
                 <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                      <AlertTriangle size={16} className="text-rose-600" />
-                      Zombie Pages Alert (0 Visits in 90 Days)
+                      <FileText size={16} className="text-indigo-600" />
+                      Top Landing Pages
                     </h3>
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200">
-                      Crawl Waste
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200">
+                      Live Telemetry
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500">
-                    URLs generating zero traffic dilute domain authority. Recommended action: 301 redirect or prune.
-                  </p>
-                  <div className="space-y-2 mt-1">
-                    {data.zombie_pages_detected?.map((z, idx) => (
-                      <div key={idx} className="p-3 rounded-xl bg-rose-50/50 border border-rose-200/80 text-xs font-mono flex items-center justify-between gap-2">
-                        <span className="font-bold text-rose-900 truncate">{z.path}</span>
-                        <span className="text-[10px] font-bold text-rose-700 bg-white px-2 py-1 rounded-md border border-rose-200 shrink-0">
-                          {z.recommendation}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  {data.top_landing_pages && data.top_landing_pages.length > 0 ? (
+                    <div className="space-y-2 mt-1 max-h-[260px] overflow-y-auto custom-scrollbar pr-1">
+                      {data.top_landing_pages.slice(0, 8).map((lp, idx) => (
+                        <div key={idx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-mono flex items-center justify-between gap-2">
+                          <span className="font-bold text-slate-900 truncate">{lp.path}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[11px] font-extrabold text-indigo-700">{lp.sessions?.toLocaleString()} sess</span>
+                            <span className="text-[10px] text-slate-500">({lp.avg_time})</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-xs text-slate-400 font-mono">
+                      No landing page traffic recorded.
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.div>
