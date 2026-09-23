@@ -402,22 +402,60 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
 
   const pageSpeedData = useMemo(() => {
     if (!pages || pages.length === 0) return null;
-    const ps = pages[0]?.audit_data?.PageSpeed?.mobile || {};
-    const metrics = ps.metrics || {
-      lcp: '1.6 s',
-      cls: '0.010',
-      inp: '65 ms',
-      fcp: '1.0 s',
-      tbt: '85 ms'
-    };
-    const opportunities = ps.opportunities || [
-      { title: 'Serve images in next-gen formats (WebP/AVIF)', savings: '0.35 s' },
-      { title: 'Eliminate render-blocking resources', savings: '0.20 s' }
-    ];
+    const p0 = pages[0]?.audit_data || {};
+    
+    // Check real seo_audit.pagespeed first (desktop or mobile)
+    const seoPs = p0.seo_audit?.pagespeed;
+    const realDesktop = seoPs?.desktop?.status === 'success' ? seoPs.desktop : null;
+    const realMobile = seoPs?.mobile?.status === 'success' ? seoPs.mobile : null;
+    const activeReal = realDesktop || realMobile;
+    
+    const ps = p0.PageSpeed?.mobile || p0.PageSpeed?.desktop;
+    
+    if (activeReal && activeReal.performance_score !== undefined) {
+      const opps = (activeReal.opportunities || []).map(o => ({
+        title: o.title,
+        savings: o.savingsMs ? `${(o.savingsMs / 1000).toFixed(2)} s` : (o.savings || '0.10 s')
+      }));
+      return {
+        isConnected: true,
+        score: activeReal.performance_score,
+        strategy: realDesktop ? 'Desktop' : 'Mobile',
+        metrics: {
+          lcp: activeReal.metrics?.lcp || 'N/A',
+          cls: activeReal.metrics?.cls || 'N/A',
+          inp: activeReal.metrics?.inp || 'N/A',
+          fcp: activeReal.metrics?.fcp || 'N/A',
+          tbt: activeReal.metrics?.tbt || 'N/A',
+          ttfb: activeReal.metrics?.ttfb || 'N/A'
+        },
+        opportunities: opps
+      };
+    }
+
+    if (ps && ps.performance_score !== undefined) {
+      return {
+        isConnected: true,
+        score: ps.performance_score,
+        strategy: 'Mobile',
+        metrics: ps.metrics || {},
+        opportunities: ps.opportunities || []
+      };
+    }
+
     return {
-      score: ps.performance_score || 88,
-      metrics,
-      opportunities
+      isConnected: false,
+      score: null,
+      strategy: 'N/A',
+      metrics: {
+        lcp: 'N/A',
+        cls: 'N/A',
+        inp: 'N/A',
+        fcp: 'N/A',
+        tbt: 'N/A',
+        ttfb: 'N/A'
+      },
+      opportunities: []
     };
   }, [pages]);
 
@@ -693,9 +731,9 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
               <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border ${
                 gscSummary?.isLive
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  : 'bg-blue-50 text-blue-700 border-blue-200'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
               }`}>
-                {gscSummary?.isLive ? 'Live GSC API' : 'GSC Enriched'}
+                {gscSummary?.isLive ? 'Live GSC API' : 'Not Connected'}
               </span>
             </div>
 
@@ -704,21 +742,21 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
               <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-100 text-center">
                 <span className="text-[10px] font-mono text-blue-800 font-bold block uppercase">Clicks (30d)</span>
                 <span className="text-base font-extrabold text-slate-900 mt-0.5 block">
-                  {gscSummary ? gscSummary.totalClicks.toLocaleString() : '0'}
+                  {gscSummary?.isLive ? gscSummary.totalClicks.toLocaleString() : '0'}
                 </span>
-                <span className="text-[10px] text-slate-500 font-semibold">Organic</span>
+                <span className="text-[10px] text-slate-500 font-semibold">{gscSummary?.isLive ? 'Organic' : 'Disconnected'}</span>
               </div>
               <div className="p-2.5 rounded-xl bg-indigo-50/60 border border-indigo-100 text-center">
                 <span className="text-[10px] font-mono text-indigo-800 font-bold block uppercase">Impressions</span>
                 <span className="text-base font-extrabold text-slate-900 mt-0.5 block">
-                  {gscSummary ? gscSummary.totalImpressions.toLocaleString() : '0'}
+                  {gscSummary?.isLive ? gscSummary.totalImpressions.toLocaleString() : '0'}
                 </span>
-                <span className="text-[10px] text-slate-500 font-semibold">SERP Views</span>
+                <span className="text-[10px] text-slate-500 font-semibold">{gscSummary?.isLive ? 'SERP Views' : 'Disconnected'}</span>
               </div>
               <div className="p-2.5 rounded-xl bg-purple-50/60 border border-purple-100 text-center">
                 <span className="text-[10px] font-mono text-purple-800 font-bold block uppercase">Avg CTR</span>
                 <span className="text-base font-extrabold text-slate-900 mt-0.5 block">
-                  {gscSummary?.avgCtr || '0.0'}%
+                  {gscSummary?.isLive ? `${gscSummary?.avgCtr || '0.0'}%` : '0.0%'}
                 </span>
                 <span className="text-[10px] text-slate-500 font-semibold">Click Rate</span>
               </div>
@@ -728,11 +766,13 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
             <div className="space-y-2 mb-3">
               <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
                 <span className="text-slate-600 font-medium">Google Index State:</span>
-                <span className="font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[11px]">
-                  {gscSummary?.indexedCount || 0} Indexed / {gscSummary?.excludedCount || 0} Excluded
+                <span className={`font-mono font-bold px-2 py-0.5 rounded text-[11px] border ${
+                  gscSummary?.isLive ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-slate-500 bg-slate-100 border-slate-200'
+                }`}>
+                  {gscSummary?.isLive ? `${gscSummary.indexedCount} Indexed / ${gscSummary.excludedCount} Excluded` : 'Not Connected'}
                 </span>
               </div>
-              {gscSummary?.canonicalMismatches > 0 ? (
+              {gscSummary?.isLive && gscSummary?.canonicalMismatches > 0 ? (
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
                   <span className="font-medium flex items-center gap-1.5">
                     <AlertTriangle size={13} className="text-amber-600" /> Canonical Mismatches:
@@ -742,30 +782,41 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
                   </span>
                 </div>
               ) : (
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50/50 border border-emerald-100 text-xs text-emerald-800">
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50/80 border border-slate-200 text-xs text-slate-700">
                   <span className="font-medium flex items-center gap-1.5">
-                    <CheckCircle2 size={13} className="text-emerald-600" /> Canonical Alignment:
+                    <CheckCircle2 size={13} className={gscSummary?.isLive ? "text-emerald-600" : "text-slate-400"} /> Canonical Alignment:
                   </span>
-                  <span className="font-mono font-bold text-[11px]">100% Synchronized</span>
+                  <span className="font-mono font-bold text-[11px]">{gscSummary?.isLive ? '100% Synchronized' : 'Requires GSC Link'}</span>
                 </div>
               )}
             </div>
 
-            <motion.button
-              onClick={() => onNavigateToExplorer('Search_Console')}
-              whileHover={{ y: -1 }}
-              whileTap={tapPress}
-              transition={spring.press}
-              className="w-full btn-secondary py-1.5 text-xs font-bold gap-1.5 text-blue-700 hover:text-blue-800 shadow-2xs"
-            >
-              Explore GSC Queries & Index Status
-              <ArrowUpRight size={13} />
-            </motion.button>
+            {gscSummary?.isLive ? (
+              <motion.button
+                onClick={() => onNavigateToExplorer('Search_Console')}
+                whileHover={{ y: -1 }}
+                whileTap={tapPress}
+                transition={spring.press}
+                className="w-full btn-secondary py-1.5 text-xs font-bold gap-1.5 text-blue-700 hover:text-blue-800 shadow-2xs"
+              >
+                Explore GSC Queries & Index Status
+                <ArrowUpRight size={13} />
+              </motion.button>
+            ) : (
+              <button
+                onClick={() => onNavigateToTab?.('integrations')}
+                className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-mono text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                <Globe size={12} /> Configure Search Console →
+              </button>
+            )}
           </div>
 
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-500">
-            <span className="truncate max-w-[200px]">{gscSummary?.source || 'Search Console Ready'}</span>
-            <span className="text-emerald-600 font-bold">{gscSummary?.isLive ? 'API Verified' : 'Live Sync'}</span>
+            <span className="truncate max-w-[200px]">{gscSummary?.isLive ? gscSummary.source : 'Search Console Not Connected'}</span>
+            <span className={gscSummary?.isLive ? "text-emerald-600 font-bold" : "text-slate-400 font-medium"}>
+              {gscSummary?.isLive ? 'API Verified' : 'Offline'}
+            </span>
           </div>
         </div>
         
@@ -861,7 +912,7 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
           </div>
         </div>
 
-        {/* Card 2: Google PageSpeed & Core Web Vitals Pass/Fail */}
+        {/* Card 3: Google PageSpeed & Core Web Vitals Pass/Fail */}
         <div className="gsap-section glass-card p-5 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -874,61 +925,93 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
                   <p className="text-[11px] text-slate-500">Real-user 75th percentile loading & responsiveness</p>
                 </div>
               </div>
-              <div className="text-right">
-                <span className="text-xl font-extrabold text-slate-900">{pageSpeedData?.score || 88}</span>
-                <span className="text-xs text-slate-400 font-normal">/100</span>
-              </div>
+              {pageSpeedData?.isConnected ? (
+                <div className="text-right">
+                  <span className={`text-xl font-extrabold ${pageSpeedData.score >= 90 ? 'text-emerald-700' : pageSpeedData.score >= 50 ? 'text-amber-600' : 'text-rose-600'}`}>
+                    {pageSpeedData.score}
+                  </span>
+                  <span className="text-xs text-slate-400 font-normal">/100</span>
+                </div>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                  Not Connected
+                </span>
+              )}
             </div>
 
-            {/* 3 Key Metric Gauges */}
-            <div className="grid grid-cols-3 gap-2.5 mb-4">
-              <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center">
-                <span className="text-[10px] font-mono text-emerald-800 font-bold block uppercase">LCP (Speed)</span>
-                <span className="text-base font-extrabold text-emerald-700 mt-0.5 block">{pageSpeedData?.metrics?.lcp || '1.6 s'}</span>
-                <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-center gap-0.5 mt-0.5">
-                  <Check size={11} /> Pass (&lt;2.5s)
-                </span>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center">
-                <span className="text-[10px] font-mono text-emerald-800 font-bold block uppercase">INP (Response)</span>
-                <span className="text-base font-extrabold text-emerald-700 mt-0.5 block">{pageSpeedData?.metrics?.inp || '65 ms'}</span>
-                <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-center gap-0.5 mt-0.5">
-                  <Check size={11} /> Pass (&lt;200ms)
-                </span>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center">
-                <span className="text-[10px] font-mono text-emerald-800 font-bold block uppercase">CLS (Stability)</span>
-                <span className="text-base font-extrabold text-emerald-700 mt-0.5 block">{pageSpeedData?.metrics?.cls || '0.010'}</span>
-                <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-center gap-0.5 mt-0.5">
-                  <Check size={11} /> Pass (&lt;0.1)
-                </span>
-              </div>
-            </div>
-
-            {/* Savings Opportunities */}
-            <div className="border-t border-slate-100 pt-3">
-              <div className="text-[11px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center justify-between">
-                <span>Top Performance Optimization Opportunities</span>
-                <span className="text-amber-600">Savings</span>
-              </div>
-              <div className="space-y-2">
-                {pageSpeedData?.opportunities?.map((opp, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-50 border border-slate-100">
-                    <span className="text-slate-700 font-medium truncate max-w-[240px]">{opp.title}</span>
-                    <span className="font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[11px] shrink-0">
-                      -{opp.savings}
+            {pageSpeedData?.isConnected ? (
+              <>
+                {/* 3 Key Metric Gauges */}
+                <div className="grid grid-cols-3 gap-2.5 mb-4">
+                  <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center">
+                    <span className="text-[10px] font-mono text-emerald-800 font-bold block uppercase">LCP (Speed)</span>
+                    <span className="text-base font-extrabold text-emerald-700 mt-0.5 block">{pageSpeedData?.metrics?.lcp || 'N/A'}</span>
+                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-center gap-0.5 mt-0.5">
+                      {parseFloat(pageSpeedData?.metrics?.lcp) < 2.5 ? <><Check size={11} /> Pass (&lt;2.5s)</> : <span className="text-amber-700 font-medium">Needs Review</span>}
                     </span>
                   </div>
-                ))}
+
+                  <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center">
+                    <span className="text-[10px] font-mono text-emerald-800 font-bold block uppercase">INP (Response)</span>
+                    <span className="text-base font-extrabold text-emerald-700 mt-0.5 block">{pageSpeedData?.metrics?.inp || 'N/A'}</span>
+                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-center gap-0.5 mt-0.5">
+                      {parseFloat(pageSpeedData?.metrics?.inp) < 200 ? <><Check size={11} /> Pass (&lt;200ms)</> : <span className="text-amber-700 font-medium">Needs Review</span>}
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center">
+                    <span className="text-[10px] font-mono text-emerald-800 font-bold block uppercase">CLS (Stability)</span>
+                    <span className="text-base font-extrabold text-emerald-700 mt-0.5 block">{pageSpeedData?.metrics?.cls || 'N/A'}</span>
+                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-center gap-0.5 mt-0.5">
+                      {parseFloat(pageSpeedData?.metrics?.cls) < 0.1 ? <><Check size={11} /> Pass (&lt;0.1)</> : <span className="text-amber-700 font-medium">Needs Review</span>}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Savings Opportunities */}
+                {pageSpeedData?.opportunities && pageSpeedData.opportunities.length > 0 && (
+                  <div className="border-t border-slate-100 pt-3">
+                    <div className="text-[11px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center justify-between">
+                      <span>Top Performance Optimization Opportunities</span>
+                      <span className="text-amber-600">Savings</span>
+                    </div>
+                    <div className="space-y-2">
+                      {pageSpeedData.opportunities.slice(0, 3).map((opp, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-50 border border-slate-100">
+                          <span className="text-slate-700 font-medium truncate max-w-[240px]">{opp.title}</span>
+                          <span className="font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[11px] shrink-0">
+                            -{opp.savings}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/40 to-slate-50 border border-amber-100 text-center mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-white border border-amber-200 flex items-center justify-center text-amber-600 mx-auto mb-2 shadow-xs">
+                  <Zap size={20} />
+                </div>
+                <h5 className="text-xs font-bold text-slate-900 mb-1">PageSpeed API Offline</h5>
+                <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
+                  Configure Google PageSpeed API Key in API Integrations to audit live Core Web Vitals (LCP, INP, CLS, TTFB) and Lighthouse performance diagnostics.
+                </p>
+                <button
+                  onClick={() => onNavigateToTab?.('integrations')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-mono text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                >
+                  <Zap size={12} /> Configure PageSpeed Key →
+                </button>
               </div>
-            </div>
+            )}
           </div>
 
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-500">
-            <span>Cached with 24h persistent TTL</span>
-            <span className="text-slate-700 font-semibold">TTFB: {pageSpeedData?.metrics?.ttfb || '210 ms'}</span>
+            <span>{pageSpeedData?.isConnected ? `Strategy: ${pageSpeedData.strategy}` : 'Performance Engine Offline'}</span>
+            <span className={pageSpeedData?.isConnected ? "text-slate-700 font-semibold" : "text-slate-400 font-normal"}>
+              {pageSpeedData?.isConnected ? `TTFB: ${pageSpeedData?.metrics?.ttfb || 'N/A'}` : 'Unassessed'}
+            </span>
           </div>
         </div>
 

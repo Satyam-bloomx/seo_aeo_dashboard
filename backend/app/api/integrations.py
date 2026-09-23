@@ -399,10 +399,10 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                 elif data.get("status") == "REQUEST_DENIED":
                     err_msg = data.get("error_message", "Google Places API request denied")
                     return {"success": False, "status": "error", "detail": f"Google Places API error: {err_msg}"}
-        except Exception:
-            pass
-        latency = round((time.time() - start_time) * 1000, 1)
-        return {"success": True, "status": "ok", "message": f"Google Business NAP & Maps geocoding verified! ({latency}ms)", "latency_ms": latency}
+                else:
+                    return {"success": False, "status": "error", "detail": f"Google Places API returned status {data.get('status')}"}
+        except Exception as e:
+            return {"success": False, "status": "error", "detail": f"Failed to connect to Google Places API: {str(e)}"}
 
     # 6. Google Search Console test (CRITICAL)
     elif service == "search_console":
@@ -441,14 +441,12 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                 "detail": "Google API Keys ('AIza...') cannot access private Google Search Console telemetry. Google requires OAuth 2.0 User authorization or a Service Account. Please add your email to Test Users in Google Cloud Console or upload a Service Account JSON."
             }
 
-        # 2. Simulated or developer tokens
+        # 2. Reject simulated or mock tokens
         if token.startswith("oauth_token_") or token.startswith("mock_"):
-            latency = round((time.time() - start_time) * 1000, 1)
             return {
-                "success": True,
-                "status": "ok",
-                "message": f"Google Search Console session credentials active for URL inspection ({latency}ms).",
-                "latency_ms": latency
+                "success": False,
+                "status": "error",
+                "detail": "Mock or development tokens are disabled. Please connect your Google account using a genuine OAuth Client ID & Secret."
             }
             
         # 3. OAuth Bearer Access Token (ya29... or bearer)
@@ -483,20 +481,11 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                     }
                 else:
                     return {
-                        "success": True, 
-                        "status": "ok", 
-                        "message": f"Search Console API connection received status {res.status_code}. Ready for URL inspection & query telemetry.",
-                        "latency_ms": latency
+                        "success": False, 
+                        "status": "error", 
+                        "detail": f"Search Console API connection received unexpected status {res.status_code}."
                     }
         except Exception as e:
-            latency = round((time.time() - start_time) * 1000, 1)
-            if len(token) > 20:
-                return {
-                    "success": True, 
-                    "status": "ok", 
-                    "message": f"Google Search Console credentials active and registered for live URL inspection ({latency}ms).", 
-                    "latency_ms": latency
-                }
             return {
                 "success": False,
                 "status": "error",
@@ -511,61 +500,54 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
         if token.lower().startswith("bearer "):
             token = token[7:].strip()
         
-        if token.startswith("AIza"):
-            try:
-                async with httpx.AsyncClient(timeout=8.0) as client:
-                    res = await client.get(
-                        "https://www.googleapis.com/discovery/v1/apis",
-                        params={"name": "analyticsdata", "key": token}
-                    )
-                    latency = round((time.time() - start_time) * 1000, 1)
-                    if res.status_code == 200:
-                        return {
-                            "success": True,
-                            "status": "ok",
-                            "message": f"Google Analytics API Key authenticated with Google Cloud! ({latency}ms)",
-                            "latency_ms": latency
-                        }
-                    elif res.status_code in [400, 403]:
-                        err_msg = res.json().get("error", {}).get("message", "API Key rejected by Google")
-                        return {"success": False, "status": "error", "detail": f"Google API Key verification failed: {err_msg}"}
-            except Exception:
-                pass
-            latency = round((time.time() - start_time) * 1000, 1)
+        # Reject simulated or mock tokens
+        if token.startswith("oauth_token_") or token.startswith("mock_"):
             return {
-                "success": True,
-                "status": "ok",
-                "message": f"Google Analytics API Key registered & saved ({latency}ms).",
-                "latency_ms": latency
+                "success": False,
+                "status": "error",
+                "detail": "Mock or development tokens are disabled. Please connect your Google account using a genuine OAuth Client ID & Secret."
+            }
+        
+        if token.startswith("AIza"):
+            return {
+                "success": False,
+                "status": "error",
+                "detail": "Google API Keys ('AIza...') cannot access Google Analytics 4 telemetry. GA4 requires OAuth 2.0 User authorization."
             }
             
         headers = {"Authorization": f"Bearer {token}"}
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                res = await client.get("https://analyticsdata.googleapis.com/v1beta/properties", headers=headers)
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.get("https://analyticsadmin.googleapis.com/v1beta/accountSummaries", headers=headers)
                 latency = round((time.time() - start_time) * 1000, 1)
                 if res.status_code == 200:
+                    summaries = res.json().get("accountSummaries", [])
+                    prop_count = sum(len(a.get("propertySummaries", [])) for a in summaries)
                     return {
                         "success": True, 
                         "status": "ok", 
-                        "message": f"Google Analytics 4 API authenticated! Live organic sessions and engagement active ({latency}ms).", 
+                        "message": f"Google Analytics 4 API authenticated! {prop_count} GA4 properties accessible ({latency}ms).", 
                         "latency_ms": latency
                     }
                 elif res.status_code in [401, 403]:
+                    err_msg = res.json().get("error", {}).get("message", "Invalid or expired OAuth token.")
                     return {
                         "success": False, 
                         "status": "error", 
-                        "detail": f"GA4 authentication failed ({res.status_code}): Invalid or expired OAuth token."
+                        "detail": f"GA4 authentication failed ({res.status_code}): {err_msg}"
                     }
-        except Exception:
-            pass
-        latency = round((time.time() - start_time) * 1000, 1)
-        return {
-            "success": True, 
-            "status": "ok", 
-            "message": f"Google Analytics 4 live stream registered for session & zombie page telemetry ({latency}ms).", 
-            "latency_ms": latency
-        }
+                else:
+                    return {
+                        "success": False,
+                        "status": "error",
+                        "detail": f"GA4 API request returned HTTP status {res.status_code}"
+                    }
+        except Exception as e:
+            return {
+                "success": False,
+                "status": "error",
+                "detail": f"Failed to connect to Google Analytics 4 API: {str(e)}"
+            }
 
     return {"success": True, "status": "ok", "message": f"{service} integration verified."}
 
@@ -693,17 +675,12 @@ async def google_auth_redirect(
         auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
         return {"configured": True, "auth_url": auth_url, "status": "ok"}
     else:
-        callback_url = f"{frontend_callback}?project_id={project_id}&service={service}&code=mock_google_oauth_auth_code_789"
-        accept = request.headers.get("accept", "")
-        if "application/json" in accept and "text/html" not in accept:
-            return {
-                "configured": False, 
-                "auth_url": callback_url, 
-                "status": "missing_credentials",
-                "message": "Google Cloud OAuth credentials not configured. Please enter your Google Client ID & Secret in the modal, or add GOOGLE_CLIENT_ID to backend/.env."
-            }
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url=callback_url)
+        return {
+            "configured": False, 
+            "auth_url": None, 
+            "status": "missing_credentials",
+            "message": "Google Cloud OAuth credentials not configured. Please enter your Google Client ID & Secret in the modal."
+        }
 
 @router.post("/google/callback")
 async def google_auth_callback(
@@ -744,39 +721,44 @@ async def google_auth_callback(
         google_client_id = (custom_client_id or os.environ.get("GOOGLE_CLIENT_ID", "")).strip()
         google_client_secret = (custom_client_secret or os.environ.get("GOOGLE_CLIENT_SECRET", "")).strip()
         
+        if not google_client_id or not google_client_secret:
+            raise HTTPException(
+                status_code=400,
+                detail="Google OAuth Client ID & Secret not configured. Please enter them in the setup modal."
+            )
+        if code.startswith("mock_"):
+            raise HTTPException(
+                status_code=400,
+                detail="Mock OAuth authorization codes are disabled. Please authenticate using genuine Google OAuth credentials."
+            )
+        
         access_token = None
         refresh_token = None
         expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=30)
         
-        # Real Google OAuth token exchange:
-        if google_client_id and google_client_secret and not code.startswith("mock_"):
-            token_endpoint = "https://oauth2.googleapis.com/token"
-            data = {
-                "client_id": google_client_id,
-                "client_secret": google_client_secret,
-                "code": code,
-                "grant_type": "authorization_code",
-                "redirect_uri": redirect_uri or "http://localhost:3000/integrations/callback",
-            }
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.post(token_endpoint, data=data)
-                if res.status_code == 200:
-                    payload = res.json()
-                    access_token = payload.get("access_token")
-                    refresh_token = payload.get("refresh_token")
-                    expires_in = payload.get("expires_in", 3600)
-                    expires_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=expires_in)
-                else:
-                    err_text = res.text
-                    try:
-                        err_text = res.json().get("error_description", err_text)
-                    except Exception:
-                        pass
-                    raise HTTPException(status_code=400, detail=f"Google OAuth token exchange failed: {err_text}")
-        else:
-            # Development / simulated token
-            access_token = f"oauth_token_{service}_{datetime.datetime.utcnow().strftime('%Y%m%d%H%M')}"
-            refresh_token = f"refresh_token_{service}_secure"
+        token_endpoint = "https://oauth2.googleapis.com/token"
+        data = {
+            "client_id": google_client_id,
+            "client_secret": google_client_secret,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": redirect_uri or "http://localhost:3000/integrations/callback",
+        }
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            res = await client.post(token_endpoint, data=data)
+            if res.status_code == 200:
+                payload = res.json()
+                access_token = payload.get("access_token")
+                refresh_token = payload.get("refresh_token")
+                expires_in = payload.get("expires_in", 3600)
+                expires_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=expires_in)
+            else:
+                err_text = res.text
+                try:
+                    err_text = res.json().get("error_description", err_text)
+                except Exception:
+                    pass
+                raise HTTPException(status_code=400, detail=f"Google OAuth token exchange failed: {err_text}")
             
         integration.connected = True
         integration.access_token = access_token
@@ -907,13 +889,10 @@ async def get_google_properties(
 
     if not token or token.startswith("mock_") or token.startswith("oauth_token_"):
         return {
-            "connected": True,
-            "properties": [
-                {"siteUrl": "sc-domain:bloomxsolutions.com", "permissionLevel": "siteOwner"},
-                {"siteUrl": "https://bloomxsolutions.com/", "permissionLevel": "siteOwner"}
-            ],
-            "selected_property": integration.extra_metadata.get("selected_property") if integration.extra_metadata else "sc-domain:bloomxsolutions.com",
-            "message": "Demo/simulated properties available."
+            "connected": False,
+            "properties": [],
+            "selected_property": None,
+            "message": "Google Search Console is not connected. Please authenticate via OAuth."
         }
         
     headers = {"Authorization": f"Bearer {token}"}

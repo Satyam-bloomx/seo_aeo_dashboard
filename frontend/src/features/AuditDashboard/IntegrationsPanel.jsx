@@ -18,7 +18,8 @@ import {
   Check,
   Copy,
   Trash2,
-  Edit3
+  Edit3,
+  Sliders
 } from 'lucide-react';
 import { AnimatePresence, motion, LayoutGroup } from 'framer-motion';
 import { spring, staggerContainer, staggerItem, tapPress } from '@/lib/motion';
@@ -675,18 +676,6 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         <Play size={12} className={isTesting ? "animate-spin text-indigo-600" : "text-indigo-600"} />
                         {isTesting ? "Testing..." : "Test"}
                       </motion.button>
-                      {item.authType === 'oauth' && (
-                        <motion.button
-                          onClick={() => handleOAuthConnect(item.id)}
-                          whileTap={tapPress}
-                          transition={spring.press}
-                          className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-semibold px-2.5 py-1 rounded-lg hover:bg-indigo-50 border border-indigo-200 transition-colors"
-                          title="Sign in with Google OAuth directly"
-                        >
-                          <Globe size={12} />
-                          OAuth
-                        </motion.button>
-                      )}
                       <motion.button
                         onClick={() => setActiveModal(item)}
                         whileTap={tapPress}
@@ -719,25 +708,15 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         <Key size={14} /> Configure API Key
                       </motion.button>
                     ) : (
-                      <div className="grid grid-cols-2 gap-2 w-full">
-                        <motion.button
-                          onClick={() => setActiveModal(item)}
-                          whileTap={tapPress}
-                          transition={spring.press}
-                          className="btn-primary py-2 text-[11px] font-bold gap-1.5 shadow-xs cursor-pointer truncate"
-                          title="Enter Bearer token or API key directly"
-                        >
-                          <Key size={13} /> Token / Key
-                        </motion.button>
-                        <motion.button
-                          onClick={() => handleOAuthConnect(item.id)}
-                          whileTap={tapPress}
-                          transition={spring.press}
-                          className="btn-secondary py-2 text-[11px] font-bold gap-1.5 text-slate-800 shadow-xs cursor-pointer hover:bg-slate-100 truncate"
-                        >
-                          <Globe size={13} className="text-indigo-600" /> Google OAuth
-                        </motion.button>
-                      </div>
+                      <motion.button
+                        onClick={() => setActiveModal(item)}
+                        whileTap={tapPress}
+                        transition={spring.press}
+                        className="w-full btn-primary py-2 text-xs font-bold gap-2 shadow-xs cursor-pointer"
+                        title="Configure User-Defined OAuth (Client ID & Secret)"
+                      >
+                        <Sliders size={14} /> Configure OAuth Application
+                      </motion.button>
                     )}
                   </>
                 )}

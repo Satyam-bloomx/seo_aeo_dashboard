@@ -286,7 +286,7 @@ class IntelligenceService:
                             print(f"Candidate query error: {req_e}")
                             continue
 
-                    # Also query pages if site matched
+                    # Also query pages and devices if site matched
                     if matched_site:
                         encoded_site = quote(matched_site, safe="")
                         page_res = await client.post(
@@ -303,6 +303,32 @@ class IntelligenceService:
                                     "ctr": f"{round(float(r.get('ctr', 0.0)) * 100, 2)}%",
                                     "position": round(float(r.get("position", 0.0)), 1)
                                 })
+
+                        try:
+                            device_body = {
+                                "startDate": start_date,
+                                "endDate": end_date,
+                                "dimensions": ["device"],
+                                "rowLimit": 10
+                            }
+                            dev_res = await client.post(
+                                f"https://www.googleapis.com/webmasters/v3/sites/{encoded_site}/searchAnalytics/query",
+                                headers=headers, params=params, json=device_body
+                            )
+                            if dev_res.status_code == 200:
+                                dev_rows = dev_res.json().get("rows", [])
+                                dev_clicks_sum = sum(int(r.get("clicks", 0)) for r in dev_rows)
+                                for r in dev_rows:
+                                    d_name = r.get("keys", [""])[0].capitalize()
+                                    d_clicks = int(r.get("clicks", 0))
+                                    d_pct = f"{(d_clicks / dev_clicks_sum * 100):.1f}%" if dev_clicks_sum > 0 else "0.0%"
+                                    device_list.append({
+                                        "device": d_name,
+                                        "share": d_pct,
+                                        "clicks": d_clicks
+                                    })
+                        except Exception as dev_err:
+                            print(f"GSC Device query notice: {dev_err}")
             except Exception as e:
                 print(f"GSC Live API probe notice: {e}")
 
@@ -326,12 +352,6 @@ class IntelligenceService:
             else:
                 avg_ctr = f"{(total_clicks / total_impressions * 100):.2f}%" if total_impressions > 0 else "0.0%"
                 avg_pos = round(sum(q["position"] for q in queries_list) / len(queries_list), 1) if queries_list else 0.0
-
-            device_list = [
-                {"device": "Mobile", "share": "64.2%", "clicks": int(total_clicks * 0.642)},
-                {"device": "Desktop", "share": "31.5%", "clicks": int(total_clicks * 0.315)},
-                {"device": "Tablet", "share": "4.3%", "clicks": int(total_clicks * 0.043)}
-            ] if total_clicks > 0 else []
 
         return {
             "property": matched_site or (f"https://{clean_dom}/" if is_live_data else f"sc-domain:{clean_dom}"),
@@ -742,7 +762,7 @@ class IntelligenceService:
         for idx, page in enumerate(pages):
             ad = page.audit_data or {}
             ga4 = ad.get("Google_Analytics", {})
-            if ga4.get("Is_Zombie_Page") or idx in [4, 7]:
+            if ga4.get("Is_Zombie_Page") is True:
                 zombie_pages.append({
                     "url": page.url,
                     "title": page.title_1 or "Untitled Page",

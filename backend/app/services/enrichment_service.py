@@ -61,15 +61,13 @@ class EnrichmentService:
             
             # Check environment variables as well
             if "pagespeed" not in integrations and os.getenv("PAGESPEED_API_KEY"):
-                integrations["pagespeed"] = type("MockIntegration", (), {"api_key": os.getenv("PAGESPEED_API_KEY"), "connected": True})()
+                integrations["pagespeed"] = type("EnvIntegration", (), {"api_key": os.getenv("PAGESPEED_API_KEY"), "connected": True})()
             if "openai" not in integrations and os.getenv("OPENAI_API_KEY"):
-                integrations["openai"] = type("MockIntegration", (), {"api_key": os.getenv("OPENAI_API_KEY"), "connected": True})()
+                integrations["openai"] = type("EnvIntegration", (), {"api_key": os.getenv("OPENAI_API_KEY"), "connected": True})()
             if "perplexity" not in integrations and os.getenv("PERPLEXITY_API_KEY"):
-                integrations["perplexity"] = type("MockIntegration", (), {"api_key": os.getenv("PERPLEXITY_API_KEY"), "connected": True})()
+                integrations["perplexity"] = type("EnvIntegration", (), {"api_key": os.getenv("PERPLEXITY_API_KEY"), "connected": True})()
             if "serpapi" not in integrations and os.getenv("SERPAPI_API_KEY"):
-                integrations["serpapi"] = type("MockIntegration", (), {"api_key": os.getenv("SERPAPI_API_KEY"), "connected": True})()
-            if "search_console" not in integrations and (os.getenv("SEARCH_CONSOLE_KEY") or os.getenv("SEARCH_CONSOLE_TOKEN")):
-                integrations["search_console"] = type("MockIntegration", (), {"api_key": os.getenv("SEARCH_CONSOLE_KEY") or os.getenv("SEARCH_CONSOLE_TOKEN"), "connected": True})()
+                integrations["serpapi"] = type("EnvIntegration", (), {"api_key": os.getenv("SERPAPI_API_KEY"), "connected": True})()
 
             # 3. Fetch Crawled Pages
             res_pages = await self.db.execute(
@@ -97,10 +95,14 @@ class EnrichmentService:
             gsc_intel = None
             gsc_token = None
             if "search_console" in integrations:
-                gsc_token = getattr(integrations.get("search_console"), "api_key", None) or getattr(integrations.get("search_console"), "access_token", None)
+                cand_tok = getattr(integrations.get("search_console"), "api_key", None) or getattr(integrations.get("search_console"), "access_token", None)
+                if cand_tok and not cand_tok.startswith("mock_") and not cand_tok.startswith("oauth_token_"):
+                    gsc_token = cand_tok
             elif os.getenv("SEARCH_CONSOLE_KEY") or os.getenv("SEARCH_CONSOLE_TOKEN"):
-                gsc_token = os.getenv("SEARCH_CONSOLE_KEY") or os.getenv("SEARCH_CONSOLE_TOKEN")
-                integrations["search_console"] = type("MockIntegration", (), {"api_key": gsc_token, "connected": True})()
+                cand_tok = os.getenv("SEARCH_CONSOLE_KEY") or os.getenv("SEARCH_CONSOLE_TOKEN")
+                if cand_tok and not cand_tok.startswith("mock_") and not cand_tok.startswith("oauth_token_"):
+                    gsc_token = cand_tok
+                    integrations["search_console"] = type("EnvIntegration", (), {"api_key": gsc_token, "connected": True})()
 
             if gsc_token and clean_domain:
                 gsc_intel = await self._fetch_gsc_site_analytics(clean_domain, gsc_token)
@@ -518,86 +520,39 @@ class EnrichmentService:
             except Exception as e:
                 print(f"PageSpeed live API warning: {e}")
 
-        # Realistic high-performance default structure
-        offset = (page_index % 5) * 2
-        mobile_score = max(75, 92 - offset)
-        desktop_score = min(99, mobile_score + 7)
-
-        result_data = {
-            "mobile": {
-                "performance_score": mobile_score,
-                "metrics": {
-                    "lcp": f"{1.6 + (offset * 0.1):.1f} s",
-                    "cls": f"{0.01 + (offset * 0.005):.3f}",
-                    "inp": f"{55 + (offset * 8)} ms",
-                    "fcp": f"{1.0 + (offset * 0.08):.1f} s",
-                    "tbt": f"{90 + (offset * 12)} ms",
-                    "ttfb": f"{220 + (offset * 15)} ms",
-                    "speedIndex": f"{1.4 + (offset * 0.1):.1f} s"
-                },
-                "opportunities": [
-                    {"title": "Properly size images", "savings": "0.25 s"},
-                    {"title": "Defer offscreen images", "savings": "0.18 s"},
-                    {"title": "Minify CSS & JavaScript bundles", "savings": "0.12 s"}
-                ]
-            },
-            "desktop": {
-                "performance_score": desktop_score,
-                "metrics": {
-                    "lcp": f"{1.1 + (offset * 0.06):.1f} s",
-                    "cls": "0.002",
-                    "inp": f"{32 + (offset * 4)} ms",
-                    "fcp": f"{0.7 + (offset * 0.04):.1f} s",
-                    "tbt": f"{45 + (offset * 6)} ms",
-                    "ttfb": f"{160 + (offset * 10)} ms",
-                    "speedIndex": f"{0.9 + (offset * 0.08):.1f} s"
-                },
-                "opportunities": [
-                    {"title": "Enable text compression (Brotli/Gzip)", "savings": "0.10 s"}
-                ]
-            }
-        }
-        _PAGESPEED_CACHE[url] = {"cached_at": now, "data": result_data}
-        _save_pagespeed_cache()
-        return result_data
+        return None
 
     def _generate_ga4_metrics(self, page: Page, idx: int, ga4_connected: bool = False) -> Dict[str, Any]:
         """Generates Google Analytics 4 session, engagement, and Zombie Page pruning data."""
+        if not ga4_connected:
+            return {
+                "Sessions_30d": "Not Connected",
+                "Sessions_90d": "Not Connected",
+                "Bounce_Rate": "Not Connected",
+                "Avg_Engagement_Time": "Not Connected",
+                "Conversions": 0,
+                "Traffic_Channel": "N/A",
+                "Is_Zombie_Page": False,
+                "Zombie_Recommended_Action": "N/A",
+                "Revenue_At_Risk": "N/A",
+                "Live_GA4_Stream": "Not Connected"
+            }
+
         is_homepage = (idx == 0)
         is_error = (page.status_code or 200) >= 400
         
-        # Zombie page rule: deep depth or thin content or deep tail pages with 0 visits in 90 days
-        is_zombie = (idx > 15 and (page.word_count or 0) < 150 and not is_homepage) or (page.crawl_depth and page.crawl_depth >= 4 and idx > 8)
-
-        if is_zombie:
-            sessions_30d = 0
-            sessions_90d = 0
-            bounce_rate = 0.0
-            avg_time = "0s"
-            conversions = 0
-            zombie_action = "301 Redirect to Parent Category" if page.crawl_depth and page.crawl_depth >= 3 else "Add Noindex Directive or Consolidate"
-            revenue_risk = "Low P3 (Crawl Budget Drain)"
-        else:
-            base_sessions = max(45, 2450 - (idx * 165)) if not is_error else max(5, 340 - (idx * 30))
-            sessions_30d = base_sessions
-            sessions_90d = base_sessions * 3 + (idx * 12)
-            bounce_rate = round(max(18.5, min(74.0, 28.5 + (idx * 2.4))), 1)
-            avg_time = f"{max(35, 175 - (idx * 7))}s"
-            conversions = max(1, int(base_sessions * 0.034))
-            zombie_action = "None (Healthy Traffic)"
-            revenue_risk = "Critical P0 (Revenue Loss)" if is_error and base_sessions > 500 else ("Warning P1" if is_error else "Nominal P4")
-
+        # Real connected GA4 state without page-specific hits:
         return {
-            "Sessions_30d": f"{sessions_30d:,}",
-            "Sessions_90d": f"{sessions_90d:,}",
-            "Bounce_Rate": f"{bounce_rate}%",
-            "Avg_Engagement_Time": avg_time,
-            "Conversions": conversions,
+            "Sessions_30d": "0",
+            "Sessions_90d": "0",
+            "Bounce_Rate": "0.0%",
+            "Avg_Engagement_Time": "0s",
+            "Conversions": 0,
             "Traffic_Channel": "Organic Search (Google)",
-            "Is_Zombie_Page": is_zombie,
-            "Zombie_Recommended_Action": zombie_action,
-            "Revenue_At_Risk": revenue_risk,
-            "Live_GA4_Stream": "Connected & Active" if ga4_connected else "Sampled Organic Baseline"
+            "Is_Zombie_Page": not is_homepage,
+            "Zombie_Recommended_Action": "301 Redirect to Parent Category" if not is_homepage else "None",
+            "Revenue_At_Risk": "Critical P0 (Revenue Loss)" if is_error else "Nominal P4",
+            "Live_GA4_Stream": "Connected & Active"
         }
 
     async def _fetch_gsc_site_analytics(self, domain: str, token: str) -> Dict[str, Any]:
@@ -784,69 +739,62 @@ class EnrichmentService:
                 "CTR_Num": ctr_val
             }
 
-        # Baseline diagnostics derived from actual HTTP and on-page crawl data
-        status_code = page.status_code or 200
+        # Canonical mismatch detection from on-page metadata
         declared_canonical = (page.canonical_link_element_1 or "").strip()
         is_canonical_mismatch = bool(
             declared_canonical and (page.url or "").strip() and 
             declared_canonical.rstrip("/").lower() != (page.url or "").rstrip("/").lower()
         )
 
+        # If GSC is NOT connected, return explicit Not Connected state (zero fabricated data)
+        if not gsc_connected:
+            return {
+                "Organic_Clicks_30d": "Not Connected",
+                "Search_Impressions": "Not Connected",
+                "Average_CTR": "Not Connected",
+                "Average_SERP_Position": "Not Connected",
+                "Index_Coverage_State": "Not Connected",
+                "Google_Index_Status": "Not Connected",
+                "Google_Selected_Canonical": declared_canonical or page.url or "N/A",
+                "Canonical_Mismatch": is_canonical_mismatch,
+                "Last_Googlebot_Crawl": "N/A",
+                "Live_GSC_Inspection": "Not Connected",
+                "Is_Live_GSC": False,
+                "Clicks_Num": 0,
+                "Impressions_Num": 0,
+                "Position_Num": 0.0,
+                "CTR_Num": 0.0
+            }
+
+        # If GSC is connected, but this URL had 0 query impressions in the 30-day report
+        status_code = page.status_code or 200
         if status_code >= 400:
-            index_state = f"Page with redirect / {status_code} error"
-            coverage_verdict = "Excluded by Google"
-            clicks = 0
-            impressions = 0
-            pos = 0.0
+            index_state = f"HTTP Error ({status_code})"
+            coverage_verdict = "Excluded"
         elif page.indexability == "Non-Indexable":
             index_state = "Excluded by 'noindex' tag"
             coverage_verdict = "Excluded by Google"
-            clicks = 0
-            impressions = 0
-            pos = 0.0
         elif is_canonical_mismatch:
             index_state = "Alternate page with proper canonical tag"
             coverage_verdict = "Excluded (Canonicalized)"
-            clicks = 0
-            impressions = max(5, 120 - (idx * 15))
-            pos = 42.0
-        elif idx == 4 or idx == 9:
-            index_state = "Crawled - currently not indexed"
-            coverage_verdict = "Discovered / Not Indexed"
-            clicks = max(0, 15 - idx)
-            impressions = max(50, 480 - (idx * 25))
-            pos = 36.4
         else:
-            index_state = "Submitted and indexed (Valid)"
-            coverage_verdict = "Indexed & Rank Eligible"
-            clicks = max(25, 4200 - (idx * 260))
-            impressions = clicks * 16 + (idx * 45)
-            pos = round(max(1.4, min(38.0, 2.8 + (idx * 1.4))), 1)
-
-        ctr = f"{(clicks / impressions * 100):.1f}%" if impressions > 0 else "0.0%"
-        canonical = declared_canonical or page.url
-
-        source_label = "Sampled GSC Ground Truth"
-        if gsc_connected:
-            if gsc_intel and gsc_intel.get("error"):
-                source_label = f"GSC Connected: {gsc_intel['error'][:50]}"
-            else:
-                source_label = "GSC Connected (Domain pending verification in GSC)"
+            index_state = "Discovered (0 Search Console Impressions)"
+            coverage_verdict = "Not Indexed in Top SERPs"
 
         return {
-            "Organic_Clicks_30d": f"{clicks:,}",
-            "Search_Impressions": f"{impressions:,}",
-            "Average_CTR": ctr,
-            "Average_SERP_Position": f"{pos:.1f}",
+            "Organic_Clicks_30d": "0",
+            "Search_Impressions": "0",
+            "Average_CTR": "0.0%",
+            "Average_SERP_Position": "0.0",
             "Index_Coverage_State": index_state,
             "Google_Index_Status": coverage_verdict,
-            "Google_Selected_Canonical": canonical,
+            "Google_Selected_Canonical": declared_canonical or page.url or "N/A",
             "Canonical_Mismatch": is_canonical_mismatch,
-            "Last_Googlebot_Crawl": "2026-09-18T14:22:00Z" if not is_homepage else "2026-09-19T08:15:00Z",
-            "Live_GSC_Inspection": source_label,
-            "Is_Live_GSC": False,
-            "Clicks_Num": clicks,
-            "Impressions_Num": impressions,
-            "Position_Num": pos,
-            "CTR_Num": (clicks / impressions * 100) if impressions > 0 else 0.0
+            "Last_Googlebot_Crawl": "N/A",
+            "Live_GSC_Inspection": "GSC Connected (0 query impressions in 30d window)",
+            "Is_Live_GSC": True,
+            "Clicks_Num": 0,
+            "Impressions_Num": 0,
+            "Position_Num": 0.0,
+            "CTR_Num": 0.0
         }

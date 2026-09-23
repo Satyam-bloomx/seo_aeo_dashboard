@@ -509,7 +509,23 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
   };
 
   const formatCellValue = (value, colKey, page) => {
+    if (value === 'Not Connected' || value === 'Unverified (GBP Disconnected)' || value === 'Not Connected (Configure AI Engine)') {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-100 text-slate-500 border border-slate-200">
+          Not Connected
+        </span>
+      );
+    }
+
     if (colKey === 'Is_Zombie_Page') {
+      const ga4 = page?.audit_data?.Google_Analytics;
+      if (ga4?.Sessions_30d === 'Not Connected' || ga4?.Live_GA4_Stream === 'Not Connected') {
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-100 text-slate-500 border border-slate-200">
+            Not Connected
+          </span>
+        );
+      }
       return value ? (
         <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200">
           Zombie Page (0 Visits)
@@ -521,6 +537,9 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       );
     }
     if (colKey === 'Revenue_At_Risk') {
+      if (value === 'N/A' || !value) {
+        return <span className="text-slate-400 font-mono">-</span>;
+      }
       const isCritical = String(value).includes('P0');
       return (
         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${

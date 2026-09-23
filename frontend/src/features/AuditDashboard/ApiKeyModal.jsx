@@ -132,50 +132,52 @@ const GUIDES = {
     ]
   },
   search_console: {
-    docUrl: 'https://search.google.com/search-console',
-    title: 'Google Search Console Access Token & OAuth Setup',
+    docUrl: 'https://console.cloud.google.com/apis/credentials',
+    title: 'Google Search Console OAuth 2.0 Application Setup',
     steps: [
       {
         step: 1,
-        title: 'Option 1: Instant 30-Second Token via Google OAuth Playground (Recommended)',
-        desc: 'Open the Google OAuth 2.0 Playground, scroll to "Google Search Console API v3", check "https://www.googleapis.com/auth/webmasters.readonly", click "Authorize APIs", sign in with your Google account, and click "Exchange authorization code for tokens".',
-        link: 'https://developers.google.com/oauthplayground/#step1&apisSelect=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fwebmasters.readonly',
-        linkLabel: 'Open Google OAuth 2.0 Playground'
+        title: 'Enable Google Search Console API',
+        desc: 'In Google Cloud Console, open APIs & Services > Library and ensure "Google Search Console API" (or Webmasters API) is enabled.',
+        link: 'https://console.cloud.google.com/apis/library/searchconsole.googleapis.com',
+        linkLabel: 'Enable Search Console API'
       },
       {
         step: 2,
-        title: 'Copy the Access Token (starts with ya29...)',
-        desc: 'Copy the Access Token string (starts with "ya29..."), paste it into the input field below, test the connection, and click Connect & Save.',
+        title: 'Create OAuth 2.0 Web Client ID & Add Redirect URI',
+        desc: 'Go to APIs & Services > Credentials > Create Credentials > OAuth client ID. Select "Web application". In "Authorized redirect URIs", paste the exact URI shown below.',
+        link: 'https://console.cloud.google.com/apis/credentials',
+        linkLabel: 'Open Google Cloud Credentials'
       },
       {
         step: 3,
-        title: 'Option 2: Enable One-Click Google Sign-In for Your Team',
-        desc: 'To allow one-click Google Sign-in via the "Connect" button, create an OAuth 2.0 Web Client ID in Google Cloud Console with redirect URI http://localhost:3000/integrations/callback, then add GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET to backend/.env.',
-        link: 'https://console.cloud.google.com/apis/credentials',
-        linkLabel: 'Open Google Cloud Credentials Console'
+        title: 'Paste Client ID & Client Secret Below & Connect',
+        desc: 'Enter your Client ID and Client Secret in the fields below and click "Save & Connect with Google" to authorize access to your Search Console properties.'
       }
     ]
   },
   google_analytics: {
-    docUrl: 'https://analytics.google.com/',
-    title: 'Google Analytics 4 (GA4) Access Token & OAuth Setup',
+    docUrl: 'https://console.cloud.google.com/apis/credentials',
+    title: 'Google Analytics 4 (GA4) OAuth 2.0 Application Setup',
     steps: [
       {
         step: 1,
-        title: 'Generate GA4 Access Token via OAuth Playground',
-        desc: 'Open Google OAuth 2.0 Playground, select "Google Analytics Data API v1beta" -> "https://www.googleapis.com/auth/analytics.readonly", authorize with your Google account, and exchange code for tokens.',
-        link: 'https://developers.google.com/oauthplayground/#step1&apisSelect=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fanalytics.readonly',
-        linkLabel: 'Open GA4 in Google OAuth Playground'
+        title: 'Enable Google Analytics Data API',
+        desc: 'In Google Cloud Console, open APIs & Services > Library and enable "Google Analytics Data API" and "Google Analytics Admin API".',
+        link: 'https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com',
+        linkLabel: 'Enable Analytics Data API'
       },
       {
         step: 2,
-        title: 'Copy & Paste ya29... Token Below',
-        desc: 'Copy the Access Token (starts with "ya29...") and paste it into the field below to activate live sessions and bounce rate enrichments.'
+        title: 'Create OAuth 2.0 Web Client ID & Add Redirect URI',
+        desc: 'Under Credentials, create an OAuth Client ID for "Web application". Add the Authorized redirect URI from the box below to Authorized redirect URIs.',
+        link: 'https://console.cloud.google.com/apis/credentials',
+        linkLabel: 'Open Google Cloud Credentials'
       },
       {
         step: 3,
-        title: 'Enable Native One-Click Google Sign-In',
-        desc: 'Add GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET to backend/.env to log in seamlessly with your Google account in one click.'
+        title: 'Paste Client ID & Client Secret Below & Connect',
+        desc: 'Enter your Client ID and Client Secret in the fields below and click "Save & Connect with Google" to authorize access to your GA4 property.'
       }
     ]
   },
@@ -379,50 +381,8 @@ export default function ApiKeyModal({
         {/* Modal Body with Step-by-Step Visual Guide */}
         <form onSubmit={handleSave} className="p-6 space-y-5 bg-white max-h-[82vh] overflow-y-auto custom-scrollbar">
 
-          {/* OAuth Mode Switcher for Google integrations */}
+          {/* Custom Client ID & Secret (Screaming Frog User-Defined App) */}
           {integration.authType === 'oauth' && (
-            <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200">
-              <button
-                type="button"
-                onClick={() => setOauthTab('custom_app')}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  oauthTab === 'custom_app'
-                    ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Sliders size={13} />
-                <span>Custom Client ID & Secret</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setOauthTab('one_click')}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  oauthTab === 'one_click'
-                    ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Globe size={13} />
-                <span>1-Click Sign-In</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setOauthTab('manual_token')}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  oauthTab === 'manual_token'
-                    ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Key size={13} />
-                <span>Service Account / Token</span>
-              </button>
-            </div>
-          )}
-
-          {/* TAB 1: Custom Client ID & Secret (Screaming Frog User-Defined App) */}
-          {integration.authType === 'oauth' && oauthTab === 'custom_app' && (
             <div className="p-4 rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/70 via-white to-slate-50/70 space-y-4 shadow-xs">
               <div>
                 <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
@@ -430,14 +390,14 @@ export default function ApiKeyModal({
                   Screaming Frog Style: User-Defined OAuth Application
                 </h4>
                 <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
-                  Enter your Client ID and Client Secret directly in the UI. No need to touch <code>backend/.env</code> or restart servers!
+                  Enter your Google Cloud OAuth Client ID and Client Secret directly in the UI. No server configuration or .env changes required!
                 </p>
               </div>
 
               {/* Redirect URI with 1-click Copy */}
               <div className="p-2.5 rounded-lg bg-white border border-indigo-100 space-y-1">
                 <span className="text-[10px] font-bold text-slate-700 block uppercase tracking-wider">
-                  Authorized Redirect URI (Copy into Google Cloud Console):
+                  Authorized Redirect URI (Add to Google Cloud Credentials):
                 </span>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-[11px] font-mono text-indigo-900 select-all font-semibold overflow-x-auto">
@@ -497,7 +457,7 @@ export default function ApiKeyModal({
 
               <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-indigo-100/80">
                 <span className="text-[10px] text-slate-500 leading-tight flex-1">
-                  💡 Tip: Create this Client ID in the client&apos;s Google Cloud account so they can sign in without &apos;Test user&apos; errors!
+                  💡 Tip: Create this Client ID in your Google Cloud account so you can authenticate any Google account directly!
                 </span>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
@@ -516,97 +476,6 @@ export default function ApiKeyModal({
                     {isSavingApp ? <Loader2 size={13} className="animate-spin" /> : <Globe size={13} />}
                     Save &amp; Connect with Google
                   </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: 1-Click Google Sign-In with Default Project */}
-          {integration.authType === 'oauth' && oauthTab === 'one_click' && onOAuthConnect && (
-            <div className="flex flex-col gap-3">
-              <div className="p-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/80 via-white to-blue-50/60 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                    <Globe size={15} className="text-indigo-600" />
-                    Recommended: 1-Click Google OAuth Sign-In
-                  </h4>
-                  <p className="text-[11px] text-slate-600 mt-0.5">
-                    Connect your Google account directly without copying manual tokens.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={onOAuthConnect}
-                  className="btn-primary py-2 px-4 text-xs font-bold gap-1.5 shrink-0 shadow-xs cursor-pointer"
-                >
-                  <Globe size={13} />
-                  Connect with Google
-                </button>
-              </div>
-
-              {/* Google Cloud Console Setup Checklist & Redirect URI */}
-              <div className="p-3.5 rounded-xl border border-indigo-200/80 bg-indigo-50/50 text-xs">
-                <div className="font-bold text-indigo-950 flex items-center gap-1.5 mb-1.5">
-                  <ShieldCheck size={14} className="text-indigo-600" />
-                  Google Cloud Console Configuration Checklist
-                </div>
-                <div className="space-y-2 text-slate-600 mt-1">
-                  <div>
-                    <span className="font-semibold text-slate-800 block text-[11px]">
-                      1. Authorized Redirect URI (Prevents &quot;Error 400: redirect_uri_mismatch&quot;):
-                    </span>
-                    <div className="flex items-center gap-2 mt-1">
-                      <code className="bg-white px-2 py-1 rounded border border-indigo-200 text-[11px] font-mono text-indigo-900 select-all font-semibold">
-                        {typeof window !== 'undefined' ? `${window.location.origin}/integrations/callback` : 'http://localhost:3000/integrations/callback'}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const uri = typeof window !== 'undefined' ? `${window.location.origin}/integrations/callback` : 'http://localhost:3000/integrations/callback';
-                          navigator.clipboard.writeText(uri);
-                          toast.success('Redirect URI copied to clipboard!');
-                        }}
-                        className="px-2.5 py-1 text-[11px] font-mono font-bold rounded bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer transition-colors shadow-2xs"
-                      >
-                        Copy URI
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-indigo-100">
-                    <span className="font-semibold text-rose-800 flex items-center gap-1.5 text-[11px]">
-                      <AlertCircle size={13} className="text-rose-600 shrink-0" />
-                      Fix &quot;Error 403: access_denied&quot; (daily-Horrow has not completed verification):
-                    </span>
-                    <div className="text-[10px] text-slate-700 mt-1.5 leading-relaxed bg-white/95 p-3 rounded-xl border border-indigo-200 shadow-2xs space-y-1.5">
-                      <p>Google blocks all accounts by default while your app is in <strong>Testing</strong> mode. To unlock sign-in in 20 seconds:</p>
-                      <ol className="list-decimal list-inside space-y-1 font-medium text-slate-800">
-                        <li>
-                          Open{' '}
-                          <a
-                            href="https://console.cloud.google.com/apis/credentials/consent"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-bold text-indigo-600 hover:text-indigo-800 underline inline-flex items-center gap-0.5"
-                          >
-                            Google Cloud Console &gt; OAuth consent screen <ExternalLink size={10} />
-                          </a>
-                        </li>
-                        <li>Ensure project <strong>daily-Horrow</strong> is selected at the top.</li>
-                        <li>
-                          Scroll to <strong>Test users</strong> &gt; click <strong>+ ADD USERS</strong> &gt; enter{' '}
-                          <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono font-bold text-indigo-900 select-all">
-                            bloomxdeveloper@gmail.com
-                          </code>{' '}
-                          &gt; click <strong>Save</strong>.
-                        </li>
-                        <li>
-                          Return here and click <strong>Connect with Google</strong>! When the unverified screen appears, click{' '}
-                          <em>Advanced &gt; Go to daily-Horrow (unsafe)</em>.
-                        </li>
-                      </ol>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -732,14 +601,12 @@ export default function ApiKeyModal({
             )}
           </AnimatePresence>
 
-          {/* Manual API Key / Token / Service Account JSON Input (Shown for non-OAuth or manual_token tab) */}
-          {(integration.authType !== 'oauth' || oauthTab === 'manual_token') && (
+          {/* Manual API Key Input (Exclusively for API Key integrations like OpenAI, PageSpeed, etc.) */}
+          {integration.authType !== 'oauth' && (
             <>
               <div>
                 <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  {integration.authType === 'oauth'
-                    ? `Enter Access Token (ya29...) OR Service Account JSON`
-                    : `Enter ${integration.name} API Key`}
+                  Enter {integration.name} API Key
                 </label>
                 <div className="relative flex items-center">
                   <input
@@ -750,10 +617,7 @@ export default function ApiKeyModal({
                       setTestResult(null);
                       setError(null);
                     }}
-                    placeholder={
-                      integration.placeholder ||
-                      (integration.authType === 'oauth' ? 'ya29.a0A... OR paste { "type": "service_account", ... }' : 'AIzaSy... / sk-...')
-                    }
+                    placeholder={integration.placeholder || 'AIzaSy... / sk-...'}
                     className="w-full glass-input pl-3.5 pr-10 py-2.5 font-mono text-sm bg-slate-50/50"
                     autoFocus
                   />
@@ -782,24 +646,6 @@ export default function ApiKeyModal({
                 <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
                   Your credentials are encrypted per-project and used exclusively for live crawler enrichments.
                 </p>
-                {integration.authType === 'oauth' && apiKey.trim().startsWith('AIza') && (
-                  <div className="mt-2.5 p-3 rounded-xl border border-rose-200 bg-rose-50/80 text-rose-900 text-xs font-medium flex items-start gap-2">
-                    <AlertCircle size={15} className="text-rose-600 shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="block font-bold">Google API Key (AIza...) Not Supported by Search Console</strong>
-                      Google strictly prohibits standard API keys for private site telemetry. Please use <strong>Custom Client ID &amp; Secret</strong> or paste a <strong>Service Account JSON</strong> above.
-                    </div>
-                  </div>
-                )}
-                {integration.authType === 'oauth' && apiKey.trim().startsWith('{') && (
-                  <div className="mt-2.5 p-3 rounded-xl border border-emerald-200 bg-emerald-50/80 text-emerald-900 text-xs font-medium flex items-start gap-2">
-                    <CheckCircle2 size={15} className="text-emerald-600 shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="block font-bold">Google Cloud Service Account JSON Detected</strong>
-                      Service Account credentials recognized. This provides permanent 24/7 crawler access without OAuth popups or token expiration!
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Modal Action Buttons */}
