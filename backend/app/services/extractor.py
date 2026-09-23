@@ -26,7 +26,10 @@ def flesch_reading_ease(text: str) -> float:
     return 206.835 - 1.015 * (words / sentences) - 84.6 * (syllables / words)
 
 def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
-    soup = BeautifulSoup(html_content, "html.parser")
+    try:
+        soup = BeautifulSoup(html_content, "lxml")
+    except Exception:
+        soup = BeautifulSoup(html_content, "html.parser")
     metrics: Dict[str, Any] = {}
     parsed_url = urlparse(url)
     
@@ -50,7 +53,8 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
 
     # 6. Page Titles
     titles = soup.find_all("title")
-    title_text = titles[0].get_text(strip=True) if titles else ""
+    raw_title = titles[0].get_text(strip=True) if titles else ""
+    title_text = html.unescape(raw_title).strip() if raw_title else ""
     t_len = len(title_text)
     px_width = calculate_pixel_width(title_text)
     
@@ -69,22 +73,19 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
     metrics["title_1_length"] = t_len
     metrics["title_1_pixel_width"] = px_width
 
-    # 7. Meta Description (supports name="description", property="description", and og:description fallback)
+    # 7. Meta Description (supports name="description", property="description", og:description, twitter:description)
     meta_descs = soup.find_all("meta", attrs={"name": re.compile(r"^description$", re.I)})
     if not meta_descs:
         meta_descs = soup.find_all("meta", attrs={"property": re.compile(r"^description$", re.I)})
     
     desc_text = ""
     for m in meta_descs:
-        c = (m.get("content") or "").strip()
+        c = (m.get("content") or m.get("value") or "").strip()
         if c:
-            desc_text = c
+            desc_text = html.unescape(c)
             break
 
-    og_descs = soup.find_all("meta", attrs={"property": re.compile(r"^og:description$", re.I)})
-    if not desc_text and og_descs:
-        desc_text = (og_descs[0].get("content") or "").strip()
-
+    desc_text = ' '.join(desc_text.split()) if desc_text else ""
     d_len = len(desc_text)
     d_px_width = calculate_pixel_width(desc_text)
     
@@ -104,7 +105,7 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
 
     # 8. Meta Keywords
     meta_kws = soup.find_all("meta", attrs={"name": re.compile(r"^keywords$", re.I)})
-    kw_text = (meta_kws[0].get("content") or "").strip() if meta_kws else ""
+    kw_text = html.unescape((meta_kws[0].get("content") or meta_kws[0].get("value") or "").strip()) if meta_kws else ""
     kw_data = {
         "Missing": len(meta_kws) == 0 or not bool(kw_text),
         "Duplicate": False, 
@@ -115,8 +116,8 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
 
     # 9. H1
     h1s = soup.find_all("h1")
-    h1_text = h1s[0].get_text(strip=True) if h1s else ""
-    h1_2_text = h1s[1].get_text(strip=True) if len(h1s) > 1 else ""
+    h1_text = html.unescape(h1s[0].get_text(strip=True)).strip() if h1s else ""
+    h1_2_text = html.unescape(h1s[1].get_text(strip=True)).strip() if len(h1s) > 1 else ""
     
     h1_data = {
         "Missing": len(h1s) == 0 or not bool(h1_text),
@@ -134,8 +135,8 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
     
     # 10. H2
     h2s = soup.find_all("h2")
-    h2_text = h2s[0].get_text(strip=True) if h2s else ""
-    h2_2_text = h2s[1].get_text(strip=True) if len(h2s) > 1 else ""
+    h2_text = html.unescape(h2s[0].get_text(strip=True)).strip() if h2s else ""
+    h2_2_text = html.unescape(h2s[1].get_text(strip=True)).strip() if len(h2s) > 1 else ""
     h2_data = {
         "Missing": len(h2s) == 0 or not bool(h2_text),
         "Duplicate": False, 
@@ -179,8 +180,8 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
         metrics["title_hash"] = ""
 
     # 13. Canonicals
-    canonicals = soup.find_all("link", rel="canonical")
-    c_href = canonicals[0].get("href", "") if canonicals else ""
+    canonicals = soup.find_all("link", attrs={"rel": re.compile(r"^canonical$", re.I)})
+    c_href = (canonicals[0].get("href", "") or "").strip() if canonicals else ""
     canon_data = {
         "Contains Canonical": len(canonicals) > 0,
         "Self Referencing": c_href == url,

@@ -120,6 +120,9 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
   const [copiedKeyId, setCopiedKeyId] = useState(null);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'workspace'
   const [workspaceService, setWorkspaceService] = useState('search_console');
+  const [gscProperties, setGscProperties] = useState([]);
+  const [selectedGscProperty, setSelectedGscProperty] = useState('');
+  const [loadingProperties, setLoadingProperties] = useState(false);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -144,9 +147,51 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
     }
   }, [projectId]);
 
+  const fetchGscProperties = useCallback(async () => {
+    if (!integrations['search_console']?.connected) return;
+    try {
+      setLoadingProperties(true);
+      const res = await axios.get(`${API_BASE_URL}/integrations/google/properties/${projectId}`);
+      if (res.data?.properties) {
+        setGscProperties(res.data.properties);
+        if (res.data.selected_property) {
+          setSelectedGscProperty(res.data.selected_property);
+        } else if (res.data.properties.length > 0) {
+          setSelectedGscProperty(res.data.properties[0].siteUrl);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch GSC properties:', err);
+    } finally {
+      setLoadingProperties(false);
+    }
+  }, [projectId, integrations]);
+
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+  useEffect(() => {
+    if (integrations['search_console']?.connected) {
+      fetchGscProperties();
+    }
+  }, [integrations, fetchGscProperties]);
+
+  const handleSelectProperty = async (propertyUrl) => {
+    setSelectedGscProperty(propertyUrl);
+    try {
+      await axios.post(`${API_BASE_URL}/integrations/google/select-property`, {
+        project_id: projectId,
+        service: 'search_console',
+        property_url: propertyUrl
+      });
+      toast.success('GSC Property Saved', {
+        description: `Targeting property: ${propertyUrl}`
+      });
+    } catch (e) {
+      toast.error('Failed to save selected property');
+    }
+  };
 
   const handleTestConnection = async (integrationId) => {
     setTestingId(integrationId);
@@ -531,6 +576,42 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                     </motion.div>
                   )}
                 </AnimatePresence>
+
+                {/* Screaming Frog Standard: Verified Google Property Selector */}
+                {item.id === 'search_console' && isConnected && (
+                  <div className="mb-4 p-3 rounded-xl bg-blue-50/70 border border-blue-200">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                        <Globe size={13} className="text-blue-600" />
+                        Selected Search Console Property
+                      </span>
+                      {loadingProperties && <RefreshCw size={12} className="animate-spin text-blue-600" />}
+                    </div>
+                    {gscProperties.length > 0 ? (
+                      <select
+                        value={selectedGscProperty}
+                        onChange={(e) => handleSelectProperty(e.target.value)}
+                        className="w-full text-xs font-mono bg-white border border-blue-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-2xs"
+                      >
+                        {gscProperties.map((p) => (
+                          <option key={p.siteUrl} value={p.siteUrl}>
+                            {p.siteUrl} ({p.permissionLevel || 'Verified'})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="flex items-center justify-between text-[11px] text-slate-600 font-mono">
+                        <span>{loadingProperties ? 'Querying verified web properties...' : 'Using default seed URL domain.'}</span>
+                        <button
+                          onClick={fetchGscProperties}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
+                        >
+                          Refresh
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Test Feedback Banner */}
                 <AnimatePresence initial={false} mode="wait">

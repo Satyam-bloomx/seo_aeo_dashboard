@@ -382,6 +382,12 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                         checked={settings?.checkExternalLinks ?? false}
                         onChange={(e) => handleChange('checkExternalLinks', e.target.checked)}
                       />
+                      <CheckboxCard
+                        label="Crawl Author Archives (/author/*)"
+                        description="Screaming Frog standard: Disabled by default to exclude auto-generated WordPress user archive pages and prevent username enumeration."
+                        checked={settings?.crawlAuthorArchives ?? false}
+                        onChange={(e) => handleChange('crawlAuthorArchives', e.target.checked)}
+                      />
                       <div className="pt-2">
                         <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                           Exclude Paths (One per line)

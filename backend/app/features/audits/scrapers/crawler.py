@@ -4,10 +4,20 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 import xml.etree.ElementTree as ET
 
+DEFAULT_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'DNT': '1',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1'
+}
+
 async def fetch_url(client: httpx.AsyncClient, url: str):
     """Fetches a URL and returns its status code and html."""
     try:
-        response = await client.get(url)
+        response = await client.get(url, headers=DEFAULT_HEADERS)
         return response.status_code, response.text
     except Exception:
         return None, ""
@@ -118,7 +128,7 @@ async def run_crawler(start_url: str, max_pages: int = 50, max_depth: int = 3):
     # Simple semaphore to limit concurrent requests
     semaphore = asyncio.Semaphore(5)
     
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=DEFAULT_HEADERS) as client:
         # First, try to fetch the sitemap
         sitemap_urls = await fetch_sitemap_urls(client, domain)
         

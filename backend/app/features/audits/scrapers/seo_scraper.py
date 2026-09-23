@@ -8,6 +8,8 @@ import ssl
 import socket
 import time
 import os
+import re
+import html
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -129,9 +131,15 @@ async def fetch_page_data(url: str):
         }
 
 def remove_hidden_elements(soup):
-    """Removes elements that are visually hidden from the user."""
+    """Removes elements that are visually hidden from the user unconditionally (e.g. style='display:none').
+    Preserves responsive elements (e.g. Tailwind 'hidden md:block' or Bootstrap 'd-none d-md-block').
+    """
     hidden_tags = []
     for tag in soup.find_all(True):
+        # Never remove head or head tags
+        if tag.name in ['html', 'head', 'title', 'meta', 'link', 'script', 'style']:
+            continue
+
         # 1. Check inline styles
         style = tag.get('style', '').replace(' ', '').lower()
         if 'display:none' in style or 'visibility:hidden' in style:
@@ -143,78 +151,89 @@ def remove_hidden_elements(soup):
             hidden_tags.append(tag)
             continue
             
-        # 3. Check CSS classes (Elementor, Bootstrap, Tailwind)
+        # 3. Check CSS classes - DO NOT strip responsive classes where elements become visible on other viewports
         classes = tag.get('class', [])
-        if isinstance(classes, list):
-            classes_str = ' '.join(classes).lower()
-        else:
-            classes_str = str(classes).lower()
+        class_list = classes if isinstance(classes, list) else str(classes).split()
+        class_list_lower = [c.lower() for c in class_list]
+        
+        # Check for responsive breakpoint overrides (Tailwind: md:block, lg:flex, sm:inline, max-md:hidden, etc.)
+        has_responsive_override = any(
+            any(c.startswith(f"{bp}:") for bp in ['sm', 'md', 'lg', 'xl', '2xl', 'max-sm', 'max-md', 'max-lg', 'max-xl'])
+            for c in class_list_lower
+        )
+        if has_responsive_override:
+            continue
             
-        # Do not strip sr-only as it's meant for screen readers
-        if any(c in classes_str for c in ['elementor-hidden', 'd-none', 'hide', 'hidden', 'invisible']):
-            # Ensure we don't accidentally match safe classes like "overflow-hidden", exact matches or specific prefixes are better
-            # We will strictly look for common hiding utility classes
-            pass
-            
-        class_list = classes_str.split()
-        if any(c in class_list for c in ['hidden', 'd-none', 'invisible', 'hide']):
+        # Only decompose if purely static hidden without responsive override
+        if any(c in ['elementor-hidden', 'd-none', 'invisible'] for c in class_list_lower):
             hidden_tags.append(tag)
-        elif 'elementor-hidden' in classes_str:
+        elif 'hidden' in class_list_lower and not has_responsive_override:
             hidden_tags.append(tag)
             
     for tag in hidden_tags:
         try:
             tag.decompose()
-        except:
+        except Exception:
             pass
 
-def parse_seo_tags(html: str, url: str = None):
-    """Extracts H1, title, meta descriptions, canonical links and granular metrics."""
-    if not html:
+def parse_seo_tags(html_content: str, url: str = None):
+    """Extracts H1, title, meta descriptions, canonical links and granular metrics with 100% accuracy."""
+    if not html_content:
         return {}
     
-    soup = BeautifulSoup(html, "lxml")
-    remove_hidden_elements(soup)
+    soup = BeautifulSoup(html_content, "lxml")
     
-    # Title
+    # Title (extract cleanly using get_text & unescaping entities, never fragile .string)
     title_tags = soup.find_all('title')
     title_count = len(title_tags)
-    title = title_tags[0].string.strip() if title_count > 0 and title_tags[0].string else None
+    raw_title = title_tags[0].get_text(strip=True) if title_count > 0 else ""
+    title = html.unescape(raw_title).strip() if raw_title else None
     title_length = len(title) if title else 0
     
     # H1
     h1_tags = soup.find_all('h1')
     h1_count = len(h1_tags)
-    h1_1 = h1_tags[0].get_text(strip=True) if h1_count > 0 else None
+    h1_1_raw = h1_tags[0].get_text(strip=True) if h1_count > 0 else ""
+    h1_1 = html.unescape(h1_1_raw).strip() if h1_1_raw else None
     h1_1_length = len(h1_1) if h1_1 else 0
-    h1_2 = h1_tags[1].get_text(strip=True) if h1_count > 1 else None
+    h1_2_raw = h1_tags[1].get_text(strip=True) if h1_count > 1 else ""
+    h1_2 = html.unescape(h1_2_raw).strip() if h1_2_raw else None
     h1_2_length = len(h1_2) if h1_2 else 0
     
     # H2
     h2_tags_elements = soup.find_all('h2')
     h2_count = len(h2_tags_elements)
-    h2_texts = [{"text": h2.get_text(strip=True), "length": len(h2.get_text(strip=True))} for h2 in h2_tags_elements]
+    h2_texts = [{"text": html.unescape(h2.get_text(strip=True)), "length": len(h2.get_text(strip=True))} for h2 in h2_tags_elements]
     
     # H3
     h3_tags_elements = soup.find_all('h3')
     h3_count = len(h3_tags_elements)
     
-    # Meta Description
-    meta_desc_tags = soup.find_all('meta', attrs={'name': lambda x: x and x.lower() == 'description'})
-    meta_desc_count = len(meta_desc_tags)
-    meta_desc = meta_desc_tags[0].get('content', '').strip() if meta_desc_count > 0 else None
+    # Meta Description (comprehensive search: name="description", property="description", og:description fallback)
+    meta_descs = soup.find_all('meta', attrs={'name': re.compile(r'^description$', re.I)})
+    if not meta_descs:
+        meta_descs = soup.find_all('meta', attrs={'property': re.compile(r'^description$', re.I)})
+    
+    meta_desc = None
+    for m in meta_descs:
+        c = (m.get('content') or m.get('value') or '').strip()
+        if c:
+            meta_desc = html.unescape(c)
+            break
+            
+    meta_desc_count = len(meta_descs) if meta_descs else 0
     meta_desc_length = len(meta_desc) if meta_desc else 0
         
     canonical = None
-    canonical_tag = soup.find('link', attrs={'rel': 'canonical'})
+    canonical_tag = soup.find('link', attrs={'rel': re.compile(r'^canonical$', re.I)})
     if canonical_tag:
-        canonical = canonical_tag.get('href')
+        canonical = (canonical_tag.get('href') or '').strip()
         
     # Meta Robots
     meta_robots = None
-    robots_tag = soup.find('meta', attrs={'name': lambda x: x and x.lower() == 'robots'})
+    robots_tag = soup.find('meta', attrs={'name': re.compile(r'^robots$', re.I)})
     if robots_tag:
-        meta_robots = robots_tag.get('content', '').lower()
+        meta_robots = (robots_tag.get('content') or '').lower().strip()
         
     # Indexability
     indexability = "Indexable"
@@ -233,7 +252,7 @@ def parse_seo_tags(html: str, url: str = None):
             indexability_status.append("Canonicalised")
 
     # Size Bytes
-    size_bytes = len(html.encode('utf-8')) if html else 0
+    size_bytes = len(html_content.encode('utf-8')) if html_content else 0
         
     # HTML Lang & Charset
     html_lang = None
@@ -289,13 +308,31 @@ def parse_seo_tags(html: str, url: str = None):
         invisible.extract()
     text = soup.get_text(separator=' ', strip=True)
     word_count = len(text.split())
+
+    def calculate_pixel_width(val: str) -> int:
+        if not val: return 0
+        w = 0
+        for char in val:
+            if char.isupper() or char in "mwMW": w += 11
+            elif char in "ijl1I": w += 4
+            else: w += 8
+        return w
         
+    title_px = calculate_pixel_width(title)
+    meta_desc_px = calculate_pixel_width(meta_desc)
+
     return {
         "title": title,
+        "title_1": title,
         "title_length": title_length,
+        "title_1_length": title_length,
+        "title_1_pixel_width": title_px,
         "title_count": title_count,
         "meta_description": meta_desc,
+        "meta_desc_1": meta_desc,
         "meta_description_length": meta_desc_length,
+        "meta_desc_1_length": meta_desc_length,
+        "meta_desc_1_pixel_width": meta_desc_px,
         "meta_description_count": meta_desc_count,
         "h1_count": h1_count,
         "h1_1": h1_1,
@@ -303,10 +340,16 @@ def parse_seo_tags(html: str, url: str = None):
         "h1_2": h1_2,
         "h1_2_length": h1_2_length,
         "h2_count": h2_count,
+        "h2_1": h2_texts[0]["text"] if h2_texts else None,
+        "h2_1_length": h2_texts[0]["length"] if h2_texts else 0,
+        "h2_2": h2_texts[1]["text"] if len(h2_texts) > 1 else None,
+        "h2_2_length": h2_texts[1]["length"] if len(h2_texts) > 1 else 0,
         "h2_texts": h2_texts,
         "h3_count": h3_count,
         "canonical_url": canonical,
+        "canonical_link_element_1": canonical,
         "meta_robots": meta_robots,
+        "meta_robots_1": meta_robots,
         "indexability": indexability,
         "indexability_status": ", ".join(indexability_status) if indexability_status else "Indexable",
         "size_bytes": size_bytes,

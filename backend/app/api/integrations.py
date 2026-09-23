@@ -80,9 +80,20 @@ async def get_integration_status(project_id: int, db: AsyncSession = Depends(get
         raw_key = None
         
         if item and item.connected:
-            connected = True
-            has_key = bool(item.api_key or item.access_token)
             raw_key = item.api_key or item.access_token
+            # Disallow false 'connected' state if using AIza API key for private Google services or permission is denied
+            is_invalid_aiza = bool(svc in ["search_console", "google_analytics"] and raw_key and raw_key.startswith("AIza"))
+            has_permission_denied = False
+            if item.config_json and isinstance(item.config_json, dict):
+                data_obj = item.config_json.get("data", {})
+                if isinstance(data_obj, dict) and data_obj.get("permission_denied"):
+                    has_permission_denied = True
+
+            if is_invalid_aiza or has_permission_denied:
+                connected = False
+            else:
+                connected = True
+            has_key = bool(raw_key)
         elif env_keys.get(svc):
             connected = True
             has_key = True
@@ -105,6 +116,18 @@ async def save_api_key(req: ApiKeyRequest, db: AsyncSession = Depends(get_db)):
     if not req.api_key or not req.api_key.strip():
         raise HTTPException(status_code=400, detail="API Key cannot be empty")
         
+    raw_key = req.api_key.strip()
+    if raw_key.lower().startswith("bearer "):
+        raw_key = raw_key[7:].strip()
+
+    # Reject API Keys (AIza...) for private Google OAuth services
+    if service in ["search_console", "google_analytics"] and raw_key.startswith("AIza"):
+        service_title = "Google Search Console" if service == "search_console" else "Google Analytics 4"
+        raise HTTPException(
+            status_code=400, 
+            detail=f"{service_title} requires an OAuth 2.0 User Access Token (ya29...) or 1-Click Google OAuth Sign-In. API Keys (AIza...) are not permitted by Google for private site telemetry."
+        )
+
     try:
         from app.models.domain import Project
         proj_res = await db.execute(select(Project).where(Project.id == req.project_id))
@@ -126,10 +149,6 @@ async def save_api_key(req: ApiKeyRequest, db: AsyncSession = Depends(get_db)):
                 integration_type=service
             )
             db.add(integration)
-            
-        raw_key = req.api_key.strip()
-        if raw_key.lower().startswith("bearer "):
-            raw_key = raw_key[7:].strip()
 
         integration.api_key = raw_key
         integration.access_token = raw_key
@@ -141,6 +160,8 @@ async def save_api_key(req: ApiKeyRequest, db: AsyncSession = Depends(get_db)):
             "message": f"{service} credentials saved and connected successfully!",
             "masked_key": _mask_key(raw_key)
         }
+    except HTTPException:
+        raise
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to save credentials: {str(e)}")
@@ -358,35 +379,10 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
         
         # 1. If user provided a Google API Key (starts with AIza)
         if token.startswith("AIza"):
-            try:
-                async with httpx.AsyncClient(timeout=8.0) as client:
-                    res = await client.get(
-                        "https://www.googleapis.com/discovery/v1/apis",
-                        params={"name": "searchconsole", "key": token}
-                    )
-                    latency = round((time.time() - start_time) * 1000, 1)
-                    if res.status_code == 200:
-                        return {
-                            "success": True,
-                            "status": "ok",
-                            "message": f"Google Search Console API Key verified & authenticated with Google Cloud! ({latency}ms)",
-                            "latency_ms": latency
-                        }
-                    elif res.status_code in [400, 403]:
-                        err_msg = res.json().get("error", {}).get("message", "API Key rejected by Google")
-                        return {
-                            "success": False,
-                            "status": "error",
-                            "detail": f"Google API Key verification failed: {err_msg}"
-                        }
-            except Exception:
-                pass
-            latency = round((time.time() - start_time) * 1000, 1)
             return {
-                "success": True,
-                "status": "ok",
-                "message": f"Google Search Console API Key format valid & saved for URL Inspection ({latency}ms).",
-                "latency_ms": latency
+                "success": False,
+                "status": "error",
+                "detail": "Google API Keys ('AIza...') cannot access private Google Search Console telemetry. Google requires OAuth 2.0 User authorization or a Service Account. Please click 'Sign in with Google' or provide an OAuth access token."
             }
 
         # 2. Simulated or developer tokens
@@ -732,5 +728,101 @@ async def get_audit_synergy(
         return synergy_report
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate synergy report: {str(e)}")
+
+
+@router.get("/google/properties/{project_id}")
+async def get_google_properties(
+    project_id: int,
+    service: str = "search_console",
+    db: AsyncSession = Depends(get_db)
+):
+    """Fetches all verified Google Search Console properties for the authenticated account (matching Screaming Frog's property selector)."""
+    result = await db.execute(select(Integration).where(Integration.project_id == project_id, Integration.integration_type == service))
+    integration = result.scalars().first()
+    
+    if not integration or not integration.connected:
+        return {"connected": False, "properties": [], "message": "Google account not connected."}
+        
+    token = integration.access_token or integration.api_key
+    if not token or token.startswith("mock_") or token.startswith("oauth_token_"):
+        return {
+            "connected": True,
+            "properties": [
+                {"siteUrl": "sc-domain:bloomxsolutions.com", "permissionLevel": "siteOwner"},
+                {"siteUrl": "https://bloomxsolutions.com/", "permissionLevel": "siteOwner"}
+            ],
+            "selected_property": integration.extra_metadata.get("selected_property") if integration.extra_metadata else "sc-domain:bloomxsolutions.com",
+            "message": "Demo/simulated properties available."
+        }
+        
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.get("https://www.googleapis.com/webmasters/v3/sites", headers=headers)
+            if res.status_code == 200:
+                data = res.json()
+                entries = data.get("siteEntry", [])
+                properties = [{"siteUrl": s.get("siteUrl"), "permissionLevel": s.get("permissionLevel", "siteFullUser")} for s in entries if s.get("siteUrl")]
+                selected = None
+                if integration.extra_metadata and isinstance(integration.extra_metadata, dict):
+                    selected = integration.extra_metadata.get("selected_property")
+                return {
+                    "connected": True,
+                    "properties": properties,
+                    "selected_property": selected,
+                    "message": f"Found {len(properties)} verified properties in Google Search Console."
+                }
+            elif res.status_code == 401 and integration.refresh_token:
+                google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+                google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+                if google_client_id and google_client_secret:
+                    refresh_res = await client.post("https://oauth2.googleapis.com/token", data={
+                        "client_id": google_client_id,
+                        "client_secret": google_client_secret,
+                        "refresh_token": integration.refresh_token,
+                        "grant_type": "refresh_token"
+                    })
+                    if refresh_res.status_code == 200:
+                        new_tokens = refresh_res.json()
+                        integration.access_token = new_tokens.get("access_token")
+                        await db.commit()
+                        headers = {"Authorization": f"Bearer {integration.access_token}"}
+                        retry_res = await client.get("https://www.googleapis.com/webmasters/v3/sites", headers=headers)
+                        if retry_res.status_code == 200:
+                            entries = retry_res.json().get("siteEntry", [])
+                            properties = [{"siteUrl": s.get("siteUrl"), "permissionLevel": s.get("permissionLevel", "siteFullUser")} for s in entries if s.get("siteUrl")]
+                            return {
+                                "connected": True,
+                                "properties": properties,
+                                "selected_property": integration.extra_metadata.get("selected_property") if integration.extra_metadata else None,
+                                "message": f"Token refreshed! Found {len(properties)} verified properties."
+                            }
+            return {"connected": True, "properties": [], "error": f"Google returned status {res.status_code}", "detail": res.text}
+    except Exception as e:
+        return {"connected": True, "properties": [], "error": str(e)}
+
+
+class SelectPropertyRequest(BaseModel):
+    project_id: int = 1
+    service: str = "search_console"
+    property_url: str
+
+@router.post("/google/select-property")
+async def select_google_property(
+    req: SelectPropertyRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Saves user's chosen GSC property (e.g. sc-domain:bloomxsolutions.com), matching Screaming Frog property selector."""
+    result = await db.execute(select(Integration).where(Integration.project_id == req.project_id, Integration.integration_type == req.service))
+    integration = result.scalars().first()
+    if not integration:
+        raise HTTPException(status_code=404, detail="Integration not found")
+        
+    meta = dict(integration.extra_metadata or {})
+    meta["selected_property"] = req.property_url
+    integration.extra_metadata = meta
+    await db.commit()
+    return {"status": "success", "message": f"Selected property saved as {req.property_url}", "selected_property": req.property_url}
+
 
 

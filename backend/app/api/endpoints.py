@@ -55,7 +55,8 @@ async def _run_crawler_task(crawl_id: int, seed_url: str, request: CrawlRequest)
                 exclude_paths=request.exclude_paths,
                 ignore_robots=request.ignore_robots,
                 js_rendering=request.js_rendering,
-                user_agent=request.user_agent
+                user_agent=request.user_agent,
+                crawl_author_archives=getattr(request, 'crawl_author_archives', False)
             )
             await crawler.run()
         except Exception as e:
@@ -107,6 +108,19 @@ async def start_crawl(request: CrawlRequest, background_tasks: BackgroundTasks, 
     return crawl
 
 
+@router.get("/crawls")
+async def list_crawls(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Crawl).order_by(Crawl.id.asc()))
+    return result.scalars().all()
+
+@router.get("/crawls/latest")
+async def get_latest_crawl(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Crawl).order_by(Crawl.id.desc()).limit(1))
+    crawl = result.scalars().first()
+    if not crawl:
+        raise HTTPException(status_code=404, detail="No crawl found")
+    return crawl
+
 @router.get("/crawls/{crawl_id}/status")
 async def get_crawl_status(crawl_id: int, db: AsyncSession = Depends(get_db)):
     crawl = await db.get(Crawl, crawl_id)
@@ -150,15 +164,49 @@ async def get_page_inlinks(page_id: int, db: AsyncSession = Depends(get_db)):
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
         
-    query = select(Link).where(Link.destination_url == page.url, Link.crawl_id == page.crawl_id)
+    query = (
+        select(Link, Page.url.label("source_url"))
+        .outerjoin(Page, Link.source_page_id == Page.id)
+        .where(Link.destination_url == page.url, Link.crawl_id == page.crawl_id)
+    )
     result = await db.execute(query)
-    return result.scalars().all()
+    rows = result.all()
+    return [
+        LinkSummary(
+            id=link.id,
+            source_page_id=link.source_page_id,
+            source_url=src_url,
+            destination_url=link.destination_url,
+            anchor_text=link.anchor_text,
+            is_follow=link.is_follow,
+            link_type=link.link_type,
+            is_internal=link.is_internal,
+        )
+        for link, src_url in rows
+    ]
 
 @router.get("/pages/{page_id}/outlinks", response_model=List[LinkSummary])
 async def get_page_outlinks(page_id: int, db: AsyncSession = Depends(get_db)):
+    page = await db.get(Page, page_id)
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+        
     query = select(Link).where(Link.source_page_id == page_id)
     result = await db.execute(query)
-    return result.scalars().all()
+    links = result.scalars().all()
+    return [
+        LinkSummary(
+            id=link.id,
+            source_page_id=link.source_page_id,
+            source_url=page.url,
+            destination_url=link.destination_url,
+            anchor_text=link.anchor_text,
+            is_follow=link.is_follow,
+            link_type=link.link_type,
+            is_internal=link.is_internal,
+        )
+        for link in links
+    ]
 
 from pydantic import BaseModel
 import os

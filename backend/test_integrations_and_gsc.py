@@ -7,11 +7,14 @@ if sys.platform == "win32":
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+from app.main import app
+
 async def main():
     print("--- 1. Testing API Integrations /test endpoint ---")
-    base_url = "http://127.0.0.1:8000/api"
+    base_url = "http://test/api"
+    transport = httpx.ASGITransport(app=app)
     
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with httpx.AsyncClient(transport=transport, timeout=20.0) as client:
         # 1. PageSpeed Insights
         r_ps = await client.post(f"{base_url}/integrations/test", json={"project_id": 1, "service": "pagespeed"})
         print(f"[PageSpeed] Status: {r_ps.status_code}, Res: {r_ps.json().get('message') or r_ps.json().get('detail')}")

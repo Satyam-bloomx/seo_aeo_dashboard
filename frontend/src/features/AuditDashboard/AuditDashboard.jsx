@@ -48,6 +48,7 @@ import {
   CheckCircle2,
   RefreshCw,
   Sparkles,
+  Link2,
 } from 'lucide-react';
 
 const fireCelebrationCannons = () => {
@@ -92,6 +93,33 @@ export default function AuditDashboard() {
       }
     }
   }, []);
+
+  // Auto-load latest crawl data on mount so dashboard is populated immediately
+  useEffect(() => {
+    const loadLatestCrawl = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/crawls/latest`);
+        if (res.ok) {
+          const latest = await res.json();
+          if (latest?.id) {
+            setCrawlId(latest.id);
+            setUrl(latest.seed_url || '');
+            setStatus(latest.status || 'completed');
+            const pRes = await fetch(`${API_BASE_URL}/crawls/${latest.id}/pages`);
+            if (pRes.ok) {
+              const pagesData = await pRes.json();
+              if (Array.isArray(pagesData) && pagesData.length > 0) {
+                setPages(pagesData);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Could not auto-load latest crawl:', err);
+      }
+    };
+    loadLatestCrawl();
+  }, []);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('presets');
   const [isExecutiveReportOpen, setIsExecutiveReportOpen] = useState(false);
@@ -116,6 +144,7 @@ export default function AuditDashboard() {
     ignoreRobots: false,
     jsRendering: false,
     userAgent: 'SEO-Spider-Bot',
+    crawlAuthorArchives: false,
   });
 
   const [crawlId, setCrawlId] = useState(null);
@@ -124,6 +153,27 @@ export default function AuditDashboard() {
   const [pagesCrawled, setPagesCrawled] = useState(0);
   const [pages, setPages] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
+  const [inlinks, setInlinks] = useState([]);
+  const [isLoadingInlinks, setIsLoadingInlinks] = useState(false);
+
+  useEffect(() => {
+    if (selectedRow?.id) {
+      setIsLoadingInlinks(true);
+      fetch(`${API_BASE_URL}/pages/${selectedRow.id}/inlinks`)
+        .then(res => res.json())
+        .then(data => {
+          setInlinks(Array.isArray(data) ? data : []);
+          setIsLoadingInlinks(false);
+        })
+        .catch(err => {
+          console.error("Failed to fetch inlinks:", err);
+          setInlinks([]);
+          setIsLoadingInlinks(false);
+        });
+    } else {
+      setInlinks([]);
+    }
+  }, [selectedRow?.id]);
 
   const issuesReport = useMemo(() => generateIssuesReport(pages), [pages]);
 
@@ -169,6 +219,7 @@ export default function AuditDashboard() {
           ignore_robots: crawlerSettings.ignoreRobots,
           js_rendering: crawlerSettings.jsRendering,
           user_agent: crawlerSettings.userAgent,
+          crawl_author_archives: crawlerSettings.crawlAuthorArchives ?? false,
         }),
       });
 
@@ -371,6 +422,243 @@ export default function AuditDashboard() {
               </div>
             </motion.div>
 
+            {/* On-Page Content & Headings Inspection (Exact text & Character counts without space) */}
+            <motion.div variants={staggerItem}>
+              <h4 className="mb-2.5 flex items-center justify-between font-mono text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                <span className="flex items-center gap-1.5">
+                  <ChevronRight size={13} className="text-indigo-600" /> On-Page Elements & Headings
+                </span>
+                <span className="text-[9px] text-slate-400 font-normal">Exact text & character lengths</span>
+              </h4>
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                {/* Page Title */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-600">Title 1</span>
+                    {selectedRow.title_1 ? (
+                      <span className="font-mono text-[10px] text-slate-500">
+                        <strong className="text-slate-800">{selectedRow.title_1.length}</strong> chars ({selectedRow.title_1.replace(/\s+/g, '').length} no spaces)
+                        {selectedRow.title_1_pixel_width ? ` | ${selectedRow.title_1_pixel_width}px` : ''}
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.2 rounded font-mono text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">0 (Missing)</span>
+                    )}
+                  </div>
+                  {selectedRow.title_1 ? (
+                    <div className="group/item flex items-start justify-between gap-2 p-2 rounded-lg bg-white border border-slate-200 text-xs text-slate-900 font-semibold leading-relaxed">
+                      <span className="select-all">{selectedRow.title_1}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(selectedRow.title_1);
+                          toast.success('Title copied to clipboard');
+                        }}
+                        className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                        title="Copy Title"
+                      >
+                        <Copy size={11} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-xs italic text-rose-600 bg-rose-50/60 p-2 rounded-lg border border-rose-200/60">No Title 1 tag detected</div>
+                  )}
+                </div>
+
+                {/* Meta Description */}
+                <div className="space-y-1 pt-1 border-t border-slate-200/70">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-600">Meta Description 1</span>
+                    {selectedRow.meta_desc_1 ? (
+                      <span className="font-mono text-[10px] text-slate-500">
+                        <strong className="text-slate-800">{selectedRow.meta_desc_1.length}</strong> chars ({selectedRow.meta_desc_1.replace(/\s+/g, '').length} no spaces)
+                        {selectedRow.meta_desc_1_pixel_width ? ` | ${selectedRow.meta_desc_1_pixel_width}px` : ''}
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.2 rounded font-mono text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">0 (Missing)</span>
+                    )}
+                  </div>
+                  {selectedRow.meta_desc_1 ? (
+                    <div className="group/item flex items-start justify-between gap-2 p-2 rounded-lg bg-white border border-slate-200 text-xs text-slate-900 leading-relaxed font-normal">
+                      <span className="select-all">{selectedRow.meta_desc_1}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(selectedRow.meta_desc_1);
+                          toast.success('Meta Description copied to clipboard');
+                        }}
+                        className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                        title="Copy Meta Description"
+                      >
+                        <Copy size={11} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-xs italic text-rose-600 bg-rose-50/60 p-2 rounded-lg border border-rose-200/60">No Meta Description 1 tag detected</div>
+                  )}
+                </div>
+
+                {/* H1 Headings */}
+                <div className="space-y-1.5 pt-1 border-t border-slate-200/70">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-600">H1 Headings</span>
+                    <span className={`px-1.5 py-0.2 rounded font-mono text-[10px] font-bold border ${
+                      !selectedRow.h1_1 
+                        ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                        : selectedRow.h1_2 
+                        ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    }`}>
+                      {!selectedRow.h1_1 ? '0 H1 (Missing)' : selectedRow.h1_2 ? '2 H1s (Multiple)' : '1 H1'}
+                    </span>
+                  </div>
+                  {selectedRow.h1_1 ? (
+                    <div className="space-y-1">
+                      <div className="group/item flex items-start justify-between gap-2 p-2 rounded-lg bg-white border border-slate-200 text-xs text-slate-900 font-semibold leading-relaxed">
+                        <div>
+                          <span className="text-[10px] font-mono text-indigo-600 uppercase font-bold block">H1-1 ({selectedRow.h1_1.length} chars, {selectedRow.h1_1.replace(/\s+/g, '').length} no spaces):</span>
+                          <span className="select-all">{selectedRow.h1_1}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(selectedRow.h1_1);
+                            toast.success('H1-1 copied to clipboard');
+                          }}
+                          className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                          title="Copy H1-1"
+                        >
+                          <Copy size={11} />
+                        </button>
+                      </div>
+                      {selectedRow.h1_2 && (
+                        <div className="group/item flex items-start justify-between gap-2 p-2 rounded-lg bg-white border border-amber-200/80 text-xs text-slate-900 font-semibold leading-relaxed">
+                          <div>
+                            <span className="text-[10px] font-mono text-amber-700 uppercase font-bold block">H1-2 ({selectedRow.h1_2.length} chars, {selectedRow.h1_2.replace(/\s+/g, '').length} no spaces):</span>
+                            <span className="select-all">{selectedRow.h1_2}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(selectedRow.h1_2);
+                              toast.success('H1-2 copied to clipboard');
+                            }}
+                            className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                            title="Copy H1-2"
+                          >
+                            <Copy size={11} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-xs italic text-rose-600 bg-rose-50/60 p-2 rounded-lg border border-rose-200/60">No H1 tags detected</div>
+                  )}
+                </div>
+
+                {/* H2 Headings */}
+                <div className="space-y-1.5 pt-1 border-t border-slate-200/70">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-600">H2 Headings</span>
+                    <span className={`px-1.5 py-0.2 rounded font-mono text-[10px] font-bold border ${
+                      !selectedRow.h2_1 
+                        ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                        : selectedRow.h2_2 
+                        ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    }`}>
+                      {!selectedRow.h2_1 ? '0 H2 (Missing)' : selectedRow.h2_2 ? '2+ H2s' : '1 H2'}
+                    </span>
+                  </div>
+                  {selectedRow.h2_1 ? (
+                    <div className="space-y-1">
+                      <div className="group/item flex items-start justify-between gap-2 p-2 rounded-lg bg-white border border-slate-200 text-xs text-slate-900 font-semibold leading-relaxed">
+                        <div>
+                          <span className="text-[10px] font-mono text-indigo-600 uppercase font-bold block">H2-1 ({selectedRow.h2_1.length} chars, {selectedRow.h2_1.replace(/\s+/g, '').length} no spaces):</span>
+                          <span className="select-all">{selectedRow.h2_1}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(selectedRow.h2_1);
+                            toast.success('H2-1 copied to clipboard');
+                          }}
+                          className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                          title="Copy H2-1"
+                        >
+                          <Copy size={11} />
+                        </button>
+                      </div>
+                      {selectedRow.h2_2 && (
+                        <div className="group/item flex items-start justify-between gap-2 p-2 rounded-lg bg-white border border-slate-200 text-xs text-slate-900 font-semibold leading-relaxed">
+                          <div>
+                            <span className="text-[10px] font-mono text-indigo-600 uppercase font-bold block">H2-2 ({selectedRow.h2_2.length} chars, {selectedRow.h2_2.replace(/\s+/g, '').length} no spaces):</span>
+                            <span className="select-all">{selectedRow.h2_2}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(selectedRow.h2_2);
+                              toast.success('H2-2 copied to clipboard');
+                            }}
+                            className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                            title="Copy H2-2"
+                          >
+                            <Copy size={11} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-xs italic text-rose-600 bg-rose-50/60 p-2 rounded-lg border border-rose-200/60">No H2 tags detected</div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Inlink Sources (Discovered On) */}
+            <motion.div variants={staggerItem}>
+              <h4 className="mb-2.5 flex items-center justify-between font-mono text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                <span className="flex items-center gap-1.5">
+                  <Link2 size={13} className="text-indigo-600" /> Discovered On ({inlinks.length} Inlinks)
+                </span>
+                <span className="text-[9px] text-slate-400 font-normal">Internal crawl source</span>
+              </h4>
+
+              {isLoadingInlinks ? (
+                <div className="flex items-center gap-2 p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-500">
+                  <Loader2 size={13} className="animate-spin text-indigo-600" /> Loading inlink source URLs...
+                </div>
+              ) : inlinks.length > 0 ? (
+                <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar">
+                  {inlinks.map((link, idx) => (
+                    <div key={link.id || idx} className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Source Page:</span>
+                        <span className="font-mono text-[10px] text-indigo-700 font-bold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                          {link.is_follow ? 'Follow' : 'Nofollow'}
+                        </span>
+                      </div>
+                      <div className="font-mono text-[11px] text-slate-900 break-all bg-white p-1.5 rounded border border-slate-200">
+                        {link.source_url || `Page ID #${link.source_page_id}`}
+                      </div>
+                      {link.anchor_text && (
+                        <div className="text-[11px] text-slate-600 pt-0.5 flex items-center gap-1">
+                          <span className="text-slate-400 font-medium">Anchor:</span>
+                          <span className="italic font-semibold text-slate-800 truncate" title={link.anchor_text}>
+                            "{link.anchor_text}"
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-500 italic">
+                  {selectedRow.crawl_depth === 0 ? 'Seed Homepage (Root Crawl URL)' : 'No internal inlinks recorded.'}
+                </div>
+              )}
+            </motion.div>
+
             {selectedRow.audit_data &&
               Object.entries(selectedRow.audit_data).map(([category, data]) => {
                 if (!data || Object.keys(data).length === 0) return null;
@@ -391,9 +679,15 @@ export default function AuditDashboard() {
                               </td>
                               <td className="w-1/2 break-all py-2.5 pr-3 text-right font-mono text-[11px] font-semibold text-slate-900">
                                 {typeof val === 'boolean' ? (
-                                  <span className={val ? 'font-bold text-rose-700' : 'font-bold text-emerald-700'}>
-                                    {val ? 'True' : 'False'}
-                                  </span>
+                                  key === 'Missing' ? (
+                                    <span className={val ? 'font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200' : 'font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200'}>
+                                      {val ? '0 (Missing)' : '1 (Present)'}
+                                    </span>
+                                  ) : (
+                                    <span className={val ? 'font-bold text-rose-700' : 'font-bold text-slate-500'}>
+                                      {val ? 'Issue' : 'Passed'}
+                                    </span>
+                                  )
                                 ) : val === null || val === undefined ? (
                                   '-'
                                 ) : Array.isArray(val) ? (

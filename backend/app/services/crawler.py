@@ -47,7 +47,7 @@ NON_PAGE_EXTENSIONS = (
 )
 
 class CrawlerService:
-    def __init__(self, crawl_id: int, seed_url: str, db_session: AsyncSession, max_depth: int = 100, max_concurrent: int = 5, js_rendering: bool = False, max_pages: int = 500, stealth_delay: float = 0.0, ignore_url_params: bool = False, check_external_links: bool = False, exclude_paths: str = "", ignore_robots: bool = False, user_agent: str = "SEO-Spider-Bot"):
+    def __init__(self, crawl_id: int, seed_url: str, db_session: AsyncSession, max_depth: int = 100, max_concurrent: int = 5, js_rendering: bool = False, max_pages: int = 500, stealth_delay: float = 0.0, ignore_url_params: bool = False, check_external_links: bool = False, exclude_paths: str = "", ignore_robots: bool = False, user_agent: str = "SEO-Spider-Bot", crawl_author_archives: bool = False):
         self.crawl_id = crawl_id
         self.seed_url = seed_url
         self.db = db_session
@@ -57,6 +57,7 @@ class CrawlerService:
         self.stealth_delay = stealth_delay
         self.ignore_url_params = ignore_url_params
         self.check_external_links = check_external_links
+        self.crawl_author_archives = crawl_author_archives
         
         # Parse exclude paths into a list of strings
         self.exclude_paths_list = [p.strip() for p in exclude_paths.split('\n') if p.strip()]
@@ -637,6 +638,10 @@ class CrawlerService:
                 # Skip non-HTML binary asset files from being queued as crawlable pages
                 if path_lower.endswith(NON_PAGE_EXTENSIONS):
                     continue
+
+                # Skip author archives if disabled in settings (Screaming Frog standard: disabled by default)
+                if not getattr(self, 'crawl_author_archives', False) and ('/author/' in path_lower or path_lower.startswith('/author')):
+                    continue
                     
                 # Check Exclude Paths
                 is_excluded = False
@@ -682,6 +687,8 @@ class CrawlerService:
         audit_data = {
             "Response_Codes": {
                 "3xx": True,
+                "Redirection (3xx)": True,
+                "Redirection_3xx": True,
                 "Status Code": status_code,
                 "Redirect URL": redirect_url
             },
@@ -697,7 +704,6 @@ class CrawlerService:
             status_name=status_name,
             indexability=IndexabilityStatus.NON_INDEXABLE,
             indexability_status=f"Redirect ({status_code})",
-            canonical_link_element_1=redirect_url,
             crawl_depth=depth,
             folder_depth=urlparse(url).path.count("/"),
             audit_data=audit_data
@@ -711,6 +717,37 @@ class CrawlerService:
                 await self.db.rollback()
 
     async def _save_error_page(self, url: str, depth: int, status_code: int, error_reason: str):
+        resp_codes = {}
+        if 400 <= status_code < 500:
+            resp_codes = {
+                "4xx": True,
+                "Client Error (4xx)": True,
+                "Client_Error_4xx": True,
+                "Status Code": status_code,
+                "Error": error_reason or "Client Error (4xx)"
+            }
+        elif status_code >= 500:
+            resp_codes = {
+                "5xx": True,
+                "Server Error (5xx)": True,
+                "Server_Error_5xx": True,
+                "Status Code": status_code,
+                "Error": error_reason or "Server Error (5xx)"
+            }
+        elif status_code == 0:
+            resp_codes = {
+                "Blocked": True,
+                "Status Code": 0,
+                "Error": error_reason or "Blocked by robots.txt"
+            }
+
+        audit_data = {
+            "Response_Codes": resp_codes,
+            "Indexability": {
+                "Indexable": False,
+                "Non-Indexable Reason": error_reason or f"Error ({status_code})"
+            }
+        }
         page = Page(
             crawl_id=self.crawl_id,
             url=url,
@@ -718,7 +755,8 @@ class CrawlerService:
             indexability=IndexabilityStatus.NON_INDEXABLE,
             indexability_status=error_reason,
             crawl_depth=depth,
-            folder_depth=urlparse(url).path.count("/")
+            folder_depth=urlparse(url).path.count("/"),
+            audit_data=audit_data
         )
         async with self.db_lock:
             try:

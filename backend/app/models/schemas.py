@@ -14,6 +14,7 @@ class CrawlRequest(BaseModel):
     ignore_robots: bool = False
     js_rendering: bool = False
     user_agent: str = "SEO-Spider-Bot"
+    crawl_author_archives: bool = False
 
 class CrawlResponse(BaseModel):
     id: int
@@ -25,19 +26,34 @@ class CrawlResponse(BaseModel):
 class PageSummary(BaseModel):
     id: int
     url: str
-    status_code: Optional[int]
-    status_name: Optional[str]
-    indexability: Optional[str]
-    indexability_status: Optional[str]
-    title_1: Optional[str]
-    title_1_length: Optional[int]
-    meta_desc_1: Optional[str]
-    meta_desc_1_length: Optional[int]
-    h1_1: Optional[str]
-    word_count: Optional[int]
-    size_bytes: Optional[int]
-    response_time_ms: Optional[int]
-    folder_depth: Optional[int]
+    status_code: Optional[int] = None
+    status_name: Optional[str] = None
+    content_type: Optional[str] = None
+    indexability: Optional[str] = None
+    indexability_status: Optional[str] = None
+    crawl_depth: Optional[int] = None
+    folder_depth: Optional[int] = None
+    response_time_ms: Optional[int] = None
+    word_count: Optional[int] = None
+    size_bytes: Optional[int] = None
+    title_1: Optional[str] = None
+    title_1_length: Optional[int] = None
+    title_1_pixel_width: Optional[int] = None
+    meta_desc_1: Optional[str] = None
+    meta_desc_1_length: Optional[int] = None
+    meta_desc_1_pixel_width: Optional[int] = None
+    meta_keyword_1: Optional[str] = None
+    meta_keyword_1_length: Optional[int] = None
+    h1_1: Optional[str] = None
+    h1_1_length: Optional[int] = None
+    h1_2: Optional[str] = None
+    h1_2_length: Optional[int] = None
+    h2_1: Optional[str] = None
+    h2_1_length: Optional[int] = None
+    h2_2: Optional[str] = None
+    h2_2_length: Optional[int] = None
+    canonical_link_element_1: Optional[str] = None
+    meta_robots_1: Optional[str] = None
     audit_data: Optional[Dict[str, Any]] = None
     
     class Config:
@@ -46,8 +62,9 @@ class PageSummary(BaseModel):
 class LinkSummary(BaseModel):
     id: int
     source_page_id: int
+    source_url: Optional[str] = None
     destination_url: str
-    anchor_text: Optional[str]
+    anchor_text: Optional[str] = None
     is_follow: bool
     link_type: str
     is_internal: bool
