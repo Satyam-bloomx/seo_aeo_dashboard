@@ -37,6 +37,12 @@ class DisconnectRequest(BaseModel):
     service: Optional[str] = None
     service_name: Optional[str] = None
 
+class GoogleOAuthAppRequest(BaseModel):
+    project_id: int = 1
+    service: str = "search_console"
+    client_id: str
+    client_secret: str
+
 SUPPORTED_SERVICES = [
     "pagespeed",
     "openai",
@@ -51,6 +57,16 @@ def _mask_key(key: Optional[str]) -> Optional[str]:
     if not key:
         return None
     k = key.strip()
+    if k.startswith("{"):
+        try:
+            import json
+            info = json.loads(k)
+            email = info.get("client_email")
+            if email:
+                return f"Service Account: {email}"
+        except Exception:
+            pass
+        return "Service Account (JSON Key)"
     if len(k) <= 8:
         return "****" + k[-2:]
     return k[:4] + "...." + k[-4:]
@@ -125,8 +141,28 @@ async def save_api_key(req: ApiKeyRequest, db: AsyncSession = Depends(get_db)):
         service_title = "Google Search Console" if service == "search_console" else "Google Analytics 4"
         raise HTTPException(
             status_code=400, 
-            detail=f"{service_title} requires an OAuth 2.0 User Access Token (ya29...) or 1-Click Google OAuth Sign-In. API Keys (AIza...) are not permitted by Google for private site telemetry."
+            detail=f"{service_title} requires an OAuth 2.0 User Access Token (ya29...), Google 1-Click Sign-In, or a Service Account JSON. API Keys (AIza...) are not permitted by Google for private site telemetry."
         )
+
+    # Validate Service Account JSON if provided for Google services
+    if service in ["search_console", "google_analytics"] and raw_key.startswith("{"):
+        try:
+            import json
+            from google.oauth2 import service_account
+            from google.auth.transport.requests import Request as GoogleRequest
+            sa_info = json.loads(raw_key)
+            scopes = (
+                ["https://www.googleapis.com/auth/webmasters.readonly"]
+                if service == "search_console"
+                else ["https://www.googleapis.com/auth/analytics.readonly"]
+            )
+            creds = service_account.Credentials.from_service_account_info(sa_info, scopes=scopes)
+            creds.refresh(GoogleRequest())
+        except Exception as sa_err:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid Google Service Account JSON: {str(sa_err)}. Please ensure client_email and private_key are valid."
+            )
 
     try:
         from app.models.domain import Project
@@ -371,18 +407,38 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
     # 6. Google Search Console test (CRITICAL)
     elif service == "search_console":
         if not api_key:
-            return {"success": False, "status": "error", "detail": "Missing Google Search Console credentials (OAuth token or API key)"}
+            return {"success": False, "status": "error", "detail": "Missing Google Search Console credentials (OAuth token, Service Account JSON, or API key)"}
         
         token = api_key.strip()
         if token.lower().startswith("bearer "):
             token = token[7:].strip()
+            
+        # Check if user provided Google Cloud Service Account JSON
+        if token.startswith("{"):
+            try:
+                import json
+                from google.oauth2 import service_account
+                from google.auth.transport.requests import Request as GoogleRequest
+                sa_info = json.loads(token)
+                creds = service_account.Credentials.from_service_account_info(
+                    sa_info,
+                    scopes=["https://www.googleapis.com/auth/webmasters.readonly"]
+                )
+                creds.refresh(GoogleRequest())
+                token = creds.token
+            except Exception as sa_err:
+                return {
+                    "success": False,
+                    "status": "error",
+                    "detail": f"Invalid Google Service Account JSON: {str(sa_err)}. Please ensure client_email and private_key are valid."
+                }
         
         # 1. If user provided a Google API Key (starts with AIza)
         if token.startswith("AIza"):
             return {
                 "success": False,
                 "status": "error",
-                "detail": "Google API Keys ('AIza...') cannot access private Google Search Console telemetry. Google requires OAuth 2.0 User authorization or a Service Account. Please click 'Sign in with Google' or provide an OAuth access token."
+                "detail": "Google API Keys ('AIza...') cannot access private Google Search Console telemetry. Google requires OAuth 2.0 User authorization or a Service Account. Please add your email to Test Users in Google Cloud Console or upload a Service Account JSON."
             }
 
         # 2. Simulated or developer tokens
@@ -513,10 +569,94 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
 
     return {"success": True, "status": "ok", "message": f"{service} integration verified."}
 
+@router.post("/google/credentials")
+async def save_google_oauth_credentials(req: GoogleOAuthAppRequest, db: AsyncSession = Depends(get_db)):
+    if not req.client_id or not req.client_id.strip():
+        raise HTTPException(status_code=400, detail="Google Client ID is required")
+    if not req.client_secret or not req.client_secret.strip():
+        raise HTTPException(status_code=400, detail="Google Client Secret is required")
+        
+    client_id = req.client_id.strip()
+    client_secret = req.client_secret.strip()
+    
+    from app.models.domain import Project
+    proj_res = await db.execute(select(Project).where(Project.id == req.project_id))
+    proj = proj_res.scalars().first()
+    if not proj:
+        proj = Project(id=req.project_id, name="Default Project")
+        db.add(proj)
+        await db.flush()
+
+    result = await db.execute(select(Integration).where(
+        Integration.project_id == req.project_id,
+        Integration.integration_type == req.service
+    ))
+    integration = result.scalars().first()
+    if not integration:
+        integration = Integration(
+            project_id=req.project_id,
+            integration_type=req.service
+        )
+        db.add(integration)
+        
+    config = dict(integration.config_json) if (integration.config_json and isinstance(integration.config_json, dict)) else {}
+    config["client_id"] = client_id
+    config["client_secret"] = client_secret
+    integration.config_json = config
+    
+    await db.commit()
+    return {
+        "status": "success",
+        "message": "Custom Google OAuth Client ID & Secret saved successfully!",
+        "client_id": client_id[:12] + "..." + client_id[-10:] if len(client_id) > 22 else client_id
+    }
+
+@router.get("/google/credentials/{project_id}/{service}")
+async def get_google_oauth_credentials(project_id: int, service: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Integration).where(
+        Integration.project_id == project_id,
+        Integration.integration_type == service
+    ))
+    integration = result.scalars().first()
+    
+    custom_client_id = ""
+    has_secret = False
+    if integration and integration.config_json and isinstance(integration.config_json, dict):
+        custom_client_id = integration.config_json.get("client_id", "")
+        has_secret = bool(integration.config_json.get("client_secret"))
+        
+    env_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    env_has_secret = bool(os.environ.get("GOOGLE_CLIENT_SECRET", "").strip())
+    
+    effective_client_id = custom_client_id or env_client_id
+    effective_has_secret = has_secret or env_has_secret
+    
+    return {
+        "client_id": effective_client_id,
+        "has_secret": effective_has_secret,
+        "is_custom": bool(custom_client_id)
+    }
+
 @router.get("/google/auth")
-async def google_auth_redirect(request: Request, project_id: int, service: str, redirect_uri: Optional[str] = None):
+async def google_auth_redirect(
+    request: Request, 
+    project_id: int, 
+    service: str, 
+    redirect_uri: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
     # Dynamically determine the frontend host from request headers or redirect_uri
-    google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    result = await db.execute(select(Integration).where(
+        Integration.project_id == project_id, 
+        Integration.integration_type == service
+    ))
+    integration = result.scalars().first()
+    
+    custom_client_id = None
+    if integration and integration.config_json and isinstance(integration.config_json, dict):
+        custom_client_id = integration.config_json.get("client_id")
+        
+    google_client_id = (custom_client_id or os.environ.get("GOOGLE_CLIENT_ID", "")).strip()
     origin = request.headers.get("origin") or ""
     referer = request.headers.get("referer") or ""
     
@@ -560,7 +700,7 @@ async def google_auth_redirect(request: Request, project_id: int, service: str, 
                 "configured": False, 
                 "auth_url": callback_url, 
                 "status": "missing_credentials",
-                "message": "Google Cloud OAuth credentials not configured in backend/.env. Add GOOGLE_CLIENT_ID for live sign-in, or click 'Token / Key' to paste a Google Access Token directly."
+                "message": "Google Cloud OAuth credentials not configured. Please enter your Google Client ID & Secret in the modal, or add GOOGLE_CLIENT_ID to backend/.env."
             }
         from fastapi.responses import RedirectResponse
         return RedirectResponse(url=callback_url)
@@ -595,8 +735,14 @@ async def google_auth_callback(
             )
             db.add(integration)
             
-        google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
-        google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+        custom_client_id = None
+        custom_client_secret = None
+        if integration and integration.config_json and isinstance(integration.config_json, dict):
+            custom_client_id = integration.config_json.get("client_id")
+            custom_client_secret = integration.config_json.get("client_secret")
+            
+        google_client_id = (custom_client_id or os.environ.get("GOOGLE_CLIENT_ID", "")).strip()
+        google_client_secret = (custom_client_secret or os.environ.get("GOOGLE_CLIENT_SECRET", "")).strip()
         
         access_token = None
         refresh_token = None
@@ -744,6 +890,21 @@ async def get_google_properties(
         return {"connected": False, "properties": [], "message": "Google account not connected."}
         
     token = integration.access_token or integration.api_key
+    if token and token.startswith("{"):
+        try:
+            import json
+            from google.oauth2 import service_account
+            from google.auth.transport.requests import Request as GoogleRequest
+            sa_info = json.loads(token)
+            creds = service_account.Credentials.from_service_account_info(
+                sa_info,
+                scopes=["https://www.googleapis.com/auth/webmasters.readonly"]
+            )
+            creds.refresh(GoogleRequest())
+            token = creds.token
+        except Exception:
+            pass
+
     if not token or token.startswith("mock_") or token.startswith("oauth_token_"):
         return {
             "connected": True,

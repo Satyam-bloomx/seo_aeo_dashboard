@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DialogTitle } from '@headlessui/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import AnimatedModal from '@/components/ui/AnimatedModal';
@@ -22,7 +22,9 @@ import {
   Copy,
   Maximize2,
   Globe,
-  ShieldCheck
+  ShieldCheck,
+  Sliders,
+  Lock
 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -215,6 +217,53 @@ export default function ApiKeyModal({
   const [isGuideOpen, setIsGuideOpen] = useState(true);
   const [previewImage, setPreviewImage] = useState(null);
 
+  // Screaming Frog-style User-Defined OAuth Application state
+  const [oauthTab, setOauthTab] = useState('custom_app'); // 'custom_app' | 'one_click' | 'manual_token'
+  const [customClientId, setCustomClientId] = useState('');
+  const [customClientSecret, setCustomClientSecret] = useState('');
+  const [showClientSecret, setShowClientSecret] = useState(false);
+  const [isSavingApp, setIsSavingApp] = useState(false);
+
+  useEffect(() => {
+    if (integration?.authType === 'oauth') {
+      axios.get(`${API_BASE_URL}/integrations/google/credentials/${projectId}/${integration.id}`)
+        .then(res => {
+          if (res.data?.client_id) {
+            setCustomClientId(res.data.client_id);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [integration, projectId]);
+
+  const handleSaveCustomCredentialsAndConnect = async (e) => {
+    if (e) e.preventDefault();
+    if (!customClientId.trim()) {
+      toast.warning('Please enter your Google Client ID.');
+      return;
+    }
+    if (!customClientSecret.trim()) {
+      toast.warning('Please enter your Google Client Secret.');
+      return;
+    }
+    setIsSavingApp(true);
+    try {
+      await axios.post(`${API_BASE_URL}/integrations/google/credentials`, {
+        project_id: projectId,
+        service: integration.id,
+        client_id: customClientId.trim(),
+        client_secret: customClientSecret.trim()
+      });
+      toast.success('Custom Google OAuth Credentials saved!');
+      setIsSavingApp(false);
+      if (onOAuthConnect) onOAuthConnect();
+    } catch (err) {
+      setIsSavingApp(false);
+      const errMsg = err.response?.data?.detail || 'Failed to save Google OAuth credentials.';
+      toast.error(errMsg);
+    }
+  };
+
   if (!integration) return null;
 
   const guide = GUIDES[integration.id];
@@ -330,8 +379,150 @@ export default function ApiKeyModal({
         {/* Modal Body with Step-by-Step Visual Guide */}
         <form onSubmit={handleSave} className="p-6 space-y-5 bg-white max-h-[82vh] overflow-y-auto custom-scrollbar">
 
-          {/* 1-Click Google Sign-In Banner for OAuth integrations */}
-          {integration.authType === 'oauth' && onOAuthConnect && (
+          {/* OAuth Mode Switcher for Google integrations */}
+          {integration.authType === 'oauth' && (
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setOauthTab('custom_app')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  oauthTab === 'custom_app'
+                    ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Sliders size={13} />
+                <span>Custom Client ID & Secret</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setOauthTab('one_click')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  oauthTab === 'one_click'
+                    ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Globe size={13} />
+                <span>1-Click Sign-In</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setOauthTab('manual_token')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  oauthTab === 'manual_token'
+                    ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Key size={13} />
+                <span>Service Account / Token</span>
+              </button>
+            </div>
+          )}
+
+          {/* TAB 1: Custom Client ID & Secret (Screaming Frog User-Defined App) */}
+          {integration.authType === 'oauth' && oauthTab === 'custom_app' && (
+            <div className="p-4 rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/70 via-white to-slate-50/70 space-y-4 shadow-xs">
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <Sliders size={15} className="text-indigo-600" />
+                  Screaming Frog Style: User-Defined OAuth Application
+                </h4>
+                <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                  Enter your Client ID and Client Secret directly in the UI. No need to touch <code>backend/.env</code> or restart servers!
+                </p>
+              </div>
+
+              {/* Redirect URI with 1-click Copy */}
+              <div className="p-2.5 rounded-lg bg-white border border-indigo-100 space-y-1">
+                <span className="text-[10px] font-bold text-slate-700 block uppercase tracking-wider">
+                  Authorized Redirect URI (Copy into Google Cloud Console):
+                </span>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-[11px] font-mono text-indigo-900 select-all font-semibold overflow-x-auto">
+                    {typeof window !== 'undefined' ? `${window.location.origin}/integrations/callback` : 'http://localhost:3000/integrations/callback'}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const uri = typeof window !== 'undefined' ? `${window.location.origin}/integrations/callback` : 'http://localhost:3000/integrations/callback';
+                      navigator.clipboard.writeText(uri);
+                      toast.success('Redirect URI copied to clipboard!');
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-mono font-bold rounded bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer transition-colors shrink-0 shadow-2xs"
+                  >
+                    Copy URI
+                  </button>
+                </div>
+              </div>
+
+              {/* Inputs */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-mono font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Google OAuth Client ID
+                  </label>
+                  <input
+                    type="text"
+                    value={customClientId}
+                    onChange={(e) => setCustomClientId(e.target.value)}
+                    placeholder="e.g. 103847293847-abcdef...apps.googleusercontent.com"
+                    className="w-full glass-input px-3 py-2 font-mono text-xs bg-white border-slate-200 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-mono font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Google OAuth Client Secret
+                  </label>
+                  <div className="relative flex items-center">
+                    <input
+                      type={showClientSecret ? 'text' : 'password'}
+                      value={customClientSecret}
+                      onChange={(e) => setCustomClientSecret(e.target.value)}
+                      placeholder="e.g. GOCSPX-abc123xyz..."
+                      className="w-full glass-input pl-3 pr-10 py-2 font-mono text-xs bg-white border-slate-200 focus:border-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowClientSecret(!showClientSecret)}
+                      className="absolute right-3 text-slate-400 hover:text-slate-700"
+                    >
+                      {showClientSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-indigo-100/80">
+                <span className="text-[10px] text-slate-500 leading-tight flex-1">
+                  💡 Tip: Create this Client ID in the client&apos;s Google Cloud account so they can sign in without &apos;Test user&apos; errors!
+                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-3 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 rounded-lg cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveCustomCredentialsAndConnect}
+                    disabled={isSavingApp}
+                    className="btn-primary py-2 px-3.5 text-xs font-bold gap-1.5 whitespace-nowrap shrink-0 shadow-xs cursor-pointer"
+                  >
+                    {isSavingApp ? <Loader2 size={13} className="animate-spin" /> : <Globe size={13} />}
+                    Save &amp; Connect with Google
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: 1-Click Google Sign-In with Default Project */}
+          {integration.authType === 'oauth' && oauthTab === 'one_click' && onOAuthConnect && (
             <div className="flex flex-col gap-3">
               <div className="p-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/80 via-white to-blue-50/60 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
@@ -362,7 +553,7 @@ export default function ApiKeyModal({
                 <div className="space-y-2 text-slate-600 mt-1">
                   <div>
                     <span className="font-semibold text-slate-800 block text-[11px]">
-                      1. Authorized Redirect URI (Prevents "Error 400: redirect_uri_mismatch"):
+                      1. Authorized Redirect URI (Prevents &quot;Error 400: redirect_uri_mismatch&quot;):
                     </span>
                     <div className="flex items-center gap-2 mt-1">
                       <code className="bg-white px-2 py-1 rounded border border-indigo-200 text-[11px] font-mono text-indigo-900 select-all font-semibold">
@@ -380,22 +571,41 @@ export default function ApiKeyModal({
                         Copy URI
                       </button>
                     </div>
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      Add this exact URL in Google Cloud Console &gt; <strong>APIs & Services</strong> &gt; <strong>Credentials</strong> &gt; <strong>OAuth 2.0 Client IDs</strong> &gt; <strong>Authorized redirect URIs</strong>.
-                    </p>
                   </div>
 
-                  <div className="pt-1 border-t border-indigo-100">
-                    <span className="font-semibold text-slate-800 block text-[11px]">
-                      2. Team Member Access (Why Google blocks other emails):
+                  <div className="pt-2 border-t border-indigo-100">
+                    <span className="font-semibold text-rose-800 flex items-center gap-1.5 text-[11px]">
+                      <AlertCircle size={13} className="text-rose-600 shrink-0" />
+                      Fix &quot;Error 403: access_denied&quot; (daily-Horrow has not completed verification):
                     </span>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                      While your app's publishing status is in <strong>"Testing"</strong> mode, Google blocks anyone not in your <strong>Test users</strong> list. To allow your team members to sign in:
-                      <br />
-                      • Go to <strong>OAuth consent screen</strong> &gt; scroll to <strong>Test users</strong> &gt; click <strong>+ ADD USERS</strong> and add their email (e.g. <code className="bg-white px-1 py-0.2 rounded border font-mono">mitalis@bloomxsolutions.com</code>).
-                      <br />
-                      • Or set User Type to <strong>Internal</strong> if you are using Google Workspace (@bloomxsolutions.com).
-                    </p>
+                    <div className="text-[10px] text-slate-700 mt-1.5 leading-relaxed bg-white/95 p-3 rounded-xl border border-indigo-200 shadow-2xs space-y-1.5">
+                      <p>Google blocks all accounts by default while your app is in <strong>Testing</strong> mode. To unlock sign-in in 20 seconds:</p>
+                      <ol className="list-decimal list-inside space-y-1 font-medium text-slate-800">
+                        <li>
+                          Open{' '}
+                          <a
+                            href="https://console.cloud.google.com/apis/credentials/consent"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-bold text-indigo-600 hover:text-indigo-800 underline inline-flex items-center gap-0.5"
+                          >
+                            Google Cloud Console &gt; OAuth consent screen <ExternalLink size={10} />
+                          </a>
+                        </li>
+                        <li>Ensure project <strong>daily-Horrow</strong> is selected at the top.</li>
+                        <li>
+                          Scroll to <strong>Test users</strong> &gt; click <strong>+ ADD USERS</strong> &gt; enter{' '}
+                          <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono font-bold text-indigo-900 select-all">
+                            bloomxdeveloper@gmail.com
+                          </code>{' '}
+                          &gt; click <strong>Save</strong>.
+                        </li>
+                        <li>
+                          Return here and click <strong>Connect with Google</strong>! When the unverified screen appears, click{' '}
+                          <em>Advanced &gt; Go to daily-Horrow (unsafe)</em>.
+                        </li>
+                      </ol>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -522,137 +732,150 @@ export default function ApiKeyModal({
             )}
           </AnimatePresence>
 
-          {/* API Key Input */}
-          <div>
-            <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-2">
-              {integration.authType === 'oauth'
-                ? `Enter ${integration.name} Access Token (starts with ya29...)`
-                : `Enter ${integration.name} API Key`}
-            </label>
-            <div className="relative flex items-center">
-              <input
-                type={showKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={(e) => {
-                  setApiKey(e.target.value);
-                  setTestResult(null);
-                  setError(null);
-                }}
-                placeholder={
-                  integration.placeholder ||
-                  (integration.authType === 'oauth' ? 'ya29.a0A... (Google OAuth Access Token)' : 'AIzaSy... / sk-...')
-                }
-                className="w-full glass-input pl-3.5 pr-10 py-2.5 font-mono text-sm bg-slate-50/50"
-                autoFocus
-              />
-              <motion.button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                whileTap={tapPress}
-                transition={spring.press}
-                aria-label={showKey ? 'Hide API key' : 'Show API key'}
-                className="absolute right-3 text-slate-400 hover:text-slate-700"
-              >
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.span
-                    key={showKey ? 'hide' : 'show'}
-                    initial={{ opacity: 0, scale: 0.7 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.7 }}
-                    transition={tween(duration.micro, ease.outQuart)}
-                    className="flex"
+          {/* Manual API Key / Token / Service Account JSON Input (Shown for non-OAuth or manual_token tab) */}
+          {(integration.authType !== 'oauth' || oauthTab === 'manual_token') && (
+            <>
+              <div>
+                <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  {integration.authType === 'oauth'
+                    ? `Enter Access Token (ya29...) OR Service Account JSON`
+                    : `Enter ${integration.name} API Key`}
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={apiKey}
+                    onChange={(e) => {
+                      setApiKey(e.target.value);
+                      setTestResult(null);
+                      setError(null);
+                    }}
+                    placeholder={
+                      integration.placeholder ||
+                      (integration.authType === 'oauth' ? 'ya29.a0A... OR paste { "type": "service_account", ... }' : 'AIzaSy... / sk-...')
+                    }
+                    className="w-full glass-input pl-3.5 pr-10 py-2.5 font-mono text-sm bg-slate-50/50"
+                    autoFocus
+                  />
+                  <motion.button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    whileTap={tapPress}
+                    transition={spring.press}
+                    aria-label={showKey ? 'Hide API key' : 'Show API key'}
+                    className="absolute right-3 text-slate-400 hover:text-slate-700"
                   >
-                    {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </motion.span>
-                </AnimatePresence>
-              </motion.button>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
-              Your key is encrypted per-project and used exclusively for live crawler enrichments.
-            </p>
-            {integration.authType === 'oauth' && apiKey.trim().startsWith('AIza') && (
-              <div className="mt-2.5 p-3 rounded-xl border border-indigo-200 bg-indigo-50/70 text-indigo-900 text-xs font-medium flex items-start gap-2">
-                <Globe size={15} className="text-indigo-600 shrink-0 mt-0.5" />
-                <div>
-                  <strong className="block font-bold">Google Cloud API Key Detected</strong>
-                  Your API Key will be verified with Google Cloud for URL inspection. You can also use the <strong>1-Click Google OAuth Sign-In</strong> button above for verified domain analytics.
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.span
+                        key={showKey ? 'hide' : 'show'}
+                        initial={{ opacity: 0, scale: 0.7 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.7 }}
+                        transition={tween(duration.micro, ease.outQuart)}
+                        className="flex"
+                      >
+                        {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </motion.span>
+                    </AnimatePresence>
+                  </motion.button>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                  Your credentials are encrypted per-project and used exclusively for live crawler enrichments.
+                </p>
+                {integration.authType === 'oauth' && apiKey.trim().startsWith('AIza') && (
+                  <div className="mt-2.5 p-3 rounded-xl border border-rose-200 bg-rose-50/80 text-rose-900 text-xs font-medium flex items-start gap-2">
+                    <AlertCircle size={15} className="text-rose-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="block font-bold">Google API Key (AIza...) Not Supported by Search Console</strong>
+                      Google strictly prohibits standard API keys for private site telemetry. Please use <strong>Custom Client ID &amp; Secret</strong> or paste a <strong>Service Account JSON</strong> above.
+                    </div>
+                  </div>
+                )}
+                {integration.authType === 'oauth' && apiKey.trim().startsWith('{') && (
+                  <div className="mt-2.5 p-3 rounded-xl border border-emerald-200 bg-emerald-50/80 text-emerald-900 text-xs font-medium flex items-start gap-2">
+                    <CheckCircle2 size={15} className="text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="block font-bold">Google Cloud Service Account JSON Detected</strong>
+                      Service Account credentials recognized. This provides permanent 24/7 crawler access without OAuth popups or token expiration!
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Action Buttons */}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
+                <motion.button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={isTesting || !apiKey.trim()}
+                  whileTap={isTesting ? undefined : tapPress}
+                  transition={spring.press}
+                  className="btn-secondary py-2 px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs"
+                >
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.span
+                      key={isTesting ? 'testing' : 'idle'}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={tween(duration.micro, ease.outQuart)}
+                      className="flex items-center gap-1.5"
+                    >
+                      {isTesting ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin text-indigo-600" /> Testing...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={13} className="text-indigo-600" /> Test Connection
+                        </>
+                      )}
+                    </motion.span>
+                  </AnimatePresence>
+                </motion.button>
+
+                <div className="flex items-center gap-2">
+                  <motion.button
+                    type="button"
+                    onClick={onClose}
+                    whileTap={tapPress}
+                    transition={spring.press}
+                    className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </motion.button>
+                  <motion.button
+                    type="submit"
+                    disabled={isLoading}
+                    whileTap={isLoading ? undefined : tapPress}
+                    transition={spring.press}
+                    className="btn-primary py-2 px-4 text-xs font-bold gap-2 disabled:opacity-50 shadow-xs"
+                  >
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.span
+                        key={isLoading ? 'saving' : 'idle'}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -5 }}
+                        transition={tween(duration.micro, ease.outQuart)}
+                        className="flex items-center gap-2"
+                      >
+                        {isLoading ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" /> Saving...
+                          </>
+                        ) : (
+                          <>
+                            <Check size={14} /> Connect &amp; Save
+                          </>
+                        )}
+                      </motion.span>
+                    </AnimatePresence>
+                  </motion.button>
                 </div>
               </div>
-            )}
-          </div>
-
-          {/* Modal Action Buttons */}
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
-            <motion.button
-              type="button"
-              onClick={handleTestConnection}
-              disabled={isTesting || !apiKey.trim()}
-              whileTap={isTesting ? undefined : tapPress}
-              transition={spring.press}
-              className="btn-secondary py-2 px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs"
-            >
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.span
-                  key={isTesting ? 'testing' : 'idle'}
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -5 }}
-                  transition={tween(duration.micro, ease.outQuart)}
-                  className="flex items-center gap-1.5"
-                >
-                  {isTesting ? (
-                    <>
-                      <Loader2 size={13} className="animate-spin text-indigo-600" /> Testing...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles size={13} className="text-indigo-600" /> Test Connection
-                    </>
-                  )}
-                </motion.span>
-              </AnimatePresence>
-            </motion.button>
-
-            <div className="flex items-center gap-2">
-              <motion.button
-                type="button"
-                onClick={onClose}
-                whileTap={tapPress}
-                transition={spring.press}
-                className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
-              >
-                Cancel
-              </motion.button>
-              <motion.button
-                type="submit"
-                disabled={isLoading}
-                whileTap={isLoading ? undefined : tapPress}
-                transition={spring.press}
-                className="btn-primary py-2 px-4 text-xs font-bold gap-2 disabled:opacity-50 shadow-xs"
-              >
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.span
-                    key={isLoading ? 'saving' : 'idle'}
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -5 }}
-                    transition={tween(duration.micro, ease.outQuart)}
-                    className="flex items-center gap-2"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 size={14} className="animate-spin" /> Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Check size={14} /> Connect &amp; Save
-                      </>
-                    )}
-                  </motion.span>
-                </AnimatePresence>
-              </motion.button>
-            </div>
-          </div>
+            </>
+          )}
         </form>
 
       </AnimatedModal>
