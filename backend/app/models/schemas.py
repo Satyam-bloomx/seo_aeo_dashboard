@@ -36,6 +36,7 @@ class PageSummary(BaseModel):
     response_time_ms: Optional[int] = None
     word_count: Optional[int] = None
     size_bytes: Optional[int] = None
+    content_hash: Optional[str] = None
     title_1: Optional[str] = None
     title_1_length: Optional[int] = None
     title_1_pixel_width: Optional[int] = None

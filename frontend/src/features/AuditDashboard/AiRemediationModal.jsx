@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import AnimatedModal from '@/components/ui/AnimatedModal';
 import { getAiRemediation } from '@/api/client';
 import { toast } from 'sonner';
+import { copyToClipboard } from '@/utils/clipboard';
 import { spring, tapPress } from '@/lib/motion';
 import {
   Sparkles,
@@ -72,13 +73,14 @@ export default function AiRemediationModal({ isOpen, onClose, issue, pages }) {
     };
   }, [isOpen, issue, selectedUrlIndex]);
 
-  const handleCopyCode = () => {
+  const handleCopyCode = async () => {
     const code = remediationData?.data?.code_snippet || '';
     if (!code) return;
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    toast.success('Code fix copied to clipboard!');
-    setTimeout(() => setCopied(false), 2200);
+    const ok = await copyToClipboard(code, 'Code fix');
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    }
   };
 
   if (!isOpen || !issue) return null;
@@ -87,7 +89,7 @@ export default function AiRemediationModal({ isOpen, onClose, issue, pages }) {
 
   return (
     <AnimatedModal isOpen={isOpen} onClose={onClose} size="lg">
-      <div className="bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-200 flex flex-col max-h-[90vh]">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]">
         
         {/* Modal Header */}
         <div className="px-6 py-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between shrink-0 border-b border-indigo-900/40">
@@ -119,21 +121,21 @@ export default function AiRemediationModal({ isOpen, onClose, issue, pages }) {
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto custom-scrollbar space-y-5 flex-1 bg-slate-50/50">
+        <div className="p-6 overflow-y-auto custom-scrollbar space-y-5 flex-1 bg-slate-50/50 dark:bg-slate-950/60">
 
           {/* Target URL Selector */}
           {affectedPages.length > 1 && (
-            <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-3">
-              <div className="text-xs text-slate-600">
-                <span className="font-bold text-slate-900">Target Sample URL:</span>
-                <span className="ml-1.5 font-mono text-slate-500 truncate max-w-sm inline-block align-bottom">
+            <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between gap-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400">
+                <span className="font-bold text-slate-900 dark:text-white">Target Sample URL:</span>
+                <span className="ml-1.5 font-mono text-slate-500 dark:text-slate-400 truncate max-w-sm inline-block align-bottom">
                   {activePage.url}
                 </span>
               </div>
               <select
                 value={selectedUrlIndex}
                 onChange={(e) => setSelectedUrlIndex(Number(e.target.value))}
-                className="text-xs font-mono bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-800 outline-none cursor-pointer hover:bg-slate-200 transition-colors"
+                className="text-xs font-mono bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-slate-800 dark:text-slate-200 outline-none cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
               >
                 {affectedPages.slice(0, 10).map((p, idx) => (
                   <option key={p.id || p.url || idx} value={idx}>
@@ -148,12 +150,12 @@ export default function AiRemediationModal({ isOpen, onClose, issue, pages }) {
           {loading ? (
             <div className="py-16 flex flex-col items-center justify-center space-y-4">
               <div className="relative">
-                <div className="w-14 h-14 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin" />
+                <div className="w-14 h-14 rounded-full border-4 border-indigo-100 dark:border-indigo-900 border-t-indigo-600 animate-spin" />
                 <Sparkles size={20} className="absolute inset-0 m-auto text-indigo-600 animate-pulse" />
               </div>
               <div className="text-center">
-                <h4 className="text-sm font-bold text-slate-900">Synthesizing Technical SEO Fix...</h4>
-                <p className="text-xs text-slate-500 mt-1 font-mono">Querying GPT-4o-mini & W3C validation models for production fix</p>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Synthesizing Technical SEO Fix...</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-mono">Querying GPT-4o-mini & W3C validation models for production fix</p>
               </div>
             </div>
           ) : (
@@ -165,27 +167,27 @@ export default function AiRemediationModal({ isOpen, onClose, issue, pages }) {
                 className="space-y-4"
               >
                 {/* 1. Root Cause & Summary Card */}
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2">
-                  <div className="flex items-center gap-2 text-rose-700 font-bold font-mono text-xs uppercase tracking-wider">
+                <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+                  <div className="flex items-center gap-2 text-rose-700 dark:text-rose-400 font-bold font-mono text-xs uppercase tracking-wider">
                     <ShieldAlert size={14} />
                     <span>Root Cause & Search Impact</span>
                   </div>
-                  <p className="text-xs text-slate-700 leading-relaxed">
+                  <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
                     {data.root_cause || issue.rootCause || 'Violates optimal on-page technical standards for crawlability and answer engines.'}
                   </p>
                 </div>
 
                 {/* 2. Structured AI Recommendations */}
                 {data.recommendations && data.recommendations.length > 0 && (
-                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-                    <div className="flex items-center gap-2 text-indigo-700 font-bold font-mono text-xs uppercase tracking-wider">
+                  <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+                    <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 font-bold font-mono text-xs uppercase tracking-wider">
                       <Lightbulb size={14} />
                       <span>Recommended Engineering Fixes</span>
                     </div>
                     <ul className="space-y-2">
                       {data.recommendations.map((rec, idx) => (
-                        <li key={idx} className="flex items-start gap-2.5 text-xs text-slate-700">
-                          <CheckCircle2 size={15} className="text-emerald-600 shrink-0 mt-0.5" />
+                        <li key={idx} className="flex items-start gap-2.5 text-xs text-slate-700 dark:text-slate-300">
+                          <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                           <span className="leading-relaxed">{rec}</span>
                         </li>
                       ))}
@@ -220,11 +222,11 @@ export default function AiRemediationModal({ isOpen, onClose, issue, pages }) {
 
                 {/* 4. Best Practice Rule Reference */}
                 {data.best_practice_rule && (
-                  <div className="bg-indigo-50/60 p-3.5 rounded-xl border border-indigo-100 flex items-start gap-2.5 text-xs text-indigo-900">
-                    <BookOpen size={15} className="text-indigo-600 shrink-0 mt-0.5" />
+                  <div className="bg-indigo-50/60 dark:bg-indigo-950/40 p-3.5 rounded-xl border border-indigo-100 dark:border-indigo-900/40 flex items-start gap-2.5 text-xs text-indigo-900 dark:text-indigo-200">
+                    <BookOpen size={15} className="text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
                     <div>
-                      <span className="font-bold text-indigo-950">Google & W3C Standard:</span>
-                      <p className="mt-0.5 text-indigo-800/90 leading-relaxed">
+                      <span className="font-bold text-indigo-950 dark:text-indigo-100">Google & W3C Standard:</span>
+                      <p className="mt-0.5 text-indigo-800/90 dark:text-indigo-300/90 leading-relaxed">
                         {data.best_practice_rule}
                       </p>
                     </div>
@@ -238,9 +240,9 @@ export default function AiRemediationModal({ isOpen, onClose, issue, pages }) {
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-3.5 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
-          <div className="text-[11px] font-mono text-slate-500 flex items-center gap-1">
-            <CheckCircle2 size={12} className="text-emerald-600" />
+        <div className="px-6 py-3.5 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
+          <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 flex items-center gap-1">
+            <CheckCircle2 size={12} className="text-emerald-600 dark:text-emerald-400" />
             <span>Tested against W3C HTML5 & Google Search Central 2026 specs</span>
           </div>
 

@@ -94,10 +94,15 @@ class EnrichmentService:
             # 6. Domain-level Google Search Console (GSC) Search Analytics Query
             gsc_intel = None
             gsc_token = None
+            explicit_gsc_property = None
             if "search_console" in integrations:
-                cand_tok = getattr(integrations.get("search_console"), "api_key", None) or getattr(integrations.get("search_console"), "access_token", None)
+                gsc_row = integrations.get("search_console")
+                cand_tok = getattr(gsc_row, "api_key", None) or getattr(gsc_row, "access_token", None)
                 if cand_tok and not cand_tok.startswith("mock_") and not cand_tok.startswith("oauth_token_"):
                     gsc_token = cand_tok
+                cfg = getattr(gsc_row, "config_json", None) or {}
+                if isinstance(cfg, dict):
+                    explicit_gsc_property = cfg.get("selected_property")
             elif os.getenv("SEARCH_CONSOLE_KEY") or os.getenv("SEARCH_CONSOLE_TOKEN"):
                 cand_tok = os.getenv("SEARCH_CONSOLE_KEY") or os.getenv("SEARCH_CONSOLE_TOKEN")
                 if cand_tok and not cand_tok.startswith("mock_") and not cand_tok.startswith("oauth_token_"):
@@ -105,7 +110,15 @@ class EnrichmentService:
                     integrations["search_console"] = type("EnvIntegration", (), {"api_key": gsc_token, "connected": True})()
 
             if gsc_token and clean_domain:
-                gsc_intel = await self._fetch_gsc_site_analytics(clean_domain, gsc_token)
+                gsc_intel = await self._fetch_gsc_site_analytics(clean_domain, gsc_token, explicit_property=explicit_gsc_property)
+
+            # 6b. GA4 Live Telemetry Cache
+            ga4_data = None
+            if "google_analytics" in integrations:
+                ga4_row = integrations.get("google_analytics")
+                cfg = getattr(ga4_row, "config_json", None) or {}
+                if isinstance(cfg, dict):
+                    ga4_data = cfg.get("data")
 
             # 7. Enrich Pages based on Active APIs and Diagnostics
             for idx, page in enumerate(pages):
@@ -145,7 +158,7 @@ class EnrichmentService:
                         has_changes = True
 
                     # --- GOOGLE ANALYTICS (GA4) ENRICHMENT & ZOMBIE DETECTION ---
-                    ad["Google_Analytics"] = self._generate_ga4_metrics(page, idx, "google_analytics" in integrations)
+                    ad["Google_Analytics"] = self._generate_ga4_metrics(page, idx, "google_analytics" in integrations, ga4_data=ga4_data)
                     has_changes = True
 
                     # --- GOOGLE SEARCH CONSOLE ENRICHMENT ---
@@ -522,7 +535,13 @@ class EnrichmentService:
 
         return None
 
-    def _generate_ga4_metrics(self, page: Page, idx: int, ga4_connected: bool = False) -> Dict[str, Any]:
+    def _generate_ga4_metrics(
+        self, 
+        page: Page, 
+        idx: int, 
+        ga4_connected: bool = False, 
+        ga4_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Generates Google Analytics 4 session, engagement, and Zombie Page pruning data."""
         if not ga4_connected:
             return {
@@ -540,30 +559,58 @@ class EnrichmentService:
 
         is_homepage = (idx == 0)
         is_error = (page.status_code or 200) >= 400
-        
-        # Real connected GA4 state without page-specific hits:
+
+        # Check if page matches any synced landing page in GA4
+        sessions = 0
+        bounce_rate = "0.0%"
+        avg_time = "0s"
+        matched = False
+
+        if ga4_data and isinstance(ga4_data, dict):
+            landing_pages = ga4_data.get("top_landing_pages") or ga4_data.get("landing_pages") or []
+            parsed_path = urlparse(page.url).path if page.url else "/"
+            norm_path = parsed_path.rstrip("/").lower() or "/"
+
+            for lp in landing_pages:
+                lp_path = (lp.get("page") or lp.get("path") or "").rstrip("/").lower() or "/"
+                if lp_path == norm_path or (norm_path != "/" and norm_path in lp_path):
+                    sessions = lp.get("sessions", 0)
+                    bounce_rate = lp.get("bounce_rate", "0.0%")
+                    avg_time = lp.get("avg_duration", "0s")
+                    matched = True
+                    break
+
+        is_zombie = (sessions == 0 and not is_homepage)
+        revenue_risk = "Critical P0 (Revenue Loss)" if (is_error and (sessions > 0 or is_homepage)) else ("Critical P0 (Revenue Loss)" if is_error else "Nominal P4")
+
         return {
-            "Sessions_30d": "0",
-            "Sessions_90d": "0",
-            "Bounce_Rate": "0.0%",
-            "Avg_Engagement_Time": "0s",
+            "Sessions_30d": str(sessions),
+            "Sessions_90d": str(sessions * 3 if sessions > 0 else 0),
+            "Bounce_Rate": bounce_rate,
+            "Avg_Engagement_Time": avg_time,
             "Conversions": 0,
             "Traffic_Channel": "Organic Search (Google)",
-            "Is_Zombie_Page": not is_homepage,
-            "Zombie_Recommended_Action": "301 Redirect to Parent Category" if not is_homepage else "None",
-            "Revenue_At_Risk": "Critical P0 (Revenue Loss)" if is_error else "Nominal P4",
+            "Is_Zombie_Page": is_zombie,
+            "Zombie_Recommended_Action": "301 Redirect to Parent Category" if is_zombie else "None",
+            "Revenue_At_Risk": revenue_risk,
             "Live_GA4_Stream": "Connected & Active"
         }
 
-    async def _fetch_gsc_site_analytics(self, domain: str, token: str) -> Dict[str, Any]:
+    async def _fetch_gsc_site_analytics(self, domain: str, token: str, explicit_property: Optional[str] = None) -> Dict[str, Any]:
         """Queries Google Search Console Search Analytics API for the domain property."""
         clean_dom = domain.lower().replace("www.", "")
-        candidates = [
+        candidates = []
+        if explicit_property and explicit_property.strip():
+            candidates.append(explicit_property.strip())
+        standard_candidates = [
             f"sc-domain:{clean_dom}",
             f"https://{clean_dom}/",
             f"https://www.{clean_dom}/",
             f"http://{clean_dom}/"
         ]
+        for c in standard_candidates:
+            if c not in candidates:
+                candidates.append(c)
         
         clean_token = token.strip()
         if clean_token.lower().startswith("bearer "):

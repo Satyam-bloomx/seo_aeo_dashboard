@@ -165,11 +165,35 @@ export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${plusJakartaSans.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <head>
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
         <link rel="alternate icon" href="/favicon.svg" type="image/svg+xml" />
+        {/* Anti-FOUC theme detector to eliminate flash before React mount */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var stored = localStorage.getItem('auditpro_theme');
+                  var theme = stored || 'system';
+                  var isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                  if (isDark) {
+                    document.documentElement.classList.add('dark');
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    document.documentElement.style.colorScheme = 'dark';
+                  } else {
+                    document.documentElement.classList.remove('dark');
+                    document.documentElement.setAttribute('data-theme', 'light');
+                    document.documentElement.style.colorScheme = 'light';
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
         {/* Structured Data for SEO, AEO, and GEO */}
         <script
           type="application/ld+json"
@@ -185,7 +209,7 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body
-        className="min-h-full flex flex-col font-sans bg-[#F8FAFC] text-slate-900 selection:bg-indigo-500/15 selection:text-indigo-900"
+        className="min-h-full flex flex-col font-sans bg-background text-foreground selection:bg-indigo-500/20 selection:text-indigo-400 antialiased transition-colors duration-200"
         suppressHydrationWarning
       >
         {children}
@@ -203,8 +227,6 @@ export default function RootLayout({ children }) {
           toastOptions={{
             style: {
               borderRadius: "14px",
-              border: "1px solid #E2E8F0",
-              boxShadow: "0 10px 30px -5px rgba(15, 23, 42, 0.12)",
               fontFamily: "var(--font-sans)",
               fontSize: "12px",
               fontWeight: "600",

@@ -50,24 +50,24 @@ export default function ExportAuditModal({
   return (
     <AnimatedModal isOpen={isOpen} onClose={onClose} size="xl">
       {/* Modal Container */}
-      <div className="flex flex-col bg-white overflow-hidden rounded-3xl">
+      <div className="flex flex-col bg-white dark:bg-slate-900 overflow-hidden rounded-3xl">
         
         {/* Header Bar */}
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-emerald-400 shadow-sm ring-1 ring-slate-900/10">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 dark:bg-slate-800 text-emerald-400 shadow-sm ring-1 ring-slate-900/10 dark:ring-emerald-500/20">
               <FileSpreadsheet size={20} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <DialogTitle as="h2" className="text-base font-bold tracking-tight text-slate-900">
+                <DialogTitle as="h2" className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
                   Export Audit Data
                 </DialogTitle>
-                <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                <span className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                   v20.4 Engine
                 </span>
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Download structured crawl results, multi-sheet workbooks, or client reports
               </p>
             </div>
@@ -79,7 +79,7 @@ export default function ExportAuditModal({
             whileTap={tapPress}
             transition={spring.press}
             aria-label="Close export dialog"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 transition-colors"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
           >
             <X size={18} />
           </motion.button>
@@ -95,26 +95,26 @@ export default function ExportAuditModal({
           {/* Target URL & Stats Strip */}
           <motion.div
             variants={staggerItem}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-slate-50/50 px-4 py-2.5"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 px-4 py-2.5"
           >
-            <div className="flex items-center gap-2 text-xs text-slate-600">
+            <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
               </span>
               <span>Target Domain:</span>
-              <strong className="font-mono font-bold text-slate-900 truncate max-w-xs sm:max-w-md">
+              <strong className="font-mono font-bold text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md">
                 {targetUrl || 'Audited Website'}
               </strong>
             </div>
 
             <div className="flex items-center gap-3 font-mono text-xs">
-              <span className="text-slate-500">
-                Extracted URLs: <strong className="font-bold text-slate-900 tabular-nums">{totalPages}</strong>
+              <span className="text-slate-500 dark:text-slate-400">
+                Extracted URLs: <strong className="font-bold text-slate-900 dark:text-white tabular-nums">{totalPages}</strong>
               </span>
-              <span className="text-slate-300">|</span>
-              <span className="text-slate-500">
-                Issues Found: <strong className="font-bold text-amber-600 tabular-nums">{issuesReport.length}</strong>
+              <span className="text-slate-300 dark:text-slate-700">|</span>
+              <span className="text-slate-500 dark:text-slate-400">
+                Issues Found: <strong className="font-bold text-amber-600 dark:text-amber-400 tabular-nums">{issuesReport.length}</strong>
               </span>
             </div>
           </motion.div>
@@ -192,22 +192,22 @@ export default function ExportAuditModal({
             {/* 1. Master Screaming Frog CSV */}
             <motion.div
               variants={staggerItem}
-              className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 transition-all hover:border-slate-300 hover:shadow-md"
+              className="flex flex-col justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 p-4 transition-all hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md"
             >
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800">
                     <TableProperties size={16} />
                   </div>
-                  <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600 uppercase">
+                  <span className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase">
                     .CSV
                   </span>
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-900">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">
                     Master Site Audit CSV
                   </h4>
-                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                     Screaming Frog style dataset with all 35+ parameters encoded in universal UTF-8 BOM.
                   </p>
                 </div>
@@ -218,9 +218,9 @@ export default function ExportAuditModal({
                 disabled={totalPages === 0}
                 whileTap={tapPress}
                 transition={spring.press}
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 transition-colors cursor-pointer"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white disabled:opacity-50 transition-colors cursor-pointer"
               >
-                <Download size={13} className="text-indigo-600" />
+                <Download size={13} className="text-indigo-600 dark:text-indigo-400" />
                 <span>Export Master CSV</span>
               </motion.button>
             </motion.div>
@@ -228,22 +228,22 @@ export default function ExportAuditModal({
             {/* 2. Issues Roadmap CSV */}
             <motion.div
               variants={staggerItem}
-              className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 transition-all hover:border-slate-300 hover:shadow-md"
+              className="flex flex-col justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 p-4 transition-all hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md"
             >
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600 border border-amber-100">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-800">
                     <ListOrdered size={16} />
                   </div>
-                  <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600 uppercase">
+                  <span className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase">
                     .CSV
                   </span>
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-900">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">
                     Issues & Fix Roadmap
                   </h4>
-                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                     Prioritized engineering backlog with severity scores and step-by-step remediation advice.
                   </p>
                 </div>
@@ -254,9 +254,9 @@ export default function ExportAuditModal({
                 disabled={issuesReport.length === 0}
                 whileTap={tapPress}
                 transition={spring.press}
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 transition-colors cursor-pointer"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white disabled:opacity-50 transition-colors cursor-pointer"
               >
-                <Download size={13} className="text-amber-600" />
+                <Download size={13} className="text-amber-600 dark:text-amber-400" />
                 <span>Export Issues CSV</span>
               </motion.button>
             </motion.div>
@@ -264,22 +264,22 @@ export default function ExportAuditModal({
             {/* 3. Executive PDF Report */}
             <motion.div
               variants={staggerItem}
-              className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 transition-all hover:border-slate-300 hover:shadow-md"
+              className="flex flex-col justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 p-4 transition-all hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md"
             >
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                     <FileText size={16} />
                   </div>
-                  <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600 uppercase">
+                  <span className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase">
                     .PDF
                   </span>
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-900">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">
                     Executive PDF Report
                   </h4>
-                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                     Print-ready executive report with compliance spider radars, grade cards, and certification.
                   </p>
                 </div>
@@ -292,9 +292,9 @@ export default function ExportAuditModal({
                 }}
                 whileTap={tapPress}
                 transition={spring.press}
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
               >
-                <ExternalLink size={13} className="text-slate-600" />
+                <ExternalLink size={13} className="text-slate-600 dark:text-slate-400" />
                 <span>Open PDF View</span>
               </motion.button>
             </motion.div>
@@ -303,7 +303,7 @@ export default function ExportAuditModal({
           {/* Subtle Encoding Guarantee Footnote */}
           <motion.div
             variants={staggerItem}
-            className="flex items-center justify-center gap-2 pt-1 font-mono text-[11px] text-slate-400"
+            className="flex items-center justify-center gap-2 pt-1 font-mono text-[11px] text-slate-400 dark:text-slate-500"
           >
             <ShieldCheck size={13} className="text-emerald-500" />
             <span>Encodes with UTF-8 BOM · Zero server latency · 100% Client-Side Privacy</span>

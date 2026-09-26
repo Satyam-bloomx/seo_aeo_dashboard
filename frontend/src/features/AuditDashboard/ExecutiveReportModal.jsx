@@ -28,6 +28,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { generateIssuesReport } from '@/utils/IssuesEngine';
+import { calculateTechnicalSeoScore } from '@/utils/technicalSeoScore';
 import { exportMasterAuditToExcel, exportMasterAuditToCSV } from '@/utils/exportUtils';
 import { exportExecutiveReportToPDF } from '@/utils/pdfExport';
 import { getAiExecutiveSummary } from '@/api/client';
@@ -93,19 +94,9 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
 
     const total = pages.length;
 
-    // 1. Technical SEO
-    const techIssues = issuesReport.filter(i => 
-      ['Response_Codes', 'Canonicals', 'Directives', 'Security', 'Structured_Data', 'Page_Titles', 'H1'].includes(i.category)
-    );
-    let techDeductions = 0;
-    techIssues.forEach(i => {
-      const affected = i.affected_pages?.length || i.count || 0;
-      const ratio = affected / total;
-      const weight = i.type === 'Issue' ? 18 : (i.type === 'Warning' ? 8 : 2);
-      techDeductions += Math.min(15, ratio * weight);
-    });
-    const non200Ratio = pages.filter(p => (p.status_code || 200) >= 300).length / total;
-    const seoScore = Math.max(15, Math.min(100, Math.round(100 - techDeductions - (non200Ratio * 20))));
+    // 1. Technical SEO - 5-Pillar Comprehensive Standard
+    const techResult = calculateTechnicalSeoScore(pages, issuesReport);
+    const seoScore = techResult.score;
 
     // 2. Content & Headings
     const contentIssues = issuesReport.filter(i => 
@@ -215,23 +206,23 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
   if (!pages || pages.length === 0) {
     return (
       <AnimatedModal isOpen={isOpen} onClose={onClose} size="lg" panelClassName="max-h-[90vh]">
-        <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900">
           <div className="flex items-center gap-2">
-            <FileText className="text-indigo-600" size={20} />
-            <DialogTitle as="h2" className="text-base font-bold text-slate-900">
+            <FileText className="text-indigo-600 dark:text-indigo-400" size={20} />
+            <DialogTitle as="h2" className="text-base font-bold text-slate-900 dark:text-white">
               Executive Technical SEO Audit Report
             </DialogTitle>
           </div>
-          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg">
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg">
             <X size={18} />
           </button>
         </div>
-        <div className="p-12 text-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mx-auto text-indigo-600">
+        <div className="p-12 text-center space-y-4 bg-white dark:bg-slate-900">
+          <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800 flex items-center justify-center mx-auto text-indigo-600 dark:text-indigo-400">
             <ShieldCheck size={32} />
           </div>
-          <h3 className="text-lg font-bold text-slate-900">No Active Audit Session</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">No Active Audit Session</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto leading-relaxed">
             Please enter a website URL in the search bar and run an audit crawl to generate a certified 32-factor technical compliance report.
           </p>
           <button onClick={onClose} className="btn-primary px-4 py-2 text-xs font-bold">
@@ -246,16 +237,16 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
     <AnimatedModal isOpen={isOpen} onClose={onClose} size="xl" panelClassName="max-h-[92vh]">
 
       {/* Top Modal Navigation Header (Hidden on Print) */}
-      <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/90 no-print shrink-0">
+      <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-50/90 dark:bg-slate-900/90 no-print shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-xs shrink-0">
             <FileText size={20} />
           </div>
           <div>
-            <DialogTitle as="h2" className="text-sm sm:text-base font-bold text-slate-900">
+            <DialogTitle as="h2" className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
               Executive Technical SEO & AEO Audit Report
             </DialogTitle>
-            <p className="text-[11px] sm:text-xs text-slate-500">Client-ready comprehensive technical compliance, scorecards & remediation roadmap</p>
+            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">Client-ready comprehensive technical compliance, scorecards & remediation roadmap</p>
           </div>
         </div>
 
@@ -264,9 +255,9 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
             onClick={() => exportMasterAuditToExcel(pages, targetUrl, issuesReport)}
             whileTap={tapPress}
             transition={spring.press}
-            className="flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 shadow-xs hover:bg-emerald-100 shrink-0"
+            className="flex items-center gap-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 shadow-xs hover:bg-emerald-100 dark:hover:bg-emerald-900/60 shrink-0"
           >
-            <FileSpreadsheet size={14} className="text-emerald-600" />
+            <FileSpreadsheet size={14} className="text-emerald-600 dark:text-emerald-400" />
             <span>Excel (.xlsx)</span>
           </motion.button>
 
@@ -274,9 +265,9 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
             onClick={() => exportMasterAuditToCSV(pages, targetUrl)}
             whileTap={tapPress}
             transition={spring.press}
-            className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-xs hover:bg-indigo-100 shrink-0"
+            className="flex items-center gap-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/60 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 shadow-xs hover:bg-indigo-100 dark:hover:bg-indigo-900/60 shrink-0"
           >
-            <Download size={14} className="text-indigo-600" />
+            <Download size={14} className="text-indigo-600 dark:text-indigo-400" />
             <span>CSV</span>
           </motion.button>
 
@@ -308,7 +299,7 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
             className="btn-secondary h-8 px-3 text-xs font-bold gap-1.5 shadow-xs shrink-0"
             title="Open browser print dialog for A4 portrait"
           >
-            <Printer size={14} className="text-slate-600" /> <span className="hidden xs:inline">Print View</span>
+            <Printer size={14} className="text-slate-600 dark:text-slate-300" /> <span className="hidden xs:inline">Print View</span>
           </motion.button>
 
           <motion.button
@@ -317,7 +308,7 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
             whileTap={tapPress}
             transition={spring.press}
             aria-label="Close report"
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 shrink-0"
+            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
           >
             <X size={18} />
           </motion.button>
@@ -330,52 +321,52 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
         variants={staggerContainer(0.05, 0.1)}
         initial="initial"
         animate="animate"
-        className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 custom-scrollbar space-y-6 sm:space-y-8 bg-white text-slate-800 print:p-0 print:overflow-visible print:space-y-6"
+        className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 custom-scrollbar space-y-6 sm:space-y-8 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 print:bg-white print:text-slate-800 print:p-0 print:overflow-visible print:space-y-6"
       >
 
         {/* 1. Official Audit Certificate Header */}
-        <motion.div variants={staggerItem} className="border-b-2 border-slate-900 pb-6 flex flex-col sm:flex-row justify-between sm:items-end gap-4">
+        <motion.div variants={staggerItem} className="border-b-2 border-slate-900 dark:border-slate-700 pb-6 flex flex-col sm:flex-row justify-between sm:items-end gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 mb-3">
-              <Award size={14} className="text-emerald-600" /> Official Technical Site Audit Certificate
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold font-mono bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 mb-3">
+              <Award size={14} className="text-emerald-600 dark:text-emerald-400" /> Official Technical Site Audit Certificate
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Executive Audit & Compliance Report</h1>
-            <p className="text-xs sm:text-sm font-mono text-indigo-600 font-bold mt-1">Audited Domain: {targetUrl || 'Audited Website'}</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Executive Audit & Compliance Report</h1>
+            <p className="text-xs sm:text-sm font-mono text-indigo-600 dark:text-indigo-400 font-bold mt-1">Audited Domain: {targetUrl || 'Audited Website'}</p>
           </div>
-          <div className="text-left sm:text-right text-xs text-slate-500 font-mono">
-            <p>Generated: <strong className="text-slate-800">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</strong></p>
-            <p className="mt-0.5">Engine: <strong className="text-slate-800">Screaming Frog Architecture v20.4</strong></p>
-            <p className="mt-0.5">Verification ID: <strong className="text-emerald-700">OK-SECURE-{verificationHash}</strong></p>
+          <div className="text-left sm:text-right text-xs text-slate-500 dark:text-slate-400 font-mono">
+            <p>Generated: <strong className="text-slate-800 dark:text-slate-200">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</strong></p>
+            <p className="mt-0.5">Engine: <strong className="text-slate-800 dark:text-slate-200">Screaming Frog Architecture v20.4</strong></p>
+            <p className="mt-0.5">Verification ID: <strong className="text-emerald-700 dark:text-emerald-400">OK-SECURE-{verificationHash}</strong></p>
           </div>
         </motion.div>
 
         {/* 2. Executive Key Performance Indicator (KPI) Scorecards */}
         <motion.div variants={staggerItem} className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
 
-          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 border border-emerald-200 text-center flex flex-col justify-center shadow-xs">
-            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">Site Health Index</span>
-            <div className="text-3xl sm:text-4xl font-black text-slate-900 my-1 tabular-nums">
+          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-emerald-200 dark:border-emerald-800 text-center flex flex-col justify-center shadow-xs">
+            <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Site Health Index</span>
+            <div className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white my-1 tabular-nums">
               {healthScore}<span className="text-sm text-slate-400 font-normal">/100</span>
             </div>
-            <span className="text-[11px] sm:text-xs text-emerald-700 font-bold">Overall Technical Score</span>
+            <span className="text-[11px] sm:text-xs text-emerald-700 dark:text-emerald-400 font-bold">Overall Technical Score</span>
           </div>
 
-          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 text-center flex flex-col justify-center shadow-xs">
-            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">Executive Grade</span>
-            <div className="text-3xl sm:text-4xl font-black text-emerald-600 my-1 font-mono">{grade.letter}</div>
-            <span className="text-[11px] sm:text-xs text-slate-700 font-bold">{grade.label}</span>
+          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center flex flex-col justify-center shadow-xs">
+            <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Executive Grade</span>
+            <div className="text-3xl sm:text-4xl font-black text-emerald-600 dark:text-emerald-400 my-1 font-mono">{grade.letter}</div>
+            <span className="text-[11px] sm:text-xs text-slate-700 dark:text-slate-300 font-bold">{grade.label}</span>
           </div>
 
-          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 border border-indigo-200 text-center flex flex-col justify-center shadow-xs">
-            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">Crawled Inventory</span>
-            <div className="text-3xl sm:text-4xl font-black text-slate-900 my-1 tabular-nums">{pages?.length || 0}</div>
-            <span className="text-[11px] sm:text-xs text-indigo-700 font-bold">{indexableCount} Indexable | {nonIndexableCount} Non-Index</span>
+          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-800 text-center flex flex-col justify-center shadow-xs">
+            <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Crawled Inventory</span>
+            <div className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white my-1 tabular-nums">{pages?.length || 0}</div>
+            <span className="text-[11px] sm:text-xs text-indigo-700 dark:text-indigo-400 font-bold">{indexableCount} Indexable | {nonIndexableCount} Non-Index</span>
           </div>
 
-          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 border border-rose-200 text-center flex flex-col justify-center shadow-xs">
-            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">Actionable Issues</span>
-            <div className="text-3xl sm:text-4xl font-black text-rose-600 my-1 tabular-nums">{criticalIssues.length}</div>
-            <span className="text-[11px] sm:text-xs text-rose-700 font-bold">{warningIssues.length} Warnings | {opportunityIssues.length} Opps</span>
+          <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-rose-200 dark:border-rose-800 text-center flex flex-col justify-center shadow-xs">
+            <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Actionable Issues</span>
+            <div className="text-3xl sm:text-4xl font-black text-rose-600 dark:text-rose-400 my-1 tabular-nums">{criticalIssues.length}</div>
+            <span className="text-[11px] sm:text-xs text-rose-700 dark:text-rose-400 font-bold">{criticalIssues.length} High | {warningIssues.length} Med | {opportunityIssues.length} Low</span>
           </div>
 
         </motion.div>
@@ -467,77 +458,77 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
 
         {/* 3. 4-Pillar Detailed Dimension Breakdown */}
         <motion.div variants={staggerItem} className="space-y-3">
-          <h3 className="text-base font-bold text-slate-900 border-b border-slate-200 pb-2 font-mono flex items-center gap-2">
-            <Activity size={18} className="text-indigo-600" />
+          <h3 className="text-base font-bold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-800 pb-2 font-mono flex items-center gap-2">
+            <Activity size={18} className="text-indigo-600 dark:text-indigo-400" />
             Core Technical Dimension Breakdown
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
 
             {/* Pillar 1: Technical SEO */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-xs flex flex-col justify-between">
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
               <div>
-                <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs mb-1">
+                <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-xs mb-1">
                   <Globe size={15} /> Technical SEO
                 </div>
-                <div className="text-2xl font-black text-slate-900 font-mono mt-1">{pillarScores.seo} / 100</div>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                <div className="text-2xl font-black text-slate-900 dark:text-white font-mono mt-1">{pillarScores.seo} / 100</div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                   Status 200, Canonicalization, Indexability, Meta Tags & Directives verified.
                 </p>
               </div>
-              <div className="mt-3 text-[11px] font-mono text-emerald-700 font-bold bg-emerald-50 px-2 py-1 rounded border border-emerald-200 inline-block">
+              <div className="mt-3 text-[11px] font-mono text-emerald-700 dark:text-emerald-300 font-bold bg-emerald-50 dark:bg-emerald-950/60 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-800 inline-block">
                 Grade: {pillarScores.seoGrade}
               </div>
             </div>
 
             {/* Pillar 2: Content & On-Page Quality */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-xs flex flex-col justify-between">
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
               <div>
-                <div className="flex items-center gap-2 text-teal-600 font-bold text-xs mb-1">
+                <div className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-bold text-xs mb-1">
                   <FileText size={15} /> Content & Headings
                 </div>
-                <div className="text-2xl font-black text-slate-900 font-mono mt-1">{pillarScores.content} / 100</div>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                <div className="text-2xl font-black text-slate-900 dark:text-white font-mono mt-1">{pillarScores.content} / 100</div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                   H1/H2 hierarchy, Title/Meta uniqueness, and word count distribution checked.
                 </p>
               </div>
-              <div className="mt-3 text-[11px] font-mono text-teal-700 font-bold bg-teal-50 px-2 py-1 rounded border border-teal-200 inline-block">
+              <div className="mt-3 text-[11px] font-mono text-teal-700 dark:text-teal-300 font-bold bg-teal-50 dark:bg-teal-950/60 px-2 py-1 rounded border border-teal-200 dark:border-teal-800 inline-block">
                 Grade: {pillarScores.contentGrade}
               </div>
             </div>
 
             {/* Pillar 3: AEO Voice & LLM Readiness */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-xs flex flex-col justify-between">
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
               <div>
-                <div className="flex items-center gap-2 text-purple-600 font-bold text-xs mb-1">
+                <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400 font-bold text-xs mb-1">
                   <Sparkles size={15} /> AEO & LLM Search
                 </div>
-                <div className="text-2xl font-black text-slate-900 font-mono mt-1">
+                <div className="text-2xl font-black text-slate-900 dark:text-white font-mono mt-1">
                   {pillarScores.aeo !== null ? `${pillarScores.aeo} / 100` : '-- / 100'}
                 </div>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                   Direct answer extractability, FAQ Schema, and citation readiness for Perplexity & GPT.
                 </p>
               </div>
-              <div className="mt-3 text-[11px] font-mono text-purple-700 font-bold bg-purple-50 px-2 py-1 rounded border border-purple-200 inline-block">
+              <div className="mt-3 text-[11px] font-mono text-purple-700 dark:text-purple-300 font-bold bg-purple-50 dark:bg-purple-950/60 px-2 py-1 rounded border border-purple-200 dark:border-purple-800 inline-block">
                 Grade: {pillarScores.aeoGrade}
               </div>
             </div>
 
             {/* Pillar 4: GEO Local & Core Web Vitals */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-xs flex flex-col justify-between">
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
               <div>
-                <div className="flex items-center gap-2 text-amber-600 font-bold text-xs mb-1">
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-xs mb-1">
                   <Zap size={15} /> Speed & Local SERP
                 </div>
-                <div className="text-2xl font-black text-slate-900 font-mono mt-1">
+                <div className="text-2xl font-black text-slate-900 dark:text-white font-mono mt-1">
                   {pillarScores.geo !== null ? `${pillarScores.geo} / 100` : '-- / 100'}
                 </div>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                   Core Web Vitals (LCP/CLS/INP), Google Maps Local Pack signals & NAP consistency.
                 </p>
               </div>
-              <div className="mt-3 text-[11px] font-mono text-amber-700 font-bold bg-amber-50 px-2 py-1 rounded border border-amber-200 inline-block">
+              <div className="mt-3 text-[11px] font-mono text-amber-700 dark:text-amber-300 font-bold bg-amber-50 dark:bg-amber-950/60 px-2 py-1 rounded border border-amber-200 dark:border-amber-800 inline-block">
                 Grade: {pillarScores.geoGrade}
               </div>
             </div>
@@ -547,58 +538,58 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
 
         {/* 4. Complete Issues Remediation Matrix (With Root Causes & Fixes) */}
         <motion.div variants={staggerItem} className="space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-            <h3 className="text-base font-bold text-slate-900 font-mono flex items-center gap-2">
-              <ShieldCheck size={18} className="text-indigo-600" />
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white font-mono flex items-center gap-2">
+              <ShieldCheck size={18} className="text-indigo-600 dark:text-indigo-400" />
               Prioritized Remediation Roadmap ({issuesReport.length} Detected Items)
             </h3>
-            <span className="text-xs font-mono text-slate-500">Sorted by Severity & Impact</span>
+            <span className="text-xs font-mono text-slate-500 dark:text-slate-400">Sorted by Severity & Impact</span>
           </div>
 
           {issuesReport.length === 0 ? (
-            <div className="p-6 rounded-xl bg-emerald-50/60 border border-emerald-200 text-center">
-              <CheckCircle2 size={32} className="text-emerald-600 mx-auto mb-2" />
-              <p className="font-bold text-slate-900 text-sm">Site Passes All 32 Screaming Frog Rules Cleanly</p>
-              <p className="text-xs text-slate-500 mt-0.5">No critical issues or high priority warnings found.</p>
+            <div className="p-6 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-center">
+              <CheckCircle2 size={32} className="text-emerald-600 dark:text-emerald-400 mx-auto mb-2" />
+              <p className="font-bold text-slate-900 dark:text-white text-sm">Site Passes All 32 Screaming Frog Rules Cleanly</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">No critical issues or high priority warnings found.</p>
             </div>
           ) : (
             <div className="space-y-3.5">
               {issuesReport.map((issue, idx) => (
-                <div key={idx} className="p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-xs space-y-2 break-inside-avoid">
+                <div key={idx} className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-xs space-y-2 break-inside-avoid">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2.5">
                       <div className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-                        issue.type === 'Issue' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
-                        issue.type === 'Warning' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
-                        'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                        issue.priority === 'High' ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800' :
+                        issue.priority === 'Medium' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
+                        'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
                       }`}>
                         {idx + 1}
                       </div>
                       <div>
-                        <h4 className="text-xs font-bold text-slate-900">{issue.name}</h4>
-                        <span className="text-[11px] font-mono text-slate-500">
-                          Category: <strong className="text-slate-800">{issue.category.replace(/_/g, ' ')}</strong> | Severity: <strong className={issue.type === 'Issue' ? 'text-rose-700' : issue.type === 'Warning' ? 'text-amber-700' : 'text-indigo-700'}>{issue.type}</strong>
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white">{issue.name}</h4>
+                        <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                          Category: <strong className="text-slate-800 dark:text-slate-200">{issue.category.replace(/_/g, ' ')}</strong> | Priority: <strong className={issue.priority === 'High' ? 'text-rose-700 dark:text-rose-400' : issue.priority === 'Medium' ? 'text-amber-700 dark:text-amber-400' : 'text-blue-700 dark:text-blue-400'}>{issue.priority} Priority</strong>
                         </span>
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <span className="font-mono text-xs text-rose-700 font-bold bg-rose-50 px-2.5 py-1 rounded-md border border-rose-200">
+                      <span className="font-mono text-xs text-rose-700 dark:text-rose-300 font-bold bg-rose-50 dark:bg-rose-950/60 px-2.5 py-1 rounded-md border border-rose-200 dark:border-rose-800">
                         {issue.count} URLs affected ({issue.percentage}%)
                       </span>
                     </div>
                   </div>
 
                   {/* Detailed Root Cause and Fix */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 text-xs border-t border-slate-200/80">
-                    <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                      <strong className="text-slate-900 font-mono text-[11px] block mb-0.5">🔍 Root Cause:</strong>
-                      <p className="text-slate-600 leading-relaxed text-[11px]">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 text-xs border-t border-slate-200/80 dark:border-slate-700">
+                    <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <strong className="text-slate-900 dark:text-white font-mono text-[11px] block mb-0.5">🔍 Root Cause:</strong>
+                      <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-[11px]">
                         {issue.rootCause || 'Detected during DOM compliance audit.'}
                       </p>
                     </div>
-                    <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                      <strong className="text-emerald-800 font-mono text-[11px] block mb-0.5">🛠️ Remediation Step:</strong>
-                      <p className="text-slate-600 leading-relaxed text-[11px]">
+                    <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <strong className="text-emerald-800 dark:text-emerald-300 font-mono text-[11px] block mb-0.5">🛠️ Remediation Step:</strong>
+                      <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-[11px]">
                         {issue.fixGuide || 'Review template code and update HTML structures.'}
                       </p>
                     </div>
@@ -612,13 +603,13 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
         {/* 5. Sample Crawled Endpoints Summary Table */}
         {pages && pages.length > 0 && (
           <motion.div variants={staggerItem} className="space-y-3 break-inside-avoid">
-            <h3 className="text-base font-bold text-slate-900 border-b border-slate-200 pb-2 font-mono flex items-center gap-2">
-              <ListTree size={18} className="text-indigo-600" />
+            <h3 className="text-base font-bold text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-800 pb-2 font-mono flex items-center gap-2">
+              <ListTree size={18} className="text-indigo-600 dark:text-indigo-400" />
               Crawled Pages Sample Inventory (Top {Math.min(pages.length, 12)} URLs)
             </h3>
-            <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-left text-xs text-slate-700 border-collapse">
-                <thead className="bg-slate-100 border-b border-slate-200 font-mono text-[11px] text-slate-600 uppercase">
+            <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
+              <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300 border-collapse">
+                <thead className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-600 dark:text-slate-300 uppercase">
                   <tr>
                     <th className="px-3 py-2.5 font-bold">URL Endpoint</th>
                     <th className="px-3 py-2.5 font-bold w-16 text-center">Status</th>
@@ -627,21 +618,21 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
                     <th className="px-3 py-2.5 font-bold">Primary H1</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 bg-white font-mono text-[11px]">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 font-mono text-[11px]">
                   {pages.slice(0, 12).map((p, pIdx) => (
-                    <tr key={pIdx} className="hover:bg-slate-50">
-                      <td className="px-3 py-2 truncate max-w-xs text-indigo-700 font-semibold" title={p.url}>
+                    <tr key={pIdx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                      <td className="px-3 py-2 truncate max-w-xs text-indigo-700 dark:text-indigo-400 font-semibold" title={p.url}>
                         {p.url}
                       </td>
                       <td className="px-3 py-2 text-center">
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                          (p.status_code || 200) >= 400 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'
+                          (p.status_code || 200) >= 400 ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300' : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
                         }`}>
                           {p.status_code || 200}
                         </span>
                       </td>
                       <td className="px-3 py-2">
-                        <span className={`text-[10px] ${p.indexability === 'Non-Indexable' ? 'text-rose-700 font-bold' : 'text-slate-600'}`}>
+                        <span className={`text-[10px] ${p.indexability === 'Non-Indexable' ? 'text-rose-700 dark:text-rose-400 font-bold' : 'text-slate-600 dark:text-slate-400'}`}>
                           {p.indexability || 'Indexable'}
                         </span>
                       </td>
@@ -660,14 +651,14 @@ export default function ExecutiveReportModal({ pages, targetUrl, onClose, isOpen
         )}
 
         {/* 6. Sign-off Stamp & Legal Footer */}
-        <motion.div variants={staggerItem} className="pt-6 border-t-2 border-slate-900 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 font-mono gap-3 break-inside-avoid">
+        <motion.div variants={staggerItem} className="pt-6 border-t-2 border-slate-900 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-mono gap-3 break-inside-avoid">
           <div>
-            <p className="font-bold text-slate-900">AuditPro Screaming Frog & AEO Enterprise Engine</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">Automated technical site audit adhering to Google Search Essentials & Core Web Vitals.</p>
+            <p className="font-bold text-slate-900 dark:text-white">AuditPro Screaming Frog & AEO Enterprise Engine</p>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Automated technical site audit adhering to Google Search Essentials & Core Web Vitals.</p>
           </div>
           <div className="text-right">
-            <p className="text-emerald-700 font-bold">Verification: OK-SECURE-{verificationHash}</p>
-            <p className="text-[11px] text-slate-400">Status: Verified Technical Audit</p>
+            <p className="text-emerald-700 dark:text-emerald-400 font-bold">Verification: OK-SECURE-{verificationHash}</p>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">Status: Verified Technical Audit</p>
           </div>
         </motion.div>
 

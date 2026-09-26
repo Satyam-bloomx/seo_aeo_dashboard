@@ -12,7 +12,7 @@ const PRESETS = [
     id: 'standard',
     name: 'Standard Audit',
     badge: 'Recommended',
-    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    badgeColor: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
     desc: 'Up to 500 pages, 4 levels deep. Fast & balanced.',
     settings: { maxPages: 500, maxDepth: 4, maxConcurrent: 5, stealthDelay: 0 }
   },
@@ -20,7 +20,7 @@ const PRESETS = [
     id: 'quick',
     name: 'Quick Scan',
     badge: 'Fastest',
-    badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    badgeColor: 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
     desc: '100 pages, 2 levels deep. Great for quick health checks.',
     settings: { maxPages: 100, maxDepth: 2, maxConcurrent: 5, stealthDelay: 0 }
   },
@@ -28,7 +28,7 @@ const PRESETS = [
     id: 'deep',
     name: 'Full Site Crawl',
     badge: 'Comprehensive',
-    badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
+    badgeColor: 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
     desc: '2,500 pages, 10 levels deep. Thorough site coverage.',
     settings: { maxPages: 2500, maxDepth: 10, maxConcurrent: 5, stealthDelay: 0.5 }
   },
@@ -36,7 +36,7 @@ const PRESETS = [
     id: 'stealth',
     name: 'Gentle / Stealth',
     badge: 'Low Load',
-    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
+    badgeColor: 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
     desc: '500 pages with 1s pause between requests. Protects server.',
     settings: { maxPages: 500, maxDepth: 4, maxConcurrent: 2, stealthDelay: 1.0 }
   }
@@ -62,8 +62,8 @@ const CheckboxCard = ({ label, checked, onChange, description }) => (
     }}
     className={`p-4 rounded-xl border cursor-pointer flex items-start space-x-3.5 select-none ${
       checked
-        ? 'bg-indigo-50/70 border-indigo-300 shadow-xs'
-        : 'bg-slate-50/60 border-slate-200 hover:border-slate-300 hover:bg-slate-100/60'
+        ? 'bg-indigo-50/70 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-700 shadow-xs'
+        : 'bg-slate-50/60 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-100/60 dark:hover:bg-slate-800'
     }`}
   >
     <div className="pt-0.5">
@@ -92,8 +92,8 @@ const CheckboxCard = ({ label, checked, onChange, description }) => (
       </motion.div>
     </div>
     <div className="flex-1">
-      <span className="text-sm font-semibold text-slate-900 block">{label}</span>
-      {description && <span className="text-xs text-slate-500 block mt-0.5 leading-relaxed">{description}</span>}
+      <span className="text-sm font-semibold text-slate-900 dark:text-white block">{label}</span>
+      {description && <span className="text-xs text-slate-500 dark:text-slate-400 block mt-0.5 leading-relaxed">{description}</span>}
     </div>
   </motion.div>
 );
@@ -147,27 +147,27 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
       panelClassName="h-[90vh] sm:h-[85vh] max-h-[800px]"
     >
       {/* Top Header */}
-      <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80 shrink-0">
+      <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-900 shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-xs shrink-0">
             <Sliders size={20} />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <DialogTitle as="h2" className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+              <DialogTitle as="h2" className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight">
                 Crawler Configuration Console
               </DialogTitle>
               {activePresetId !== 'custom' ? (
-                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                   Mode: {PRESETS.find(p => p.id === activePresetId)?.name}
                 </span>
               ) : (
-                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                   Mode: Custom Setup
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-500">Fine-tune crawling limits, speed, headers and robot behavior</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Fine-tune crawling limits, speed, headers and robot behavior</p>
           </div>
         </div>
         <motion.button
@@ -176,7 +176,7 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
           whileTap={tapPress}
           transition={spring.press}
           aria-label="Close settings"
-          className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 shrink-0"
+          className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0 cursor-pointer"
         >
           <X size={18} />
         </motion.button>
@@ -186,8 +186,8 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
 
         {/* Left Sidebar on desktop, horizontal tabs on mobile */}
-        <div className="w-full md:w-60 bg-slate-50/70 border-b md:border-b-0 md:border-r border-slate-200 p-2 md:p-3 flex flex-row md:flex-col gap-1 shrink-0 overflow-x-auto md:overflow-y-auto custom-scrollbar">
-          <div className="hidden md:block px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
+        <div className="w-full md:w-60 bg-slate-50/70 dark:bg-slate-900/90 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 p-2 md:p-3 flex flex-row md:flex-col gap-1 shrink-0 overflow-x-auto md:overflow-y-auto custom-scrollbar">
+          <div className="hidden md:block px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
             Settings Menu
           </div>
           <LayoutGroup id="settings-nav">
@@ -200,8 +200,8 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                   whileTap={{ scale: 0.985 }}
                   transition={spring.press}
                   aria-current={isActive ? 'true' : undefined}
-                  className={`relative flex items-center md:items-start gap-2.5 md:gap-3 p-2.5 md:p-3 rounded-xl text-left select-none outline-none shrink-0 whitespace-nowrap md:whitespace-normal ${
-                    isActive ? 'text-white font-bold' : 'text-slate-600 font-semibold hover:bg-slate-100/80 transition-colors duration-150'
+                  className={`relative flex items-center md:items-start gap-2.5 md:gap-3 p-2.5 md:p-3 rounded-xl text-left select-none outline-none shrink-0 whitespace-nowrap md:whitespace-normal cursor-pointer ${
+                    isActive ? 'text-white font-bold' : 'text-slate-600 dark:text-slate-400 font-semibold hover:bg-slate-100/80 dark:hover:bg-slate-800/80 transition-colors duration-150'
                   }`}
                 >
                   {/* Shared-layout pill: glides between rows instead of cutting. */}
@@ -209,7 +209,7 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                     <motion.span
                       layoutId="settings-active-pill"
                       transition={spring.snap}
-                      className="absolute inset-0 -z-10 rounded-xl bg-slate-900 shadow-xs"
+                      className="absolute inset-0 -z-10 rounded-xl bg-slate-900 dark:bg-indigo-600 shadow-xs"
                     />
                   )}
                   <motion.div
@@ -221,7 +221,7 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                   </motion.div>
                   <div>
                     <div className="text-xs leading-tight">{tab.label}</div>
-                    <div className={`hidden md:block text-[10px] mt-0.5 ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                    <div className={`hidden md:block text-[10px] mt-0.5 ${isActive ? 'text-slate-300' : 'text-slate-500 dark:text-slate-400'}`}>
                       {tab.desc}
                     </div>
                   </div>
@@ -232,15 +232,15 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
         </div>
 
         {/* Right Main Content Panel - cross-faded on tab change */}
-        <div className="flex-1 bg-white overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+        <div className="flex-1 bg-white dark:bg-slate-900 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
                   <AnimatePresence mode="wait" initial={false}>
 
                   {/* TAB 1: QUICK PRESETS */}
                   {activeTab === 'presets' && (
                     <motion.div key="presets" variants={tabPanel} initial="initial" animate="animate" exit="exit" className="space-y-4">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-mono font-bold text-slate-700 uppercase tracking-wider">Select Audit Profile</span>
-                        <span className="text-xs text-slate-500">Click any mode to apply instantly</span>
+                        <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Select Audit Profile</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">Click any mode to apply instantly</span>
                       </div>
 
                       <motion.div
@@ -261,15 +261,15 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                               transition={spring.press}
                               className={`p-4 rounded-xl border cursor-pointer relative flex flex-col justify-between transition-all ${
                                 isSelected
-                                  ? 'bg-indigo-50/80 border-indigo-500 shadow-xs ring-2 ring-indigo-500/25'
-                                  : 'bg-slate-50/60 border-slate-200 hover:border-slate-300 hover:bg-slate-100/60'
+                                  ? 'bg-indigo-50/80 dark:bg-indigo-950/50 border-indigo-500 dark:border-indigo-600 shadow-xs ring-2 ring-indigo-500/25'
+                                  : 'bg-slate-50/60 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-100/60 dark:hover:bg-slate-800'
                               }`}
                             >
                               <div className="flex items-start justify-between gap-2 mb-2">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-bold text-slate-900 text-sm">{preset.name}</span>
+                                  <span className="font-bold text-slate-900 dark:text-white text-sm">{preset.name}</span>
                                   {isSelected && (
-                                    <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-100/90 px-1.5 py-0.5 rounded-md border border-indigo-200">
+                                    <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-100/90 dark:bg-indigo-950/80 px-1.5 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
                                       <Check size={11} strokeWidth={3} /> Active
                                     </span>
                                   )}
@@ -278,9 +278,9 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                                   {preset.badge}
                                 </span>
                               </div>
-                              <p className="text-xs text-slate-600 leading-relaxed mb-3">{preset.desc}</p>
+                              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-3">{preset.desc}</p>
 
-                              <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500 font-mono font-medium">
+                              <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-mono font-medium">
                                 <span>{preset.settings.maxPages} pages</span>
                                 <span>Depth {preset.settings.maxDepth}</span>
                                 <span>{preset.settings.stealthDelay === 0 ? 'Max Speed' : `${preset.settings.stealthDelay}s delay`}</span>
@@ -297,7 +297,7 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                     <motion.div key="limits" variants={tabPanel} initial="initial" animate="animate" exit="exit" className="space-y-5">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                         <div>
-                          <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                          <label className="block text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                             Maximum Page Limit
                           </label>
                           <input
@@ -305,13 +305,13 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                             min="1" max="10000"
                             value={settings?.maxPages ?? 500}
                             onChange={(e) => handleChange('maxPages', parseInt(e.target.value) || 1)}
-                            className="w-full glass-input px-3.5 py-2.5 font-mono text-sm"
+                            className="w-full glass-input px-3.5 py-2.5 font-mono text-sm bg-slate-50/50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                           />
-                          <span className="text-xs text-slate-500 mt-1 block">Maximum URLs saved during this audit run.</span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 block">Maximum URLs saved during this audit run.</span>
                         </div>
 
                         <div>
-                          <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                          <label className="block text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                             Crawl Depth (Click Distance)
                           </label>
                           <input
@@ -319,13 +319,13 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                             min="1" max="100"
                             value={settings?.maxDepth ?? 4}
                             onChange={(e) => handleChange('maxDepth', parseInt(e.target.value) || 1)}
-                            className="w-full glass-input px-3.5 py-2.5 font-mono text-sm"
+                            className="w-full glass-input px-3.5 py-2.5 font-mono text-sm bg-slate-50/50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                           />
-                          <span className="text-xs text-slate-500 mt-1 block">How many link clicks deep from the homepage.</span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 block">How many link clicks deep from the homepage.</span>
                         </div>
 
                         <div>
-                          <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                          <label className="block text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                             Parallel Worker Threads
                           </label>
                           <CustomSelect
@@ -339,13 +339,13 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                               { value: 10, label: '10 Workers (Maximum speed)' },
                             ]}
                             buttonClassName="py-2 px-3"
-                            valueClassName="text-slate-800 font-semibold font-mono text-xs"
+                            valueClassName="text-slate-800 dark:text-slate-200 font-semibold font-mono text-xs"
                           />
-                          <span className="text-xs text-slate-500 mt-1 block">Simultaneous crawler connections.</span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 block">Simultaneous crawler connections.</span>
                         </div>
 
                         <div>
-                          <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                          <label className="block text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                             Request Delay (Stealth Mode)
                           </label>
                           <CustomSelect
@@ -359,9 +359,9 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                               { value: 5.0, label: '5.0s pause (Safest anti-blocking)' },
                             ]}
                             buttonClassName="py-2 px-3"
-                            valueClassName="text-slate-800 font-semibold font-mono text-xs"
+                            valueClassName="text-slate-800 dark:text-slate-200 font-semibold font-mono text-xs"
                           />
-                          <span className="text-xs text-slate-500 mt-1 block">Pause between page downloads.</span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 block">Pause between page downloads.</span>
                         </div>
                       </div>
                     </motion.div>
@@ -389,16 +389,16 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                         onChange={(e) => handleChange('crawlAuthorArchives', e.target.checked)}
                       />
                       <div className="pt-2">
-                        <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        <label className="block text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                           Exclude Paths (One per line)
                         </label>
                         <textarea
                           value={settings?.excludePaths ?? ""}
                           onChange={(e) => handleChange('excludePaths', e.target.value)}
                           placeholder="/cart&#10;/checkout&#10;/wp-admin&#10;/search"
-                          className="w-full h-24 glass-input px-3.5 py-2.5 font-mono text-xs resize-none"
+                          className="w-full h-24 glass-input px-3.5 py-2.5 font-mono text-xs resize-none bg-slate-50/50 dark:bg-slate-800 text-slate-900 dark:text-white border-slate-200 dark:border-slate-700"
                         />
-                        <span className="text-xs text-slate-500 mt-1 block">URLs matching these patterns will be skipped.</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 block">URLs matching these patterns will be skipped.</span>
                       </div>
                     </motion.div>
                   )}
@@ -419,7 +419,7 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                         onChange={(e) => handleChange('jsRendering', e.target.checked)}
                       />
                       <div className="pt-2">
-                        <label className="block text-xs font-mono font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        <label className="block text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                           User-Agent Header
                         </label>
                         <CustomSelect
@@ -432,7 +432,7 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                             { value: "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/W.X.Y.Z Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", label: "Googlebot Mobile" },
                           ]}
                           buttonClassName="py-2 px-3"
-                          valueClassName="text-slate-800 font-semibold font-mono text-xs"
+                          valueClassName="text-slate-800 dark:text-slate-200 font-semibold font-mono text-xs"
                         />
                       </div>
                     </motion.div>
@@ -444,13 +444,13 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-slate-200 bg-slate-50/80 flex items-center justify-between shrink-0">
+              <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900 flex items-center justify-between shrink-0">
                 <motion.button
                   type="button"
                   onClick={onClose}
                   whileTap={tapPress}
                   transition={spring.press}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-200/60 transition-colors"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   Cancel
                 </motion.button>
@@ -459,7 +459,7 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                   onClick={handleSave}
                   whileTap={tapPress}
                   transition={spring.press}
-                  className="btn-primary py-2 px-5 text-xs font-bold gap-2 shadow-xs"
+                  className="btn-primary py-2 px-5 text-xs font-bold gap-2 shadow-xs cursor-pointer"
                 >
                   <Check size={15} />
                   Save &amp; Apply Settings

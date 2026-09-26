@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import {
   ExternalLink,
   Copy,
+  Check,
   Key,
   Trash2,
   Edit3,
@@ -14,6 +15,7 @@ import {
   Search,
   X
 } from 'lucide-react';
+import { copyToClipboard } from '@/utils/clipboard';
 
 import {
   BrushOrangeTabSVG,
@@ -40,10 +42,12 @@ export default function NarutoSamplePanel({ onExit }) {
   const [isTesting, setIsTesting] = useState(false);
   const [testSuccess, setTestSuccess] = useState(false);
 
-  const handleCopy = (text) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(true);
-    setTimeout(() => setCopiedKey(false), 2000);
+  const handleCopy = async (text) => {
+    const ok = await copyToClipboard(text, 'API Key');
+    if (ok) {
+      setCopiedKey(true);
+      setTimeout(() => setCopiedKey(false), 2000);
+    }
   };
 
   const handleTestLive = () => {
@@ -521,10 +525,10 @@ export default function NarutoSamplePanel({ onExit }) {
                   </span>
                   <button 
                     onClick={() => handleCopy('AIzaSyD92k1-DEMO-KEY')}
-                    className="text-slate-500 hover:text-slate-800 text-xs font-sans flex items-center gap-1 cursor-pointer"
+                    className="text-slate-500 hover:text-slate-800 text-xs font-sans flex items-center gap-1 cursor-pointer transition-colors"
                   >
-                    <Copy size={13} />
-                    <span>{copiedKey ? 'Copied!' : ''}</span>
+                    {copiedKey ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                    <span className={copiedKey ? "text-emerald-700 font-bold" : ""}>{copiedKey ? 'Copied!' : ''}</span>
                   </button>
                 </div>
               </div>

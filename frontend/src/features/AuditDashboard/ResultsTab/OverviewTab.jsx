@@ -1,5 +1,5 @@
 'use client';
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useSpring, animated, to } from '@react-spring/web';
@@ -36,9 +36,12 @@ import {
   Gauge,
   HelpCircle,
   Check,
-  AlertCircle
+  AlertCircle,
+  Info
 } from 'lucide-react';
 import { generateIssuesReport } from '@/utils/IssuesEngine';
+import { calculateTechnicalSeoScore } from '@/utils/technicalSeoScore';
+import TechnicalScoreModal from '../TechnicalScoreModal';
 
 
 const CORE_AUDIT_CATEGORIES = [
@@ -96,28 +99,28 @@ function SpringTiltBentoCard({
 
   const themes = {
     emerald: {
-      border: 'border-emerald-200 hover:border-emerald-300',
-      bg: 'from-white to-emerald-50/40',
-      text: 'text-emerald-700',
-      iconBg: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      border: 'border-emerald-200 dark:border-emerald-500/25 hover:border-emerald-300 dark:hover:border-emerald-500/40',
+      bg: 'from-white to-emerald-50/40 dark:from-slate-900/95 dark:to-emerald-950/30',
+      text: 'text-emerald-700 dark:text-emerald-400',
+      iconBg: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/80'
     },
     indigo: {
-      border: 'border-indigo-200 hover:border-indigo-300',
-      bg: 'from-white to-indigo-50/40',
-      text: 'text-indigo-700',
-      iconBg: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+      border: 'border-indigo-200 dark:border-indigo-500/25 hover:border-indigo-300 dark:hover:border-indigo-500/40',
+      bg: 'from-white to-indigo-50/40 dark:from-slate-900/95 dark:to-indigo-950/30',
+      text: 'text-indigo-700 dark:text-indigo-400',
+      iconBg: 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800/80'
     },
     purple: {
-      border: 'border-purple-200 hover:border-purple-300',
-      bg: 'from-white to-purple-50/40',
-      text: 'text-purple-700',
-      iconBg: 'bg-purple-50 text-purple-700 border-purple-200'
+      border: 'border-purple-200 dark:border-purple-500/25 hover:border-purple-300 dark:hover:border-purple-500/40',
+      bg: 'from-white to-purple-50/40 dark:from-slate-900/95 dark:to-purple-950/30',
+      text: 'text-purple-700 dark:text-purple-400',
+      iconBg: 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800/80'
     },
     rose: {
-      border: 'border-rose-200 hover:border-rose-300',
-      bg: 'from-white to-rose-50/40',
-      text: 'text-rose-700',
-      iconBg: 'bg-rose-50 text-rose-700 border-rose-200'
+      border: 'border-rose-200 dark:border-rose-500/25 hover:border-rose-300 dark:hover:border-rose-500/40',
+      bg: 'from-white to-rose-50/40 dark:from-slate-900/95 dark:to-rose-950/30',
+      text: 'text-rose-700 dark:text-rose-400',
+      iconBg: 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/80'
     }
   };
 
@@ -135,14 +138,14 @@ function SpringTiltBentoCard({
         <div>
           <p className={`text-[10px] font-mono font-bold ${t.text} uppercase tracking-widest`}>{subtitle}</p>
           {score !== null && score !== undefined && !isDisconnected ? (
-            <h3 className="text-4xl font-extrabold text-slate-900 mt-1 tabular-nums">
+            <h3 className="text-4xl font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums">
               <AnimatedNumber value={score} />
               <span className="text-base text-slate-400 font-normal">/100</span>
             </h3>
           ) : (
-            <h3 className="text-4xl font-extrabold text-slate-400 mt-1 tabular-nums flex items-baseline gap-1">
+            <h3 className="text-4xl font-extrabold text-slate-400 dark:text-slate-500 mt-1 tabular-nums flex items-baseline gap-1">
               <span>--</span>
-              <span className="text-base text-slate-400 font-normal">/100</span>
+              <span className="text-base text-slate-400 dark:text-slate-500 font-normal">/100</span>
             </h3>
           )}
         </div>
@@ -150,7 +153,7 @@ function SpringTiltBentoCard({
           <Icon size={20} />
         </div>
       </div>
-      <div className="flex items-center justify-between gap-1 text-xs text-slate-700 font-semibold pt-2 border-t border-slate-200/60 relative z-10">
+      <div className="flex items-center justify-between gap-1 text-xs text-slate-700 dark:text-slate-300 font-semibold pt-2 border-t border-slate-200/60 dark:border-slate-800/80 relative z-10">
         <span className="flex items-center gap-1.5 truncate">
           {isDisconnected ? (
             <AlertCircle size={13} className="text-amber-500 shrink-0" />
@@ -162,7 +165,7 @@ function SpringTiltBentoCard({
         {actionText && (
           <button
             onClick={(e) => { e.stopPropagation(); onAction?.(); }}
-            className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2 shrink-0 cursor-pointer ml-1"
+            className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline underline-offset-2 shrink-0 cursor-pointer ml-1"
           >
             {actionText}
           </button>
@@ -175,6 +178,7 @@ function SpringTiltBentoCard({
 export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToTab }) {
   const containerRef = useRef(null);
   const reduced = useReducedMotion();
+  const [showTechScoreModal, setShowTechScoreModal] = useState(false);
 
   // GSAP Staggered Entrance Animation
   useGSAP(() => {
@@ -201,8 +205,12 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
 
   const issuesReport = useMemo(() => generateIssuesReport(pages), [pages]);
 
-  const criticalIssues = useMemo(() => issuesReport.filter(i => i.priority === 'High' || i.type === 'Issue'), [issuesReport]);
-  const warningIssues = useMemo(() => issuesReport.filter(i => i.type === 'Warning'), [issuesReport]);
+  const highPriorityIssues = useMemo(() => issuesReport.filter(i => i.priority === 'High'), [issuesReport]);
+  const mediumPriorityIssues = useMemo(() => issuesReport.filter(i => i.priority === 'Medium'), [issuesReport]);
+  const lowPriorityIssues = useMemo(() => issuesReport.filter(i => i.priority === 'Low'), [issuesReport]);
+
+  const criticalIssues = highPriorityIssues;
+  const warningIssues = mediumPriorityIssues;
 
   const stats = useMemo(() => {
     if (!pages || pages.length === 0) return { total: 0, status200: 0, status400: 0, status300: 0, indexable: 0 };
@@ -225,55 +233,13 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
     };
   }, [pages]);
 
-  // 1. Industry-standard page-weighted Site Health Score (Screaming Frog / Ahrefs standard)
-  const healthScore = useMemo(() => {
-    if (!pages || pages.length === 0) return 0;
-    const total = pages.length;
-    
-    // Penalties weighted by ratio of affected crawl pages
-    let criticalDeduction = 0;
-    criticalIssues.forEach(issue => {
-      const affected = issue.affected_pages?.length || issue.count || 0;
-      const ratio = affected / total;
-      criticalDeduction += Math.min(12, ratio * 20); // capped at 12 per issue type
-    });
-
-    let warningDeduction = 0;
-    warningIssues.forEach(issue => {
-      const affected = issue.affected_pages?.length || issue.count || 0;
-      const ratio = affected / total;
-      warningDeduction += Math.min(6, ratio * 8);
-    });
-
-    // 4xx / 5xx HTTP Error ratio impact
-    const errorPages = pages.filter(p => (p.status_code || 200) >= 400).length;
-    const errorPenalty = (errorPages / total) * 35;
-
-    const raw = 100 - criticalDeduction - warningDeduction - errorPenalty;
-    return Math.max(10, Math.min(100, Math.round(raw)));
-  }, [criticalIssues, warningIssues, pages]);
-
-  // 2. Technical SEO Health Score (Response Codes, Indexability, Canonicals, Meta Tags, Headings)
-  const seoScore = useMemo(() => {
-    if (!pages || pages.length === 0) return 0;
-    const total = pages.length;
-
-    const techIssues = issuesReport.filter(i => 
-      ['Response_Codes', 'Canonicals', 'Directives', 'Security', 'Structured_Data', 'Page_Titles', 'H1'].includes(i.category)
-    );
-
-    let techDeductions = 0;
-    techIssues.forEach(i => {
-      const affected = i.affected_pages?.length || i.count || 0;
-      const ratio = affected / total;
-      const weight = i.type === 'Issue' ? 18 : (i.type === 'Warning' ? 8 : 2);
-      techDeductions += Math.min(15, ratio * weight);
-    });
-
-    const non200Ratio = pages.filter(p => (p.status_code || 200) >= 300).length / total;
-    const raw = 100 - techDeductions - (non200Ratio * 20);
-    return Math.max(15, Math.min(100, Math.round(raw)));
+  // 1. Comprehensive 5-Pillar Technical SEO & Site Health Scoring Engine (Ahrefs & Semrush standard)
+  const technicalSeoResult = useMemo(() => {
+    return calculateTechnicalSeoScore(pages, issuesReport);
   }, [pages, issuesReport]);
+
+  const healthScore = pages?.length > 0 ? technicalSeoResult.siteHealthScore : null;
+  const seoScore = pages?.length > 0 ? technicalSeoResult.technicalScore : null;
 
   // 3. AEO (Answer Engine Optimization) - strictly requires connected AI (OpenAI / Perplexity)
   const aeoData = useMemo(() => {
@@ -516,16 +482,22 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Executive Audit Telemetry</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">Executive Audit Telemetry</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             Holistic intelligence across Technical SEO, AEO (Answer Engine Optimization), and GEO (Generative Local SERP).
           </p>
         </div>
-        <div className="flex items-center gap-2 font-mono text-xs text-slate-700 bg-white border border-slate-200 px-3.5 py-1.5 rounded-xl shadow-xs self-start sm:self-auto shrink-0">
+        <div className="flex items-center gap-2 font-mono text-xs text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3.5 py-1.5 rounded-xl shadow-xs self-start sm:self-auto shrink-0">
           <span>Engine Status:</span>
-          <span className="text-emerald-700 font-bold flex items-center gap-1.5">
-            <span className="live-dot w-2 h-2 rounded-full bg-emerald-500 text-emerald-500/60"></span> Live Analyzed
-          </span>
+          {pages?.length > 0 ? (
+            <span className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1.5">
+              <span className="live-dot w-2 h-2 rounded-full bg-emerald-500 text-emerald-500/60"></span> Live Analyzed
+            </span>
+          ) : (
+            <span className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-slate-400"></span> Ready to Audit
+            </span>
+          )}
         </div>
       </div>
 
@@ -537,7 +509,11 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
           title="Site Health"
           subtitle="Site Health Index"
           score={healthScore}
-          statusText={`${issuesReport.length} Checks Evaluated`}
+          statusText={
+            pages?.length > 0 && technicalSeoResult?.checksSummary
+              ? `${technicalSeoResult.checksSummary.errorFreePages} / ${pages.length} Clean URLs (${technicalSeoResult.checksSummary.errorFreeRatio}%)`
+              : pages?.length > 0 ? `${issuesReport.length} Checks Evaluated` : 'Awaiting Audit URL'
+          }
           icon={Activity}
           colorTheme="emerald"
           onMouseMoveCard={handleMouseMoveSpotlight}
@@ -546,9 +522,11 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
         {/* Technical SEO */}
         <SpringTiltBentoCard
           title="Technical SEO"
-          subtitle="Technical SEO"
+          subtitle="5-Pillar Architecture"
           score={seoScore}
-          statusText="Crawlability & Indexability"
+          statusText={pages?.length > 0 ? `${technicalSeoResult.checksSummary?.totalEvaluated || 61} Checks Evaluated` : 'Awaiting Audit URL'}
+          actionText={pages?.length > 0 ? "Inspect Pillars →" : undefined}
+          onAction={() => setShowTechScoreModal(true)}
           icon={Globe}
           colorTheme="indigo"
           onMouseMoveCard={handleMouseMoveSpotlight}
@@ -588,20 +566,20 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
         {/* URL Crawl Breakdown */}
-        <div className="gsap-section glass-card p-5 lg:col-span-1 flex flex-col justify-between rounded-3xl bg-white border border-slate-200 shadow-sm">
+        <div className="gsap-section glass-card p-5 lg:col-span-1 flex flex-col justify-between rounded-3xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div>
-            <h4 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
-              <PieChart size={16} className="text-indigo-600" /> Crawl Response Distribution
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
+              <PieChart size={16} className="text-indigo-600 dark:text-indigo-400" /> Crawl Response Distribution
             </h4>
-            <p className="text-xs text-slate-500 mb-4">HTTP Status Codes across {stats.total} crawled URLs</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">HTTP Status Codes across {stats.total} crawled URLs</p>
 
             <div className="space-y-3">
               <div>
                 <div className="flex justify-between text-xs font-mono font-semibold mb-1">
-                  <span className="text-emerald-700">2xx Success ({stats.status200})</span>
-                  <span className="text-slate-600">{stats.total > 0 ? Math.round((stats.status200/stats.total)*100) : 100}%</span>
+                  <span className="text-emerald-700 dark:text-emerald-400">2xx Success ({stats.status200})</span>
+                  <span className="text-slate-600 dark:text-slate-300">{stats.total > 0 ? Math.round((stats.status200/stats.total)*100) : 100}%</span>
                 </div>
-                <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
                   <motion.div
                     className="h-full w-full origin-left bg-emerald-500 rounded-full"
                     initial={{ scaleX: 0 }}
@@ -613,10 +591,10 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
 
               <div>
                 <div className="flex justify-between text-xs font-mono font-semibold mb-1">
-                  <span className="text-indigo-700">3xx Redirects ({stats.status300})</span>
-                  <span className="text-slate-600">{stats.total > 0 ? Math.round((stats.status300/stats.total)*100) : 0}%</span>
+                  <span className="text-indigo-700 dark:text-indigo-400">3xx Redirects ({stats.status300})</span>
+                  <span className="text-slate-600 dark:text-slate-300">{stats.total > 0 ? Math.round((stats.status300/stats.total)*100) : 0}%</span>
                 </div>
-                <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
                   <motion.div
                     className="h-full w-full origin-left bg-indigo-500 rounded-full"
                     initial={{ scaleX: 0 }}
@@ -628,10 +606,10 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
 
               <div>
                 <div className="flex justify-between text-xs font-mono font-semibold mb-1">
-                  <span className="text-rose-700">4xx / 5xx Client Errors ({stats.status400})</span>
-                  <span className="text-slate-600">{stats.total > 0 ? Math.round((stats.status400/stats.total)*100) : 0}%</span>
+                  <span className="text-rose-700 dark:text-rose-400">4xx / 5xx Client Errors ({stats.status400})</span>
+                  <span className="text-slate-600 dark:text-slate-300">{stats.total > 0 ? Math.round((stats.status400/stats.total)*100) : 0}%</span>
                 </div>
-                <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
                   <motion.div
                     className="h-full w-full origin-left bg-rose-500 rounded-full"
                     initial={{ scaleX: 0 }}
@@ -663,13 +641,13 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
         </div>
 
         {/* 32-Parameter Coverage Grid */}
-        <div className="gsap-section glass-card p-5 lg:col-span-2 rounded-3xl bg-white border border-slate-200 shadow-sm">
+        <div className="gsap-section glass-card p-5 lg:col-span-2 rounded-3xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h4 className="text-sm font-bold text-slate-900">Screaming Frog 32-Parameter Engine</h4>
-              <p className="text-xs text-slate-500">Click any diagnostic parameter to explore raw site matrices</p>
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white">Screaming Frog 32-Parameter Engine</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Click any diagnostic parameter to explore raw site matrices</p>
             </div>
-            <span className="text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-full font-bold">
+            <span className="text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60 px-2.5 py-1 rounded-full font-bold">
               32 Parameters Active
             </span>
           </div>
@@ -690,9 +668,9 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
                 initial="rest"
                 animate="rest"
                 transition={spring.press}
-                className="p-3 rounded-2xl bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-indigo-300 hover:shadow-xs text-left transition-colors group flex flex-col justify-between cursor-pointer"
+                className="p-3 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 hover:bg-white dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700/80 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-xs text-left transition-colors group flex flex-col justify-between cursor-pointer"
               >
-                <div className="flex items-center justify-between text-slate-500 group-hover:text-indigo-600 mb-2 transition-colors">
+                <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 mb-2 transition-colors">
                   {cat.icon}
                   <motion.span
                     variants={{ rest: { opacity: 0, x: -3, y: 3 }, hover: { opacity: 1, x: 0, y: 0 } }}
@@ -702,7 +680,7 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
                     <ArrowUpRight size={12} />
                   </motion.span>
                 </div>
-                <div className="text-xs font-bold text-slate-800 group-hover:text-slate-900 truncate">
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white truncate">
                   {cat.label}
                 </div>
               </motion.button>
@@ -716,22 +694,22 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         
         {/* Card 1: Google Search Console Performance & Indexation */}
-        <div className="gsap-section glass-card p-5 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between">
+        <div className="gsap-section glass-card p-5 rounded-3xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-xs">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-xs">
                   <Globe size={16} />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-900">Google Search Console</h4>
-                  <p className="text-[11px] text-slate-500">Organic clicks, impressions & indexation health</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Google Search Console</h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Organic clicks, impressions & indexation health</p>
                 </div>
               </div>
               <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border ${
                 gscSummary?.isLive
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60'
+                  : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
               }`}>
                 {gscSummary?.isLive ? 'Live GSC API' : 'Not Connected'}
               </span>
@@ -739,52 +717,52 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
 
             {/* 3 KPI metric gauges */}
             <div className="grid grid-cols-3 gap-2 mb-3">
-              <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-100 text-center">
-                <span className="text-[10px] font-mono text-blue-800 font-bold block uppercase">Clicks (30d)</span>
-                <span className="text-base font-extrabold text-slate-900 mt-0.5 block">
+              <div className="p-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-center">
+                <span className="text-[10px] font-mono text-blue-800 dark:text-blue-300 font-bold block uppercase">Clicks (30d)</span>
+                <span className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block">
                   {gscSummary?.isLive ? gscSummary.totalClicks.toLocaleString() : '0'}
                 </span>
-                <span className="text-[10px] text-slate-500 font-semibold">{gscSummary?.isLive ? 'Organic' : 'Disconnected'}</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">{gscSummary?.isLive ? 'Organic' : 'Disconnected'}</span>
               </div>
-              <div className="p-2.5 rounded-xl bg-indigo-50/60 border border-indigo-100 text-center">
-                <span className="text-[10px] font-mono text-indigo-800 font-bold block uppercase">Impressions</span>
-                <span className="text-base font-extrabold text-slate-900 mt-0.5 block">
+              <div className="p-2.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 text-center">
+                <span className="text-[10px] font-mono text-indigo-800 dark:text-indigo-300 font-bold block uppercase">Impressions</span>
+                <span className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block">
                   {gscSummary?.isLive ? gscSummary.totalImpressions.toLocaleString() : '0'}
                 </span>
-                <span className="text-[10px] text-slate-500 font-semibold">{gscSummary?.isLive ? 'SERP Views' : 'Disconnected'}</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">{gscSummary?.isLive ? 'SERP Views' : 'Disconnected'}</span>
               </div>
-              <div className="p-2.5 rounded-xl bg-purple-50/60 border border-purple-100 text-center">
-                <span className="text-[10px] font-mono text-purple-800 font-bold block uppercase">Avg CTR</span>
-                <span className="text-base font-extrabold text-slate-900 mt-0.5 block">
+              <div className="p-2.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40 text-center">
+                <span className="text-[10px] font-mono text-purple-800 dark:text-purple-300 font-bold block uppercase">Avg CTR</span>
+                <span className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block">
                   {gscSummary?.isLive ? `${gscSummary?.avgCtr || '0.0'}%` : '0.0%'}
                 </span>
-                <span className="text-[10px] text-slate-500 font-semibold">Click Rate</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Click Rate</span>
               </div>
             </div>
 
             {/* Coverage & Canonical Matrix */}
             <div className="space-y-2 mb-3">
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
-                <span className="text-slate-600 font-medium">Google Index State:</span>
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs">
+                <span className="text-slate-600 dark:text-slate-300 font-medium">Google Index State:</span>
                 <span className={`font-mono font-bold px-2 py-0.5 rounded text-[11px] border ${
-                  gscSummary?.isLive ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-slate-500 bg-slate-100 border-slate-200'
+                  gscSummary?.isLive ? 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60' : 'text-slate-500 bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
                 }`}>
                   {gscSummary?.isLive ? `${gscSummary.indexedCount} Indexed / ${gscSummary.excludedCount} Excluded` : 'Not Connected'}
                 </span>
               </div>
               {gscSummary?.isLive && gscSummary?.canonicalMismatches > 0 ? (
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-800 dark:text-amber-300">
                   <span className="font-medium flex items-center gap-1.5">
-                    <AlertTriangle size={13} className="text-amber-600" /> Canonical Mismatches:
+                    <AlertTriangle size={13} className="text-amber-600 dark:text-amber-400" /> Canonical Mismatches:
                   </span>
-                  <span className="font-mono font-bold px-2 py-0.5 rounded text-[11px] bg-amber-100 border border-amber-300">
+                  <span className="font-mono font-bold px-2 py-0.5 rounded text-[11px] bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-800">
                     {gscSummary.canonicalMismatches} URLs
                   </span>
                 </div>
               ) : (
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50/80 border border-slate-200 text-xs text-slate-700">
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300">
                   <span className="font-medium flex items-center gap-1.5">
-                    <CheckCircle2 size={13} className={gscSummary?.isLive ? "text-emerald-600" : "text-slate-400"} /> Canonical Alignment:
+                    <CheckCircle2 size={13} className={gscSummary?.isLive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"} /> Canonical Alignment:
                   </span>
                   <span className="font-mono font-bold text-[11px]">{gscSummary?.isLive ? '100% Synchronized' : 'Requires GSC Link'}</span>
                 </div>
@@ -797,7 +775,7 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
                 whileHover={{ y: -1 }}
                 whileTap={tapPress}
                 transition={spring.press}
-                className="w-full btn-secondary py-1.5 text-xs font-bold gap-1.5 text-blue-700 hover:text-blue-800 shadow-2xs"
+                className="w-full btn-secondary py-1.5 text-xs font-bold gap-1.5 text-blue-700 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 shadow-2xs"
               >
                 Explore GSC Queries & Index Status
                 <ArrowUpRight size={13} />
@@ -812,31 +790,31 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
             )}
           </div>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-500">
+          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
             <span className="truncate max-w-[200px]">{gscSummary?.isLive ? gscSummary.source : 'Search Console Not Connected'}</span>
-            <span className={gscSummary?.isLive ? "text-emerald-600 font-bold" : "text-slate-400 font-medium"}>
+            <span className={gscSummary?.isLive ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-400 font-medium"}>
               {gscSummary?.isLive ? 'API Verified' : 'Offline'}
             </span>
           </div>
         </div>
         
         {/* Card 2: Perplexity AI Citations & Google SERP Features */}
-        <div className="gsap-section glass-card p-5 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between">
+        <div className="gsap-section glass-card p-5 rounded-3xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-700 shadow-xs">
+                <div className="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-900/50 flex items-center justify-center text-purple-700 dark:text-purple-300 shadow-xs">
                   <Sparkles size={16} />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-900">Perplexity AI Citations & SERP Features</h4>
-                  <p className="text-[11px] text-slate-500">Live generative AI visibility & search engine grounding</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Perplexity AI Citations & SERP Features</h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Live generative AI visibility & search engine grounding</p>
                 </div>
               </div>
               <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border ${
                 perplexityData?.isConnected
-                  ? (perplexityData.win ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200')
-                  : 'bg-amber-50 text-amber-700 border-amber-200'
+                  ? (perplexityData.win ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60' : 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800/60')
+                  : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/60'
               }`}>
                 {perplexityData?.isConnected ? (perplexityData.win ? 'Verified AI Citation Win' : 'Citation Ready') : 'AI Engine Offline'}
               </span>
@@ -846,9 +824,9 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
               <>
                 {/* Perplexity AI Answer Summary */}
                 {perplexityData?.summary && (
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 mb-3 text-xs text-slate-700 leading-relaxed font-sans">
-                    <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      <Bot size={12} className="text-purple-600" /> Perplexity AI Knowledge Graph Summary:
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-800 mb-3 text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-sans">
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                      <Bot size={12} className="text-purple-600 dark:text-purple-400" /> Perplexity AI Knowledge Graph Summary:
                     </div>
                     "{perplexityData.summary}"
                   </div>
@@ -856,25 +834,25 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
 
                 {/* Competitor / Citation Badges */}
                 <div className="grid grid-cols-2 gap-2 mb-3">
-                  <div className="p-2.5 rounded-xl bg-purple-50/50 border border-purple-100">
-                    <span className="text-[10px] font-mono text-purple-700 font-bold uppercase block">AI Citations Count</span>
-                    <span className="text-lg font-extrabold text-slate-900">{perplexityData?.count || 0} Sources</span>
+                  <div className="p-2.5 rounded-xl bg-purple-50/50 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40">
+                    <span className="text-[10px] font-mono text-purple-700 dark:text-purple-300 font-bold uppercase block">AI Citations Count</span>
+                    <span className="text-lg font-extrabold text-slate-900 dark:text-white">{perplexityData?.count || 0} Sources</span>
                   </div>
-                  <div className="p-2.5 rounded-xl bg-indigo-50/50 border border-indigo-100">
-                    <span className="text-[10px] font-mono text-indigo-700 font-bold uppercase block">Google AI Overviews</span>
-                    <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 mt-1">
+                  <div className="p-2.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40">
+                    <span className="text-[10px] font-mono text-indigo-700 dark:text-indigo-300 font-bold uppercase block">Google AI Overviews</span>
+                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1 mt-1">
                       <CheckCircle2 size={13} /> {serpData?.has_ai_overview ? 'Featured in AI Carousel' : 'Standard Organic'}
                     </span>
                   </div>
                 </div>
               </>
             ) : (
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-50/40 to-indigo-50/30 border border-purple-100 text-center mb-3">
-                <div className="w-10 h-10 rounded-2xl bg-white border border-purple-200 flex items-center justify-center text-purple-600 mx-auto mb-2 shadow-xs">
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-50/40 to-indigo-50/30 dark:from-purple-950/30 dark:to-indigo-950/20 border border-purple-100 dark:border-purple-900/40 text-center mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 flex items-center justify-center text-purple-600 dark:text-purple-400 mx-auto mb-2 shadow-xs">
                   <Bot size={20} />
                 </div>
-                <h5 className="text-xs font-bold text-slate-900 mb-1">AI Citations Engine Offline</h5>
-                <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
+                <h5 className="text-xs font-bold text-slate-900 dark:text-white mb-1">AI Citations Engine Offline</h5>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mb-3">
                   Connect Perplexity Sonar API or OpenAI API in API Integrations to audit live LLM citations, generative answer share, and brand sentiment in AI Overviews.
                 </p>
                 <button
@@ -888,13 +866,13 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
 
             {/* People Also Ask (PAA) Questions */}
             {serpData?.paa_questions && serpData.paa_questions.length > 0 && (
-              <div className="border-t border-slate-100 pt-3">
-                <div className="text-[11px] font-mono font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <HelpCircle size={12} className="text-indigo-600" /> Google "People Also Ask" Opportunities:
+              <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                <div className="text-[11px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <HelpCircle size={12} className="text-indigo-600 dark:text-indigo-400" /> Google "People Also Ask" Opportunities:
                 </div>
                 <div className="space-y-1.5">
                   {serpData.paa_questions.slice(0, 3).map((q, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-xs text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                    <div key={idx} className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 px-2.5 py-1.5 rounded-lg border border-slate-100 dark:border-slate-800">
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>
                       <span className="truncate">{q}</span>
                     </div>
@@ -904,36 +882,36 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
             )}
           </div>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-500">
+          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
             <span>Ground Truth: {perplexityData?.isConnected ? 'Perplexity Sonar Live' : 'API Engine Offline'}</span>
-            <span className={serpData?.top_ranking_position ? "text-indigo-600 font-bold" : "text-slate-400 font-normal"}>
+            <span className={serpData?.top_ranking_position ? "text-indigo-600 dark:text-indigo-400 font-bold" : "text-slate-400 font-normal"}>
               {serpData?.top_ranking_position ? `Top Rank: #${serpData.top_ranking_position}` : 'SerpAPI Disconnected'}
             </span>
           </div>
         </div>
 
         {/* Card 3: Google PageSpeed & Core Web Vitals Pass/Fail */}
-        <div className="gsap-section glass-card p-5 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between">
+        <div className="gsap-section glass-card p-5 rounded-3xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 shadow-xs">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900/50 flex items-center justify-center text-amber-700 dark:text-amber-400 shadow-xs">
                   <Zap size={16} />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-900">Google Core Web Vitals (CrUX & Lighthouse)</h4>
-                  <p className="text-[11px] text-slate-500">Real-user 75th percentile loading & responsiveness</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Google Core Web Vitals (CrUX & Lighthouse)</h4>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Real-user 75th percentile loading & responsiveness</p>
                 </div>
               </div>
               {pageSpeedData?.isConnected ? (
                 <div className="text-right">
-                  <span className={`text-xl font-extrabold ${pageSpeedData.score >= 90 ? 'text-emerald-700' : pageSpeedData.score >= 50 ? 'text-amber-600' : 'text-rose-600'}`}>
+                  <span className={`text-xl font-extrabold ${pageSpeedData.score >= 90 ? 'text-emerald-700 dark:text-emerald-400' : pageSpeedData.score >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>
                     {pageSpeedData.score}
                   </span>
                   <span className="text-xs text-slate-400 font-normal">/100</span>
                 </div>
               ) : (
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
                   Not Connected
                 </span>
               )}
@@ -989,12 +967,12 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
                 )}
               </>
             ) : (
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/40 to-slate-50 border border-amber-100 text-center mb-3">
-                <div className="w-10 h-10 rounded-2xl bg-white border border-amber-200 flex items-center justify-center text-amber-600 mx-auto mb-2 shadow-xs">
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/40 to-slate-50 dark:from-amber-950/30 dark:to-slate-900/60 border border-amber-100 dark:border-amber-900/40 text-center mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 flex items-center justify-center text-amber-600 dark:text-amber-400 mx-auto mb-2 shadow-xs">
                   <Zap size={20} />
                 </div>
-                <h5 className="text-xs font-bold text-slate-900 mb-1">PageSpeed API Offline</h5>
-                <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
+                <h5 className="text-xs font-bold text-slate-900 dark:text-white mb-1">PageSpeed API Offline</h5>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mb-3">
                   Configure Google PageSpeed API Key in API Integrations to audit live Core Web Vitals (LCP, INP, CLS, TTFB) and Lighthouse performance diagnostics.
                 </p>
                 <button
@@ -1017,17 +995,33 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
 
       </div>
 
-      {/* Critical Issues Action List */}
+      {/* Actionable Findings Radar - 3-Tier Priority Categorization */}
       <div className="gsap-section glass-card p-5 rounded-3xl bg-white border border-slate-200 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2">
             <AlertTriangle className="text-amber-600" size={18} />
             <h4 className="text-sm font-bold text-slate-900">Actionable Findings Radar</h4>
           </div>
-          <span className="text-xs font-mono text-slate-500 font-semibold">{criticalIssues.length + warningIssues.length} total issues found</span>
+          <div className="flex items-center gap-1.5 font-mono text-[11px] flex-wrap">
+            <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+              {highPriorityIssues.length} High
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              {mediumPriorityIssues.length} Medium
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              {lowPriorityIssues.length} Low
+            </span>
+            <span className="text-slate-400 font-normal ml-1">
+              ({issuesReport.length} total)
+            </span>
+          </div>
         </div>
 
-        {criticalIssues.length === 0 && warningIssues.length === 0 ? (
+        {issuesReport.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1042,8 +1036,8 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
             >
               <CheckCircle2 size={32} className="text-emerald-600 mx-auto mb-2" />
             </motion.span>
-            <p className="font-bold text-slate-900">No Critical Issues Detected</p>
-            <p className="text-xs text-slate-500 mt-1">Target website satisfies core indexability and technical SEO standards.</p>
+            <p className="font-bold text-slate-900">No Priority Issues Detected</p>
+            <p className="text-xs text-slate-500 mt-1">Target website satisfies all core indexability, technical SEO, and content standards.</p>
           </motion.div>
         ) : (
           <motion.div
@@ -1053,7 +1047,7 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
             className="grid grid-cols-1 md:grid-cols-2 gap-3"
           >
             <AnimatePresence initial={false} mode="popLayout">
-            {[...criticalIssues, ...warningIssues].slice(0, 6).map((issue) => (
+            {[...highPriorityIssues, ...mediumPriorityIssues, ...lowPriorityIssues].slice(0, 8).map((issue) => (
               <motion.div
                 key={`${issue.category}-${issue.name}`}
                 layout={!reduced}
@@ -1065,17 +1059,42 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
                 transition={spring.press}
                 className="p-3.5 rounded-2xl bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 hover:shadow-xs cursor-pointer flex items-center justify-between transition-colors group"
               >
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${issue.priority === 'High' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                    {issue.priority === 'High' ? <XCircle size={16} /> : <AlertTriangle size={16} />}
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                    issue.priority === 'High' 
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200' 
+                      : issue.priority === 'Medium'
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                      : 'bg-blue-50 text-blue-700 border border-blue-200'
+                  }`}>
+                    {issue.priority === 'High' ? (
+                      <XCircle size={16} />
+                    ) : issue.priority === 'Medium' ? (
+                      <AlertTriangle size={16} />
+                    ) : (
+                      <Info size={16} />
+                    )}
                   </div>
-                  <div>
-                    <h5 className="text-xs font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{issue.name}</h5>
-                    <p className="text-[10px] font-mono text-slate-500">{issue.category.replace(/_/g, ' ')}</p>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h5 className="text-xs font-bold text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
+                        {issue.name}
+                      </h5>
+                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border shrink-0 ${
+                        issue.priority === 'High'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : issue.priority === 'Medium'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}>
+                        {issue.priority}
+                      </span>
+                    </div>
+                    <p className="text-[10px] font-mono text-slate-500 truncate">{issue.category.replace(/_/g, ' ')}</p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0 ml-2">
                   <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-white border border-slate-200 text-slate-800 shadow-xs">
                     {issue.count} URLs
                   </span>
@@ -1088,6 +1107,14 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
         )}
       </div>
 
+      {/* 5-Pillar Technical SEO Score Audit Modal */}
+      <TechnicalScoreModal
+        isOpen={showTechScoreModal}
+        onClose={() => setShowTechScoreModal(false)}
+        technicalSeoResult={technicalSeoResult}
+        totalPages={pages?.length || 0}
+        onExploreCategory={(cat) => onNavigateToExplorer?.(cat)}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { toast } from 'sonner';
 import { duration, ease, spring, tapPress, tween } from '@/lib/motion';
@@ -15,9 +15,15 @@ import {
   Check,
   TableProperties,
   FolderTree,
-  List
+  List,
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle,
+  Info
 } from 'lucide-react';
 import URLTreeTable from './URLTreeTable';
+import { copyToClipboard } from '@/utils/clipboard';
+import { getDiagnosticDetail } from '@/utils/diagnosticDetails';
 import {
   MASTER_EXPORT_FIELDS,
   exportMasterAuditToExcel,
@@ -253,6 +259,15 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'tree'
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedUrl, setCopiedUrl] = useState(null);
+  const [copiedCellId, setCopiedCellId] = useState(null);
+
+  const handleCopyTextCell = async (text, id, label = 'Text') => {
+    const ok = await copyToClipboard(text, label);
+    if (ok) {
+      setCopiedCellId(id);
+      setTimeout(() => setCopiedCellId(null), 1800);
+    }
+  };
 
   const scopeCounts = useMemo(() => {
     let contentCount = 0;
@@ -493,12 +508,13 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     });
   };
 
-  const handleCopy = (url, e) => {
+  const handleCopy = async (url, e) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(url);
-    setCopiedUrl(url);
-    toast.success('URL copied to clipboard');
-    setTimeout(() => setCopiedUrl(null), 2000);
+    const ok = await copyToClipboard(url, 'URL');
+    if (ok) {
+      setCopiedUrl(url);
+      setTimeout(() => setCopiedUrl(null), 2000);
+    }
   };
 
   const getColumnLabel = (colKey) => {
@@ -511,7 +527,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
   const formatCellValue = (value, colKey, page) => {
     if (value === 'Not Connected' || value === 'Unverified (GBP Disconnected)' || value === 'Not Connected (Configure AI Engine)') {
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-100 text-slate-500 border border-slate-200">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
           Not Connected
         </span>
       );
@@ -521,29 +537,31 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       const ga4 = page?.audit_data?.Google_Analytics;
       if (ga4?.Sessions_30d === 'Not Connected' || ga4?.Live_GA4_Stream === 'Not Connected') {
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-100 text-slate-500 border border-slate-200">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
             Not Connected
           </span>
         );
       }
       return value ? (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50">
           Zombie Page (0 Visits)
         </span>
       ) : (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50">
           Active Traffic
         </span>
       );
     }
     if (colKey === 'Revenue_At_Risk') {
       if (value === 'N/A' || !value) {
-        return <span className="text-slate-400 font-mono">-</span>;
+        return <span className="text-slate-400 dark:text-slate-500 font-mono">-</span>;
       }
       const isCritical = String(value).includes('P0');
       return (
         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
-          isCritical ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse' : 'bg-slate-100 text-slate-700 border-slate-200'
+          isCritical 
+            ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50 animate-pulse' 
+            : 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
         }`}>
           {value}
         </span>
@@ -553,7 +571,9 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       const isIndexed = String(value).includes('Indexed');
       return (
         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
-          isIndexed ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+          isIndexed 
+            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50' 
+            : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50'
         }`}>
           {value}
         </span>
@@ -565,20 +585,20 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       const count = typeof value === 'number' ? value : parseInt(value, 10) || 0;
       if (count === 0) {
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50">
             0 (Missing)
           </span>
         );
       }
       if (count === 1) {
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50">
             1
           </span>
         );
       }
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
           {count} (Multiple)
         </span>
       );
@@ -588,11 +608,11 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     if (colKey === 'Missing') {
       const isMissing = value === true || value === 'true' || value === 'TRUE';
       return isMissing ? (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50">
           0 (Missing)
         </span>
       ) : (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50">
           1 (Present)
         </span>
       );
@@ -603,7 +623,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     if (textFields.includes(colKey)) {
       if (value === null || value === undefined || String(value).trim() === '') {
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50">
             0 (Missing)
           </span>
         );
@@ -611,7 +631,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       return (
         <div className="group/cell relative flex items-start justify-between gap-2 min-w-[260px] max-w-md xl:max-w-xl py-0.5">
           <span 
-            className="font-sans text-xs font-semibold text-slate-900 leading-snug whitespace-normal break-words select-all" 
+            className="font-sans text-xs font-semibold text-slate-900 dark:text-slate-100 leading-snug whitespace-normal break-words select-all" 
             title={String(value)}
           >
             {String(value)}
@@ -620,13 +640,17 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              navigator.clipboard.writeText(String(value));
-              toast.success('Text copied to clipboard');
+              const cellId = `${page?.url || ''}-${colKey}`;
+              handleCopyTextCell(String(value), cellId, getColumnLabel(colKey));
             }}
-            className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 hover:bg-indigo-50 border border-slate-200/60 opacity-0 group-hover/cell:opacity-100 transition-opacity"
-            title="Copy exact text"
+            className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 dark:text-slate-500 dark:hover:text-indigo-400 rounded bg-slate-50 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200/60 dark:border-slate-700 opacity-0 group-hover/cell:opacity-100 transition-opacity"
+            title={`Copy exact ${getColumnLabel(colKey)}`}
           >
-            <Copy size={11} />
+            {copiedCellId === `${page?.url || ''}-${colKey}` ? (
+              <Check size={11} className="text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <Copy size={11} />
+            )}
           </button>
         </div>
       );
@@ -635,10 +659,10 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     // 4. Length Without Spaces Dedicated Column
     if (colKey.endsWith('_length_no_spaces')) {
       if (value === null || value === undefined || value === '' || value === 0) {
-        return <span className="text-slate-400 font-mono">-</span>;
+        return <span className="text-slate-400 dark:text-slate-500 font-mono">-</span>;
       }
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded font-mono text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/70" title="Character count without spaces">
+        <span className="inline-flex items-center px-2 py-0.5 rounded font-mono text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/70 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900/50" title="Character count without spaces">
           {value} chars
         </span>
       );
@@ -647,7 +671,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     // 5. Standard Length columns: show length with spaces and sub-badge without spaces
     if (colKey.endsWith('_length') || colKey === 'word_count') {
       if (value === null || value === undefined || value === '' || value === 0) {
-        return <span className="text-slate-400 font-mono">-</span>;
+        return <span className="text-slate-400 dark:text-slate-500 font-mono">-</span>;
       }
       // Look up corresponding no-spaces length if applicable
       let noSpaces = undefined;
@@ -661,9 +685,9 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       }
       return (
         <div className="flex items-center gap-1.5 font-mono text-xs">
-          <span className="font-bold text-slate-800">{value}</span>
+          <span className="font-bold text-slate-800 dark:text-slate-200">{value}</span>
           {noSpaces !== undefined && (
-            <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-1 py-0.5 rounded whitespace-nowrap" title="Character count without spaces">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded whitespace-nowrap" title="Character count without spaces">
               ({noSpaces} no spaces)
             </span>
           )}
@@ -674,68 +698,91 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     // 6. Pixel width columns
     if (colKey.endsWith('_pixel_width')) {
       if (value === null || value === undefined || value === 0 || value === '') {
-        return <span className="text-slate-400 font-mono">-</span>;
+        return <span className="text-slate-400 dark:text-slate-500 font-mono">-</span>;
       }
       const numVal = parseInt(value, 10);
       const isOver = (colKey.startsWith('title') && numVal > 561) || (colKey.startsWith('meta_desc') && numVal > 985);
       return (
-        <span className={`font-mono text-xs ${isOver ? 'text-amber-600 font-bold' : 'text-slate-700'}`}>
+        <span className={`font-mono text-xs ${isOver ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-700 dark:text-slate-300'}`}>
           {numVal} px
         </span>
       );
     }
 
-    // 7. Other boolean columns (e.g. Multiple, Duplicate, Over 70 Characters)
-    if (value === true || value === 'TRUE' || value === 'true') {
+    // 7. Boolean Diagnostic Columns with Full Detail on What, Why True/False & How to Resolve
+    if (value === true || value === 'TRUE' || value === 'true' || value === false || value === 'FALSE' || value === 'false') {
+      const boolVal = (value === true || value === 'TRUE' || value === 'true');
+      const diag = getDiagnosticDetail(activeCategory, colKey, boolVal, page);
+
       if (colKey === 'Multiple') {
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200">
+        return boolVal ? (
+          <span 
+            className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50 cursor-help"
+            title={`${diag.label}: ${diag.why} - Click row to inspect fix`}
+          >
             2+ (Multiple)
           </span>
-        );
-      }
-      if (colKey === 'Duplicate') {
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200">
-            Duplicate
-          </span>
-        );
-      }
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200">
-          Issue
-        </span>
-      );
-    }
-    if (value === false || value === 'FALSE' || value === 'false') {
-      if (colKey === 'Multiple') {
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200">
+        ) : (
+          <span 
+            className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 cursor-help"
+            title={`${diag.label}: ${diag.why}`}
+          >
             Single
           </span>
         );
       }
       if (colKey === 'Duplicate') {
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+        return boolVal ? (
+          <span 
+            className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50 cursor-help"
+            title={`${diag.label}: ${diag.why} - Click row to inspect fix`}
+          >
+            Duplicate
+          </span>
+        ) : (
+          <span 
+            className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50 cursor-help"
+            title={`${diag.label}: ${diag.why}`}
+          >
             Unique
           </span>
         );
       }
+
+      if (diag.isIssue) {
+        return (
+          <span 
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold cursor-help border ${
+              diag.severity === 'Issue' 
+                ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-900/60' 
+                : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50 hover:bg-amber-100 dark:hover:bg-amber-900/60'
+            }`}
+            title={`[${diag.label}]\n${diag.why}\n\nSearch Impact: ${diag.searchImpact}\n\nHow to Resolve: ${diag.howToResolve}\n(Click row to view full details in inspector)`}
+          >
+            <AlertCircle size={10} />
+            {diag.severity === 'Issue' ? 'Issue' : 'Warning'}
+          </span>
+        );
+      }
+
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-50 text-slate-500 border border-slate-200">
+        <span 
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-50 text-slate-600 border border-slate-200 dark:bg-slate-800/80 dark:text-slate-300 dark:border-slate-700 cursor-help hover:bg-slate-100 dark:hover:bg-slate-800"
+          title={`[${diag.label}]\n${diag.why}`}
+        >
+          <CheckCircle size={10} className="text-emerald-600 dark:text-emerald-400" />
           Passed
         </span>
       );
     }
 
     if (value === null || value === undefined || value === '') {
-      return <span className="text-slate-400 font-mono">-</span>;
+      return <span className="text-slate-400 dark:text-slate-500 font-mono">-</span>;
     }
     if (typeof value === 'object') {
-      return <span className="font-mono text-[10px] text-indigo-700 truncate max-w-xs">{JSON.stringify(value)}</span>;
+      return <span className="font-mono text-[10px] text-indigo-700 dark:text-indigo-400 truncate max-w-xs">{JSON.stringify(value)}</span>;
     }
-    return <span className="truncate max-w-md">{String(value)}</span>;
+    return <span className="truncate max-w-md text-slate-800 dark:text-slate-200">{String(value)}</span>;
   };
 
   return (
@@ -744,20 +791,20 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       {/* Top Header & Dual Export Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Screaming Frog URL Data Grid</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Explore full 32-parameter extracted data for all crawled website endpoints.</p>
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">Screaming Frog URL Data Grid</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Explore full 32-parameter extracted data for all crawled website endpoints.</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
           {/* Screaming Frog View Switcher: Table View vs Tree View */}
-          <div className="flex items-center p-0.5 bg-slate-100 rounded-xl border border-slate-200 shrink-0">
+          <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0">
             <button
               type="button"
               onClick={() => setViewMode('table')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 viewMode === 'table'
-                  ? 'bg-white text-indigo-700 shadow-xs font-bold'
-                  : 'text-slate-500 hover:text-slate-900'
+                  ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 shadow-xs font-bold'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
               title="Flat Table View"
             >
@@ -770,7 +817,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 viewMode === 'tree'
                   ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                  : 'text-slate-500 hover:text-slate-900'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
               title="Select tree table view (Screaming Frog Directory Trie)"
             >
@@ -804,7 +851,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             className="btn-secondary py-2 px-2.5 sm:px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs"
             title="Export 35+ technical parameters to universal CSV"
           >
-            <Download size={13} className="text-indigo-600" />
+            <Download size={13} className="text-indigo-600 dark:text-indigo-400" />
             <span>Master CSV</span>
           </motion.button>
 
@@ -817,7 +864,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             className="btn-secondary py-2 px-2.5 sm:px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs"
             title="Export only currently filtered rows"
           >
-            <Filter size={13} className="text-slate-600" />
+            <Filter size={13} className="text-slate-600 dark:text-slate-400" />
             <span>Filtered View</span>
           </motion.button>
         </div>
@@ -825,15 +872,15 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
 
       {/* Scope Segment Control & Screaming Frog Compliance Indicator */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
-        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl w-fit text-xs font-semibold">
+        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200/50 dark:border-slate-800 rounded-xl w-fit text-xs font-semibold">
           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 pl-2 pr-1">Scope:</span>
           <button
             type="button"
             onClick={() => setPageScope('all')}
             className={`px-3 py-1.5 rounded-lg transition-all text-xs ${
               pageScope === 'all'
-                ? 'bg-white text-slate-900 shadow-xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-bold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             All Crawled URLs ({scopeCounts.all})
@@ -843,8 +890,8 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             onClick={() => setPageScope('content')}
             className={`px-3 py-1.5 rounded-lg transition-all text-xs ${
               pageScope === 'content'
-                ? 'bg-white text-indigo-700 shadow-xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 shadow-xs font-bold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Content Pages Only ({scopeCounts.content})
@@ -854,8 +901,8 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             onClick={() => setPageScope('archives')}
             className={`px-3 py-1.5 rounded-lg transition-all text-xs ${
               pageScope === 'archives'
-                ? 'bg-white text-amber-700 shadow-xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 shadow-xs font-bold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Author & Archives ({scopeCounts.archives})
@@ -865,8 +912,8 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             onClick={() => setPageScope('errors')}
             className={`px-3 py-1.5 rounded-lg transition-all text-xs ${
               pageScope === 'errors'
-                ? 'bg-white text-rose-700 shadow-xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-400 shadow-xs font-bold'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Errors & Redirects ({scopeCounts.errors})
@@ -874,7 +921,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
         </div>
 
         {ON_PAGE_HTML_CATEGORIES.includes(activeCategory) && (
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-500 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200/80">
+          <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-200/80 dark:border-slate-800">
             <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
             <span>Screaming Frog standard: 200 OK HTML pages evaluated</span>
           </div>
@@ -894,7 +941,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             setActiveView('All');
             toast.info(`Switched category to ${newCat.replace(/_/g, ' ')}`);
           }}
-          valueClassName="text-indigo-600 font-bold"
+          valueClassName="text-indigo-600 dark:text-indigo-400 font-bold"
           searchPlaceholder="Search 30+ categories..."
           showSearch={true}
         />
@@ -905,7 +952,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
           value={activeView}
           options={availableViewsWithBadges}
           onChange={(newView) => setActiveView(newView)}
-          valueClassName="text-emerald-700 font-bold"
+          valueClassName="text-emerald-700 dark:text-emerald-400 font-bold"
           searchPlaceholder="Filter views & columns..."
         />
 
@@ -917,20 +964,20 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             placeholder="Search URLs or titles..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full glass-input pl-9 pr-3 py-2 text-xs text-slate-900 placeholder-slate-400 rounded-xl"
+            className="w-full glass-input pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 rounded-xl"
           />
         </div>
       </div>
 
       {/* Category Metric Strip & Missing URLs Counter */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs shrink-0 shadow-2xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl text-xs shrink-0 shadow-2xs">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1.5 font-medium text-slate-600">
-            <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">Audited URLs:</span>
-            <span className="font-mono font-bold text-slate-900">{categoryStats.total}</span>
+          <div className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-400">
+            <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] uppercase tracking-wider">Audited URLs:</span>
+            <span className="font-mono font-bold text-slate-900 dark:text-white">{categoryStats.total}</span>
           </div>
 
-          <div className="h-3 w-px bg-slate-200 hidden sm:block" />
+          <div className="h-3 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
 
           {/* Explicit missing count counter with 1-click filter */}
           <button
@@ -940,8 +987,8 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
               categoryStats.missing > 0
                 ? activeView === 'Missing'
                   ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
-                  : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-900/60'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50'
             }`}
             title={categoryStats.missing > 0 ? "Click to view missing URLs" : "All URLs have this element"}
           >
@@ -958,17 +1005,17 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             )}
           </button>
 
-          <div className="h-3 w-px bg-slate-200 hidden sm:block" />
+          <div className="h-3 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
 
-          <div className="flex items-center gap-1.5 font-medium text-slate-600">
-            <span className="text-slate-400 font-mono text-[10px] uppercase tracking-wider">Present:</span>
-            <span className="font-mono font-bold text-emerald-700">{categoryStats.present}</span>
+          <div className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-400">
+            <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] uppercase tracking-wider">Present:</span>
+            <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">{categoryStats.present}</span>
           </div>
         </div>
 
         {/* Active filter notification pill */}
         {activeView === 'Missing' && (
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-rose-700 font-bold bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
+          <div className="flex items-center gap-1.5 text-[11px] font-mono text-rose-700 dark:text-rose-300 font-bold bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/50">
             <span>Filter Active:</span>
             <span>Showing {filteredPages.length} {filteredPages.length === 1 ? 'URL' : 'URLs'} with Missing {activeCategory.replace(/_/g, ' ')}</span>
           </div>
@@ -985,18 +1032,18 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
           />
         </div>
       ) : (
-        <div className="flex-1 bg-white border border-slate-200 rounded-2xl relative overflow-hidden flex flex-col shadow-xs">
+        <div className="flex-1 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl relative overflow-hidden flex flex-col shadow-xs">
           <div className="flex-1 overflow-auto custom-scrollbar">
-            <table className="w-full min-w-[700px] text-left text-xs text-slate-700 border-collapse">
-            <thead className="bg-slate-50 sticky top-0 z-20 border-b border-slate-200">
+            <table className="w-full min-w-[700px] text-left text-xs text-slate-700 dark:text-slate-300 border-collapse">
+            <thead className="bg-slate-50 dark:bg-slate-950/80 sticky top-0 z-20 border-b border-slate-200 dark:border-slate-800">
               <tr>
-                <th className="px-4 py-3.5 font-bold font-mono text-slate-500 uppercase tracking-wider w-80 min-w-[280px]">
+                <th className="px-4 py-3.5 font-bold font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider w-80 min-w-[280px]">
                   URL Endpoint
                 </th>
-                <th className="px-4 py-3.5 font-bold font-mono text-slate-500 uppercase tracking-wider w-24">
+                <th className="px-4 py-3.5 font-bold font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider w-24">
                   Status
                 </th>
-                <th className="px-4 py-3.5 font-bold font-mono text-slate-500 uppercase tracking-wider w-28">
+                <th className="px-4 py-3.5 font-bold font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider w-28">
                   Indexability
                 </th>
                 {dynamicColumns.map(col => {
@@ -1004,7 +1051,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                   return (
                     <th 
                       key={col} 
-                      className={`px-4 py-3.5 font-bold font-mono text-slate-500 uppercase tracking-wider ${
+                      className={`px-4 py-3.5 font-bold font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider ${
                         isTextCol ? 'min-w-[280px] max-w-md' : 'min-w-[120px] whitespace-nowrap'
                       }`}
                     >
@@ -1014,7 +1061,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                 })}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               <AnimatePresence initial={false} mode="popLayout">
               {filteredPages.length > 0 ? (
                 filteredPages.map((page, idx) => {
@@ -1033,43 +1080,43 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                         delay: Math.min(idx, 12) * 0.015,
                       }}
                       onClick={() => onRowClick && onRowClick(page)}
-                      className="hover:bg-slate-50 transition-colors cursor-pointer group"
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group"
                     >
-                      <td className="px-4 py-3 text-xs font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">
+                      <td className="px-4 py-3 text-xs font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                         <div className="flex items-center gap-1.5 truncate max-w-sm">
-                          <ChevronRight size={13} className="text-slate-400 group-hover:text-indigo-600 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5" />
+                          <ChevronRight size={13} className="text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5" />
                           <span className="truncate" title={page.url}>{page.url}</span>
                           {page.url?.includes('/author/') && (
-                            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200">
+                            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
                               Author
                             </span>
                           )}
                           {statusCode >= 400 && (
-                            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-rose-50 text-rose-700 border border-rose-200">
+                            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50">
                               Broken Link
                             </span>
                           )}
                           {statusCode >= 300 && statusCode < 400 && (
-                            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200">
+                            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
                               Redirect
                             </span>
                           )}
                           <button
                             onClick={(e) => handleCopy(page.url, e)}
-                            className="p-1 text-slate-400 hover:text-slate-700 rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                             title="Copy URL"
                           >
-                            {isCopied ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                            {isCopied ? <Check size={11} className="text-emerald-600 dark:text-emerald-400" /> : <Copy size={11} />}
                           </button>
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
                           statusCode >= 400
-                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                            ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50'
                             : statusCode >= 300
-                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50'
                         }`}>
                           {statusCode}
                         </span>
@@ -1077,8 +1124,8 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${
                           page.indexability === 'Non-Indexable'
-                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50'
                         }`}>
                           {page.indexability || 'Indexable'}
                         </span>
@@ -1089,7 +1136,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                         return (
                           <td 
                             key={col} 
-                            className={`px-4 py-3 font-mono text-slate-600 ${
+                            className={`px-4 py-3 font-mono text-slate-600 dark:text-slate-300 ${
                               isTextCol ? 'min-w-[280px] max-w-md whitespace-normal' : 'whitespace-nowrap'
                             }`}
                           >
@@ -1109,14 +1156,14 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                   transition={tween(duration.base, ease.outQuart)}
                 >
                   <td colSpan={dynamicColumns.length + 3} className="px-6 py-16 text-center text-slate-400">
-                    <p className="font-bold text-slate-900 text-sm">No URLs match the selected filter ({activeCategory} : {activeView}).</p>
-                    <p className="text-xs text-slate-500 mt-1 mb-3">Try switching category, resetting search query, or viewing all URLs.</p>
+                    <p className="font-bold text-slate-900 dark:text-white text-sm">No URLs match the selected filter ({activeCategory} : {activeView}).</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-3">Try switching category, resetting search query, or viewing all URLs.</p>
                     <button
                       onClick={() => {
                         setActiveView('All');
                         setSearchQuery('');
                       }}
-                      className="btn-secondary px-3.5 py-1.5 text-xs font-bold text-indigo-600 border border-indigo-200 hover:bg-indigo-50"
+                      className="btn-secondary px-3.5 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
                     >
                       Show All {pages?.length || 0} URLs
                     </button>
@@ -1129,9 +1176,9 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
         </div>
 
         {/* Footer Meta */}
-        <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 text-[11px] font-mono text-slate-500 flex justify-between items-center shrink-0">
-          <span>Showing <strong className="text-slate-900">{filteredPages.length}</strong> of <strong className="text-slate-900">{pages?.length || 0}</strong> URLs</span>
-          <span>Category: <strong className="text-indigo-600">{activeCategory}</strong> | View: <strong className="text-emerald-600">{activeView}</strong></span>
+        <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-500 dark:text-slate-400 flex justify-between items-center shrink-0">
+          <span>Showing <strong className="text-slate-900 dark:text-white">{filteredPages.length}</strong> of <strong className="text-slate-900 dark:text-white">{pages?.length || 0}</strong> URLs</span>
+          <span>Category: <strong className="text-indigo-600 dark:text-indigo-400">{activeCategory}</strong> | View: <strong className="text-emerald-600 dark:text-emerald-400">{activeView}</strong></span>
         </div>
       </div>
       )}

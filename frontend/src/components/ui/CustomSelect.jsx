@@ -186,13 +186,13 @@ export default function CustomSelect({
         aria-expanded={isOpen}
         onClick={() => setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`w-full flex items-center justify-between gap-2 bg-white border border-slate-200 hover:border-slate-300 p-1 rounded-xl shadow-xs transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/20 focus-visible:border-indigo-400 cursor-pointer ${
+        className={`w-full flex items-center justify-between gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 p-1 rounded-xl shadow-xs transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/20 focus-visible:border-indigo-400 cursor-pointer ${
           isOpen ? 'ring-2 ring-indigo-500/15 border-indigo-400' : ''
         } ${buttonClassName}`}
       >
         <div className="flex items-center gap-2 truncate flex-1 pl-1">
           {label && (
-            <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-50 border border-slate-100 shrink-0">
+            <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shrink-0">
               {label}
             </span>
           )}
@@ -201,12 +201,12 @@ export default function CustomSelect({
           </span>
         </div>
 
-        <div className="pr-1.5 text-slate-400 flex items-center shrink-0">
+        <div className="pr-1.5 text-slate-400 dark:text-slate-400 flex items-center shrink-0">
           <motion.div
             animate={{ rotate: isOpen ? 180 : 0 }}
             transition={spring.press}
           >
-            <ChevronDown size={14} className="text-slate-400 hover:text-slate-600 transition-colors" />
+            <ChevronDown size={14} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors" />
           </motion.div>
         </div>
       </button>
@@ -219,7 +219,7 @@ export default function CustomSelect({
             initial="initial"
             animate="animate"
             exit="exit"
-            className={`absolute top-full mt-1.5 z-50 min-w-[200px] w-full max-w-sm rounded-2xl bg-white/98 backdrop-blur-md border border-slate-200 shadow-xl ring-1 ring-slate-900/5 p-1.5 flex flex-col ${
+            className={`absolute top-full mt-1.5 z-50 min-w-[200px] w-full max-w-sm rounded-2xl bg-white/98 dark:bg-slate-900/98 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-xl ring-1 ring-slate-900/5 dark:ring-white/10 p-1.5 flex flex-col ${
               align === 'right' ? 'right-0' : 'left-0'
             } ${menuClassName}`}
             role="listbox"
@@ -227,7 +227,7 @@ export default function CustomSelect({
           >
             {/* Quick Search Input (if list has many options) */}
             {isSearchable && (
-              <div className="p-1 pb-1.5 border-b border-slate-100 mb-1">
+              <div className="p-1 pb-1.5 border-b border-slate-100 dark:border-slate-800 mb-1">
                 <div className="relative flex items-center">
                   <Search size={13} className="absolute left-2.5 text-slate-400 pointer-events-none" />
                   <input
@@ -239,13 +239,13 @@ export default function CustomSelect({
                       setHighlightedIndex(0);
                     }}
                     placeholder={searchPlaceholder}
-                    className="w-full bg-slate-50 hover:bg-slate-100/70 focus:bg-white text-slate-900 placeholder-slate-400 text-xs font-medium pl-8 pr-7 py-1.5 rounded-lg border border-slate-200/80 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/15 transition-all"
+                    className="w-full bg-slate-50 dark:bg-slate-800 hover:bg-slate-100/70 dark:hover:bg-slate-700 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-xs font-medium pl-8 pr-7 py-1.5 rounded-lg border border-slate-200/80 dark:border-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/15 transition-all"
                   />
                   {searchQuery && (
                     <button
                       type="button"
                       onClick={() => setSearchQuery('')}
-                      className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5"
+                      className="absolute right-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
                     >
                       <X size={12} />
                     </button>
@@ -274,10 +274,10 @@ export default function CustomSelect({
                       onMouseEnter={() => setHighlightedIndex(index)}
                       className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-left transition-all duration-100 cursor-pointer ${
                         isSelected
-                          ? 'bg-indigo-50/90 text-indigo-700 font-bold border border-indigo-100/80 shadow-xs'
+                          ? 'bg-indigo-50/90 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-100/80 dark:border-indigo-800/60 shadow-xs'
                           : isHighlighted
-                          ? 'bg-slate-100 text-slate-900'
-                          : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                          ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
                       }`}
                     >
                       <div className="flex items-center gap-2 truncate">

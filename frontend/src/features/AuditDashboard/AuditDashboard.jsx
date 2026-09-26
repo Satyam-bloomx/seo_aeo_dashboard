@@ -15,9 +15,13 @@ import SettingsModal from './SettingsModal/SettingsModal';
 import IntegrationsPanel from './IntegrationsPanel';
 import NarutoSamplePanel from './NarutoSample/NarutoSamplePanel';
 import SpiderLiveProgressScreen from './SpiderLiveProgressScreen';
+import ThemeToggle from '@/components/ui/ThemeToggle';
 import Loading from '../../app/loading';
 import { API_BASE_URL } from '@/api/client';
 import { generateIssuesReport } from '@/utils/IssuesEngine';
+import { copyToClipboard } from '@/utils/clipboard';
+import { getDiagnosticDetail, getPriorityMeta } from '@/utils/diagnosticDetails';
+import { getPageDuplicateRelationships } from '@/utils/duplicateDetector';
 import {
   bannerDrop,
   duration,
@@ -37,7 +41,9 @@ import {
   Search,
   Loader2,
   X,
+  Trash2,
   ChevronRight,
+  ChevronDown,
   FileText,
   FileSpreadsheet,
   Globe,
@@ -46,9 +52,18 @@ import {
   Check,
   Menu,
   CheckCircle2,
+  CheckCircle,
   RefreshCw,
   Sparkles,
   Link2,
+  AlertTriangle,
+  AlertCircle,
+  Info,
+  Wrench,
+  ShieldCheck,
+  HelpCircle,
+  ExternalLink,
+  Layers,
 } from 'lucide-react';
 
 const fireCelebrationCannons = () => {
@@ -133,10 +148,10 @@ export default function AuditDashboard() {
     setIsSettingsOpen(true);
   };
 
-  const [crawlerSettings, setCrawlerSettings] = useState({
+  const DEFAULT_CRAWLER_SETTINGS = {
     maxPages: 500,
     maxDepth: 4,
-    maxConcurrent: 3,
+    maxConcurrent: 5,
     stealthDelay: 0,
     ignoreUrlParams: true,
     checkExternalLinks: false,
@@ -145,6 +160,18 @@ export default function AuditDashboard() {
     jsRendering: false,
     userAgent: 'SEO-Spider-Bot',
     crawlAuthorArchives: false,
+  };
+
+  const [crawlerSettings, setCrawlerSettings] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('audit_crawler_settings');
+        if (saved) return { ...DEFAULT_CRAWLER_SETTINGS, ...JSON.parse(saved) };
+      } catch (e) {
+        console.warn('Failed to load crawler settings from localStorage', e);
+      }
+    }
+    return DEFAULT_CRAWLER_SETTINGS;
   });
 
   const [crawlId, setCrawlId] = useState(null);
@@ -186,9 +213,23 @@ export default function AuditDashboard() {
     setActiveTab('explorer');
   };
 
-  const startAudit = async (e) => {
-    if (e) e.preventDefault();
-    if (!url) return;
+  const startAudit = async (e, targetOverrideUrl = null) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const rawTarget = targetOverrideUrl || url;
+    if (!rawTarget) return;
+
+    let normalizedUrl = rawTarget.trim();
+    if (!/^https?:\/\//i.test(normalizedUrl)) {
+      normalizedUrl = 'https://' + normalizedUrl;
+    }
+    try {
+      const parsed = new URL(normalizedUrl);
+      if (!parsed.pathname || parsed.pathname === '') {
+        parsed.pathname = '/';
+      }
+      normalizedUrl = parsed.toString();
+    } catch (_) {}
+    setUrl(normalizedUrl);
 
     setIsAuditing(true);
     setStatus('running');
@@ -199,7 +240,7 @@ export default function AuditDashboard() {
     setSelectedRow(null);
     setShowCompletionBanner(false);
 
-    toast.info(`Spider initiated on ${url}`, {
+    toast.info(`Spider initiated on ${normalizedUrl}`, {
       description: `Max ${crawlerSettings.maxPages} pages & depth ${crawlerSettings.maxDepth}`,
     });
 
@@ -208,7 +249,7 @@ export default function AuditDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          seed_url: url,
+          seed_url: normalizedUrl,
           max_depth: crawlerSettings.maxDepth,
           max_concurrent: crawlerSettings.maxConcurrent,
           max_pages: crawlerSettings.maxPages,
@@ -248,6 +289,29 @@ export default function AuditDashboard() {
   const handleQuickLaunch = (targetUrl) => {
     setUrl(targetUrl);
     toast.success(`Loaded seed URL: ${targetUrl}`);
+  };
+
+  const handleClearAudit = async () => {
+    setIsAuditing(false);
+    setStatus(null);
+    setProgress(0);
+    setPagesCrawled(0);
+    setPages([]);
+    setUrl('');
+    setCrawlId(null);
+    setSelectedRow(null);
+    setInlinks([]);
+    setShowCompletionBanner(false);
+
+    try {
+      await fetch(`${API_BASE_URL}/crawls`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('Backend clear crawls error:', err);
+    }
+
+    toast.success('Audit data cleared', {
+      description: 'Dashboard and crawl records have been cleared.',
+    });
   };
 
   const fetchResults = useCallback(async () => {
@@ -316,11 +380,31 @@ export default function AuditDashboard() {
     };
   }, [crawlId, status, fetchResults]);
 
-  const handleCopyUrl = (text) => {
-    navigator.clipboard.writeText(text);
-    setCopiedUrl(true);
-    toast.success('URL copied to clipboard');
-    setTimeout(() => setCopiedUrl(false), 2000);
+  const [copiedKeyId, setCopiedKeyId] = useState(null);
+  const [inspectorFilter, setInspectorFilter] = useState('all'); // 'all' | 'issues' | 'passed'
+  const [expandedDiagnostics, setExpandedDiagnostics] = useState({});
+
+  const handleCopyUrl = async (text) => {
+    const ok = await copyToClipboard(text, 'URL');
+    if (ok) {
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2000);
+    }
+  };
+
+  const handleCopyText = async (text, fieldId, label = 'Text') => {
+    const ok = await copyToClipboard(text, label);
+    if (ok) {
+      setCopiedKeyId(fieldId);
+      setTimeout(() => setCopiedKeyId(null), 2000);
+    }
+  };
+
+  const toggleDiagnosticExpanded = (id) => {
+    setExpandedDiagnostics(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
   };
 
   // -------------------------------------------------------------------------
@@ -422,6 +506,94 @@ export default function AuditDashboard() {
               </div>
             </motion.div>
 
+            {/* Duplicate Pages Detected Section */}
+            {(() => {
+              const dupInfo = getPageDuplicateRelationships(selectedRow, pages);
+              if (!dupInfo.hasDuplicates) return null;
+              const totalDuplicates = dupInfo.relationships.reduce((acc, r) => acc + r.counterparts.length, 0);
+
+              return (
+                <motion.div variants={staggerItem}>
+                  <h4 className="mb-2.5 flex items-center justify-between font-mono text-[10px] font-bold uppercase tracking-widest text-amber-700 dark:text-amber-400">
+                    <span className="flex items-center gap-1.5">
+                      <Layers size={13} className="text-amber-600 dark:text-amber-400" /> Duplicate Pages Detected
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
+                      {totalDuplicates} {totalDuplicates === 1 ? 'Duplicate' : 'Duplicates'}
+                    </span>
+                  </h4>
+
+                  <div className="space-y-3 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50/50 dark:bg-amber-950/20 p-3.5">
+                    <p className="text-[11px] text-amber-900 dark:text-amber-200 leading-snug">
+                      This page shares duplicate content or headings with other URLs on this site. Direct counterpart links:
+                    </p>
+
+                    <div className="space-y-2.5">
+                      {dupInfo.relationships.map((rel) => (
+                        <div key={rel.id} className="rounded-lg bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/50 p-2.5 space-y-2 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              {rel.type}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                              {rel.counterparts.length} {rel.counterparts.length === 1 ? 'match' : 'matches'}
+                            </span>
+                          </div>
+
+                          {rel.sharedValue && (
+                            <div className="p-1.5 rounded bg-slate-50 dark:bg-slate-800/70 text-[10px] font-mono text-slate-600 dark:text-slate-300 truncate" title={rel.sharedValue}>
+                              <span className="font-bold text-slate-400">{rel.sharedLabel}: </span>
+                              <span>"{rel.sharedValue}"</span>
+                            </div>
+                          )}
+
+                          <div className="space-y-1.5">
+                            {rel.counterparts.map((cp, idx) => (
+                              <div key={cp.url || idx} className="flex items-center justify-between gap-1.5 p-2 rounded-md bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
+                                <div className="min-w-0 flex-1">
+                                  <a
+                                    href={cp.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-mono text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 truncate"
+                                    title="Open counterpart live duplicate page"
+                                  >
+                                    <span className="truncate">{cp.url}</span>
+                                    <ExternalLink size={10} className="shrink-0 text-slate-400 hover:text-indigo-600" />
+                                  </a>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {cp.pageObj && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedRow(cp.pageObj)}
+                                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
+                                      title="Switch inspector to this duplicate page"
+                                    >
+                                      Inspect
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyUrl(cp.url)}
+                                    className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded transition-colors"
+                                    title="Copy Duplicate URL"
+                                  >
+                                    <Copy size={11} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })()}
+
             {/* On-Page Content & Headings Inspection (Exact text & Character counts without space) */}
             <motion.div variants={staggerItem}>
               <h4 className="mb-2.5 flex items-center justify-between font-mono text-[10px] font-bold uppercase tracking-widest text-slate-500">
@@ -449,14 +621,11 @@ export default function AuditDashboard() {
                       <span className="select-all">{selectedRow.title_1}</span>
                       <button
                         type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(selectedRow.title_1);
-                          toast.success('Title copied to clipboard');
-                        }}
-                        className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                        onClick={() => handleCopyText(selectedRow.title_1, 'title_1', 'Title 1')}
+                        className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 transition-opacity"
                         title="Copy Title"
                       >
-                        <Copy size={11} />
+                        {copiedKeyId === 'title_1' ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
                       </button>
                     </div>
                   ) : (
@@ -482,14 +651,11 @@ export default function AuditDashboard() {
                       <span className="select-all">{selectedRow.meta_desc_1}</span>
                       <button
                         type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(selectedRow.meta_desc_1);
-                          toast.success('Meta Description copied to clipboard');
-                        }}
-                        className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                        onClick={() => handleCopyText(selectedRow.meta_desc_1, 'meta_desc_1', 'Meta Description 1')}
+                        className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 transition-opacity"
                         title="Copy Meta Description"
                       >
-                        <Copy size={11} />
+                        {copiedKeyId === 'meta_desc_1' ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
                       </button>
                     </div>
                   ) : (
@@ -520,14 +686,11 @@ export default function AuditDashboard() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(selectedRow.h1_1);
-                            toast.success('H1-1 copied to clipboard');
-                          }}
-                          className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                          onClick={() => handleCopyText(selectedRow.h1_1, 'h1_1', 'H1-1')}
+                          className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 transition-opacity"
                           title="Copy H1-1"
                         >
-                          <Copy size={11} />
+                          {copiedKeyId === 'h1_1' ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
                         </button>
                       </div>
                       {selectedRow.h1_2 && (
@@ -538,14 +701,11 @@ export default function AuditDashboard() {
                           </div>
                           <button
                             type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(selectedRow.h1_2);
-                              toast.success('H1-2 copied to clipboard');
-                            }}
-                            className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                            onClick={() => handleCopyText(selectedRow.h1_2, 'h1_2', 'H1-2')}
+                            className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 transition-opacity"
                             title="Copy H1-2"
                           >
-                            <Copy size={11} />
+                            {copiedKeyId === 'h1_2' ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
                           </button>
                         </div>
                       )}
@@ -578,14 +738,11 @@ export default function AuditDashboard() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(selectedRow.h2_1);
-                            toast.success('H2-1 copied to clipboard');
-                          }}
-                          className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                          onClick={() => handleCopyText(selectedRow.h2_1, 'h2_1', 'H2-1')}
+                          className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 transition-opacity"
                           title="Copy H2-1"
                         >
-                          <Copy size={11} />
+                          {copiedKeyId === 'h2_1' ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
                         </button>
                       </div>
                       {selectedRow.h2_2 && (
@@ -596,20 +753,46 @@ export default function AuditDashboard() {
                           </div>
                           <button
                             type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(selectedRow.h2_2);
-                              toast.success('H2-2 copied to clipboard');
-                            }}
-                            className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                            onClick={() => handleCopyText(selectedRow.h2_2, 'h2_2', 'H2-2')}
+                            className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 transition-opacity"
                             title="Copy H2-2"
                           >
-                            <Copy size={11} />
+                            {copiedKeyId === 'h2_2' ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
                           </button>
                         </div>
                       )}
                     </div>
                   ) : (
                     <div className="text-xs italic text-rose-600 bg-rose-50/60 p-2 rounded-lg border border-rose-200/60">No H2 tags detected</div>
+                  )}
+                </div>
+
+                {/* Canonical URL Inspection */}
+                <div className="space-y-1 pt-1 border-t border-slate-200/70">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-600">Canonical Tag</span>
+                    <span className={`px-1.5 py-0.2 rounded font-mono text-[10px] font-bold border ${
+                      selectedRow.canonical_link_element_1 
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      {selectedRow.canonical_link_element_1 ? 'Declared' : 'Missing'}
+                    </span>
+                  </div>
+                  {selectedRow.canonical_link_element_1 ? (
+                    <div className="group/item flex items-start justify-between gap-2 p-2 rounded-lg bg-white border border-slate-200 text-xs text-slate-900 leading-relaxed font-mono">
+                      <span className="select-all break-all text-[11px]">{selectedRow.canonical_link_element_1}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(selectedRow.canonical_link_element_1, 'canonical_link', 'Canonical URL')}
+                        className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 rounded bg-slate-50 border border-slate-200 transition-opacity"
+                        title="Copy Canonical"
+                      >
+                        {copiedKeyId === 'canonical_link' ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-xs italic text-amber-700 bg-amber-50/60 p-2 rounded-lg border border-amber-200/60">No Canonical link element found</div>
                   )}
                 </div>
               </div>
@@ -659,53 +842,288 @@ export default function AuditDashboard() {
               )}
             </motion.div>
 
-            {selectedRow.audit_data &&
-              Object.entries(selectedRow.audit_data).map(([category, data]) => {
-                if (!data || Object.keys(data).length === 0) return null;
+            {/* Detailed Diagnostic Intelligence: What, Why True/False, Impact, and Resolution */}
+            {selectedRow.audit_data && (() => {
+              const allDiagnostics = [];
+              Object.entries(selectedRow.audit_data).forEach(([category, data]) => {
+                if (!data || typeof data !== 'object') return;
+                Object.entries(data).forEach(([key, val]) => {
+                  const detail = getDiagnosticDetail(category, key, val, selectedRow);
+                  allDiagnostics.push({
+                    id: `${category}-${key}`,
+                    category,
+                    key,
+                    val,
+                    ...detail
+                  });
+                });
+              });
 
-                return (
-                  <motion.div key={category} variants={staggerItem}>
-                    <h4 className="mb-2.5 flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                      <ChevronRight size={13} className="text-indigo-600" />{' '}
-                      {category.replace(/_/g, ' ')}
-                    </h4>
-                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                      <table className="w-full text-left text-xs">
-                        <tbody className="divide-y divide-slate-200">
-                          {Object.entries(data).map(([key, val]) => (
-                            <tr key={key} className="transition-colors hover:bg-slate-100">
-                              <td className="w-1/2 py-2.5 pl-3 pr-2 align-top text-[11px] font-medium text-slate-500">
-                                {key}
-                              </td>
-                              <td className="w-1/2 break-all py-2.5 pr-3 text-right font-mono text-[11px] font-semibold text-slate-900">
-                                {typeof val === 'boolean' ? (
-                                  key === 'Missing' ? (
-                                    <span className={val ? 'font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200' : 'font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200'}>
-                                      {val ? '0 (Missing)' : '1 (Present)'}
-                                    </span>
-                                  ) : (
-                                    <span className={val ? 'font-bold text-rose-700' : 'font-bold text-slate-500'}>
-                                      {val ? 'Issue' : 'Passed'}
-                                    </span>
-                                  )
-                                ) : val === null || val === undefined ? (
-                                  '-'
-                                ) : Array.isArray(val) ? (
-                                  val.join(', ')
-                                ) : typeof val === 'object' ? (
-                                  JSON.stringify(val)
-                                ) : (
-                                  String(val)
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+              const highList = allDiagnostics.filter(d => d.priority === 'High');
+              const mediumList = allDiagnostics.filter(d => d.priority === 'Medium');
+              const lowList = allDiagnostics.filter(d => d.priority === 'Low');
+              const passedList = allDiagnostics.filter(d => !d.isIssue || d.priority === 'None');
+
+              const displayedDiagnostics = inspectorFilter === 'high' 
+                ? highList 
+                : inspectorFilter === 'medium'
+                ? mediumList
+                : inspectorFilter === 'low'
+                ? lowList
+                : inspectorFilter === 'passed' 
+                ? passedList 
+                : allDiagnostics;
+
+              const grouped = {};
+              displayedDiagnostics.forEach(d => {
+                if (!grouped[d.category]) grouped[d.category] = [];
+                grouped[d.category].push(d);
+              });
+
+              return (
+                <div className="space-y-4">
+                  {/* Section Title & Filter Tabs */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                        <ChevronRight size={13} className="text-indigo-600" /> Technical & SEO Diagnostics
+                      </h4>
+                      <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                        {allDiagnostics.length} Checks
+                      </span>
                     </div>
-                  </motion.div>
-                );
-              })}
+
+                    {/* Filter Pills - 3-Tier Priority Categorization */}
+                    <div className="grid grid-cols-5 gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setInspectorFilter('all')}
+                        className={`py-1 px-1.5 rounded-lg font-medium text-[10.5px] text-center transition-all ${
+                          inspectorFilter === 'all'
+                            ? 'bg-white text-slate-900 font-bold shadow-xs'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        All ({allDiagnostics.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInspectorFilter('high')}
+                        className={`py-1 px-1.5 rounded-lg font-medium text-[10.5px] flex items-center justify-center gap-1 transition-all ${
+                          inspectorFilter === 'high'
+                            ? 'bg-rose-600 text-white font-bold shadow-xs'
+                            : 'text-rose-700 hover:bg-rose-50'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                        High ({highList.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInspectorFilter('medium')}
+                        className={`py-1 px-1.5 rounded-lg font-medium text-[10.5px] flex items-center justify-center gap-1 transition-all ${
+                          inspectorFilter === 'medium'
+                            ? 'bg-amber-600 text-white font-bold shadow-xs'
+                            : 'text-amber-700 hover:bg-amber-50'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                        Med ({mediumList.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInspectorFilter('low')}
+                        className={`py-1 px-1.5 rounded-lg font-medium text-[10.5px] flex items-center justify-center gap-1 transition-all ${
+                          inspectorFilter === 'low'
+                            ? 'bg-blue-600 text-white font-bold shadow-xs'
+                            : 'text-blue-700 hover:bg-blue-50'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                        Low ({lowList.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInspectorFilter('passed')}
+                        className={`py-1 px-1.5 rounded-lg font-medium text-[10.5px] flex items-center justify-center gap-1 transition-all ${
+                          inspectorFilter === 'passed'
+                            ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                            : 'text-emerald-700 hover:bg-emerald-50'
+                        }`}
+                      >
+                        <CheckCircle size={10} className="shrink-0" />
+                        Pass ({passedList.length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Render Categories and Diagnostic Cards */}
+                  {Object.keys(grouped).length === 0 ? (
+                    <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-center text-xs text-slate-500">
+                      No checks match the active filter.
+                    </div>
+                  ) : (
+                    Object.entries(grouped).map(([category, items]) => (
+                      <motion.div key={category} variants={staggerItem} className="space-y-2">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 px-1">
+                          <span>{category.replace(/_/g, ' ')}</span>
+                          <span className="font-mono text-[10px] text-slate-400">
+                            {items.filter(i => i.priority === 'High').length > 0 && (
+                              <span className="text-rose-600 font-bold mr-1.5">
+                                {items.filter(i => i.priority === 'High').length} High
+                              </span>
+                            )}
+                            {items.filter(i => i.priority === 'Medium').length > 0 && (
+                              <span className="text-amber-600 font-bold mr-1.5">
+                                {items.filter(i => i.priority === 'Medium').length} Med
+                              </span>
+                            )}
+                            {items.length} checks
+                          </span>
+                        </div>
+
+                        <div className="space-y-2">
+                          {items.map((item) => {
+                            const isExpanded = expandedDiagnostics[item.id] !== undefined
+                              ? expandedDiagnostics[item.id]
+                              : item.isIssue;
+
+                            const pMeta = getPriorityMeta(item.priority);
+
+                            return (
+                              <div
+                                key={item.id}
+                                className={`rounded-xl border transition-all ${
+                                  item.priority === 'High'
+                                    ? 'border-rose-200/90 bg-rose-50/20'
+                                    : item.priority === 'Medium'
+                                    ? 'border-amber-200/90 bg-amber-50/20'
+                                    : item.priority === 'Low'
+                                    ? 'border-blue-200/90 bg-blue-50/20'
+                                    : 'border-slate-200 bg-white'
+                                }`}
+                              >
+                                {/* Header / Summary Row */}
+                                <div
+                                  onClick={() => toggleDiagnosticExpanded(item.id)}
+                                  className="p-3 flex items-start justify-between gap-2 cursor-pointer hover:bg-slate-50/80 transition-colors select-none"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs font-bold text-slate-900 leading-tight">
+                                        {item.label}
+                                      </span>
+                                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${pMeta.color}`}>
+                                        <span className={`w-1.5 h-1.5 rounded-full ${pMeta.dot} ${pMeta.pulse ? 'animate-pulse' : ''}`} />
+                                        {pMeta.badge}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
+                                      {item.what}
+                                    </p>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    className="p-1 text-slate-400 hover:text-slate-700 shrink-0 mt-0.5"
+                                  >
+                                    <ChevronDown
+                                      size={14}
+                                      className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                                    />
+                                  </button>
+                                </div>
+
+                                {/* Expanded Diagnostic Detail */}
+                                {isExpanded && (
+                                  <div className="px-3 pb-3 pt-1 border-t border-slate-100 text-xs space-y-2.5">
+                                    {/* 1. What is it */}
+                                    <div className="p-2.5 rounded-lg bg-slate-50/80 border border-slate-200/60">
+                                      <span className="font-mono text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                                        Condition & What It Evaluates:
+                                      </span>
+                                      <p className="text-slate-700 leading-relaxed text-[11px]">
+                                        {item.what}
+                                      </p>
+                                    </div>
+
+                                    {/* 2. Why True/False & Root Cause for this specific URL */}
+                                    <div className={`p-2.5 rounded-lg border ${
+                                      item.isIssue 
+                                        ? 'bg-rose-50/60 border-rose-200 text-rose-950' 
+                                        : 'bg-emerald-50/40 border-emerald-200 text-emerald-950'
+                                    }`}>
+                                      <span className={`font-mono text-[10px] font-bold uppercase tracking-wider block mb-1 flex items-center gap-1 ${
+                                        item.isIssue ? 'text-rose-700' : 'text-emerald-700'
+                                      }`}>
+                                        <Info size={11} />
+                                        Why {String(item.val)} on this URL (Root Cause):
+                                      </span>
+                                      <p className="leading-relaxed text-[11px] font-medium">
+                                        {item.why}
+                                      </p>
+                                    </div>
+
+                                    {/* 3. Search Engine / Business Impact */}
+                                    {item.searchImpact && (
+                                      <div className="p-2.5 rounded-lg bg-amber-50/40 border border-amber-200/80 text-amber-950">
+                                        <span className="font-mono text-[10px] font-bold text-amber-800 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                                          <AlertTriangle size={11} />
+                                          Search Engine & Indexing Impact:
+                                        </span>
+                                        <p className="leading-relaxed text-[11px]">
+                                          {item.searchImpact}
+                                        </p>
+                                      </div>
+                                    )}
+
+                                    {/* 4. Actionable How to Resolve */}
+                                    {item.howToResolve && (
+                                      <div className="p-2.5 rounded-lg bg-indigo-50/50 border border-indigo-200 text-indigo-950 space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-mono text-[10px] font-bold text-indigo-800 uppercase tracking-wider flex items-center gap-1">
+                                            <Wrench size={11} />
+                                            How to Resolve (Action Plan):
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleCopyText(item.howToResolve, `fix-${item.id}`, 'Fix Guide');
+                                            }}
+                                            className="font-mono text-[10px] font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-indigo-200 transition-colors"
+                                            title="Copy fix instructions"
+                                          >
+                                            {copiedKeyId === `fix-${item.id}` ? (
+                                              <>
+                                                <Check size={10} className="text-emerald-600" />
+                                                <span>Copied</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Copy size={10} />
+                                                <span>Copy Fix</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
+                                        <p className="leading-relaxed text-[11px] text-slate-800 font-sans">
+                                          {item.howToResolve}
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    ))
+                  )}
+                </div>
+              );
+            })()}
           </motion.div>
         </motion.aside>
       )}
@@ -719,7 +1137,19 @@ export default function AuditDashboard() {
     if (activeTab === 'integrations') {
       return (
         <div className="h-full w-full overflow-hidden">
-          <IntegrationsPanel projectId={1} crawlId={crawlId} seedUrl={url} />
+          <IntegrationsPanel 
+            projectId={1} 
+            crawlId={crawlId} 
+            seedUrl={url} 
+            onAuditProperty={(propUrl) => {
+              if (!propUrl) return;
+              let clean = propUrl.replace(/^sc-domain:/i, '').trim();
+              if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+                clean = `https://${clean}`;
+              }
+              startAudit(null, clean);
+            }}
+          />
         </div>
       );
     }
@@ -760,23 +1190,23 @@ export default function AuditDashboard() {
           variants={staggerContainer(0.06, 0.05)}
           initial="initial"
           animate="animate"
-          className="flex h-full flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/60 p-6 text-center backdrop-blur-xs"
+          className="flex h-full flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 bg-white/60 dark:bg-slate-900/50 p-6 text-center backdrop-blur-xs"
         >
           <motion.div
             variants={staggerItem}
             animate={
               reduced ? undefined : { y: [0, -6, 0], transition: { duration: 3.2, repeat: Infinity, ease: 'easeInOut' } }
             }
-            className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-indigo-100 bg-indigo-50 text-indigo-600 shadow-xs"
+            className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 shadow-xs"
           >
             <Search size={28} />
           </motion.div>
-          <motion.h3 variants={staggerItem} className="mb-1 text-lg font-bold text-slate-900">
+          <motion.h3 variants={staggerItem} className="mb-1 text-lg font-bold text-slate-900 dark:text-white">
             No Active Audit Session
           </motion.h3>
           <motion.p
             variants={staggerItem}
-            className="mb-6 max-w-sm text-xs leading-relaxed text-slate-500"
+            className="mb-6 max-w-sm text-xs leading-relaxed text-slate-500 dark:text-slate-400"
           >
             Enter a website URL in the address bar above to deploy the Screaming Frog 32-factor
             crawling engine.
@@ -786,7 +1216,7 @@ export default function AuditDashboard() {
             variants={staggerContainer(0.05)}
             className="flex max-w-md flex-wrap items-center justify-center gap-2"
           >
-            <motion.span variants={staggerItem} className="mb-1 w-full font-mono text-[11px] text-slate-400">
+            <motion.span variants={staggerItem} className="mb-1 w-full font-mono text-[11px] text-slate-400 dark:text-slate-500">
               Quick Launch Seed Targets:
             </motion.span>
             {QUICK_TARGETS.map((target) => (
@@ -797,7 +1227,7 @@ export default function AuditDashboard() {
                 whileHover={{ y: -2, scale: 1.02 }}
                 whileTap={tapPress}
                 transition={spring.press}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-700 shadow-xs transition-colors hover:border-indigo-400 hover:bg-indigo-50/50"
+                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 px-3 py-1.5 font-mono text-xs text-slate-700 dark:text-slate-200 shadow-xs transition-colors hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-slate-700 cursor-pointer"
               >
                 {target.replace(/^https?:\/\//, '').replace(/\/$/, '')}
               </motion.button>
@@ -814,6 +1244,7 @@ export default function AuditDashboard() {
           onIssueClick={(issue) =>
             handleNavigateToExplorer(issue.category, issue.name || 'Errors')
           }
+          onSelectPage={(page) => setSelectedRow(page)}
         />
       );
     }
@@ -846,7 +1277,7 @@ export default function AuditDashboard() {
         <Loading isBootloader onBootloaderComplete={() => setIsAppInitializing(false)} />
       )}
 
-      <div className="relative flex h-screen h-[100dvh] w-full overflow-hidden bg-[#F8FAFC] font-sans text-slate-900">
+      <div className="relative flex h-screen h-[100dvh] w-full overflow-hidden bg-[#F8FAFC] dark:bg-[#090D16] font-sans text-slate-900 dark:text-slate-100 transition-colors duration-200">
         <div className="ambient-bg" />
 
         {/* ---------------------------------------------------------------- */}
@@ -883,7 +1314,7 @@ export default function AuditDashboard() {
               initial="initial"
               animate="animate"
               exit="exit"
-              className="fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] will-change-transform md:hidden shadow-2xl bg-white"
+              className="fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] will-change-transform md:hidden shadow-2xl bg-white dark:bg-slate-900"
             >
               <Sidebar
                 activeTab={activeTab}
@@ -920,13 +1351,13 @@ export default function AuditDashboard() {
             initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={tween(duration.panel, ease.outQuint)}
-            className="flex h-16 shrink-0 items-center justify-between gap-2.5 sm:gap-3.5 border-b border-slate-200 bg-white/90 px-3 sm:px-6 shadow-xs backdrop-blur-md"
+            className="flex h-16 shrink-0 items-center justify-between gap-2.5 sm:gap-3.5 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 px-3 sm:px-6 shadow-xs backdrop-blur-md transition-colors"
           >
             <motion.button
               onClick={() => setIsMobileSidebarOpen(true)}
               whileTap={tapPress}
               transition={spring.press}
-              className="flex items-center justify-center rounded-lg p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 md:hidden shrink-0"
+              className="flex items-center justify-center rounded-lg p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white md:hidden shrink-0"
               aria-label="Open navigation"
             >
               <Menu size={20} />
@@ -934,26 +1365,36 @@ export default function AuditDashboard() {
 
             <form
               onSubmit={startAudit}
-              className="group relative flex w-full max-w-xl flex-1 items-center rounded-xl border border-slate-300 bg-white p-1 pl-3 shadow-xs transition-all focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 sm:max-w-2xl"
+              className="group relative flex w-full max-w-2xl flex-1 items-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-1 pl-3 shadow-xs transition-all focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 sm:max-w-3xl"
             >
-              <div className="pointer-events-none flex shrink-0 items-center text-slate-400 group-focus-within:text-indigo-600 transition-colors mr-2">
+              <div className="pointer-events-none flex shrink-0 items-center text-slate-400 dark:text-slate-500 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors mr-2">
                 <Globe size={16} />
               </div>
               <input
                 type="url"
-                className="w-full min-w-0 flex-1 bg-transparent py-1 font-mono text-xs font-medium text-slate-900 placeholder:text-slate-400 outline-none border-0 focus:outline-none focus:ring-0"
+                className="w-full min-w-0 flex-1 bg-transparent py-1 font-mono text-xs font-medium text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none border-0 focus:outline-none focus:ring-0"
                 placeholder="Enter seed URL to crawl (e.g. https://bloomxsolutions.com/)..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 required
                 disabled={isAuditing}
               />
+              {url && !isAuditing && (
+                <button
+                  type="button"
+                  onClick={() => setUrl('')}
+                  className="p-1 mr-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                  title="Clear input"
+                >
+                  <X size={14} />
+                </button>
+              )}
               <motion.button
                 type="submit"
                 disabled={isAuditing}
                 whileTap={isAuditing ? undefined : tapPress}
                 transition={spring.press}
-                className="btn-primary ml-1.5 h-8 shrink-0 rounded-lg px-3.5 text-xs font-bold shadow-xs sm:px-4"
+                className="btn-primary ml-1 h-8 shrink-0 rounded-lg px-3.5 text-xs font-bold shadow-xs sm:px-4 cursor-pointer"
               >
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.span
@@ -977,53 +1418,18 @@ export default function AuditDashboard() {
               </motion.button>
             </form>
 
-            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <div className="flex shrink-0 items-center">
               <motion.button
-                onClick={() => setIsAppInitializing(true)}
-                title="Replay the boot sequence"
-                whileHover={{ y: -1 }}
+                onClick={handleClearAudit}
+                whileHover={{ scale: 1.02 }}
                 whileTap={tapPress}
                 transition={spring.press}
-                className="hidden items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 font-mono text-[11px] text-slate-600 shadow-xs hover:border-slate-300 hover:text-slate-900 md:flex"
+                disabled={isAuditing}
+                className="btn-secondary h-8 px-3 text-xs font-bold gap-1.5 text-slate-700 dark:text-slate-200 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-200 dark:hover:border-rose-800/60 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Clear audit data from dashboard"
               >
-                <RefreshCw size={12} className="text-indigo-600" />
-                <span>Intro</span>
-              </motion.button>
-
-              <motion.button
-                onClick={() => setActiveTab('naruto')}
-                title="Switch to Naruto Theme Sample"
-                whileHover={{ y: -1 }}
-                whileTap={tapPress}
-                transition={spring.press}
-                className="hidden items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50/80 px-2.5 py-1.5 font-mono text-[11px] font-semibold text-amber-800 shadow-xs hover:border-amber-300 hover:bg-amber-100 sm:flex"
-              >
-                <Sparkles size={12} className="text-amber-600" />
-                <span>Naruto Theme</span>
-              </motion.button>
-
-              <motion.button
-                onClick={() => handleOpenSettings('limits')}
-                whileHover={{ y: -1 }}
-                whileTap={tapPress}
-                transition={spring.press}
-                className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-mono text-[11px] text-slate-600 shadow-xs hover:border-slate-300 hover:text-slate-900 xl:flex"
-              >
-                <Sliders size={13} className="text-indigo-600" />
-                <span>
-                  Limit: <strong className="text-slate-900">{crawlerSettings.maxPages}</strong> |
-                  Depth: <strong className="text-slate-900">{crawlerSettings.maxDepth}</strong>
-                </span>
-              </motion.button>
-
-              <motion.button
-                onClick={() => setIsExportModalOpen(true)}
-                whileTap={tapPress}
-                transition={spring.press}
-                className="btn-secondary gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs shrink-0"
-              >
-                <FileSpreadsheet size={14} className="text-emerald-600 shrink-0" />
-                <span className="hidden sm:inline">Export (CSV / XLS)</span>
+                <Trash2 size={13} className="text-rose-500" />
+                <span>Clear</span>
               </motion.button>
             </div>
           </motion.header>
@@ -1038,18 +1444,18 @@ export default function AuditDashboard() {
                 animate="animate"
                 exit="exit"
                 style={{ transformOrigin: 'top' }}
-                className="shimmer-active shrink-0 border-b border-indigo-100 bg-gradient-to-r from-indigo-50/80 to-emerald-50/80 px-4 sm:px-6 py-3 sm:py-3.5 shadow-xs"
+                className="shimmer-active shrink-0 border-b border-indigo-100 dark:border-indigo-900/60 bg-gradient-to-r from-indigo-50/80 to-emerald-50/80 dark:from-indigo-950/40 dark:to-emerald-950/40 px-4 sm:px-6 py-3 sm:py-3.5 shadow-xs"
               >
                 <div className="mb-1.5 flex justify-between font-mono text-xs font-bold tracking-wide">
-                  <span className="flex items-center gap-2 text-indigo-700">
-                    <Loader2 size={14} className="animate-spin text-indigo-600" />
+                  <span className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400">
+                    <Loader2 size={14} className="animate-spin text-indigo-600 dark:text-indigo-400" />
                     SCREAMING FROG SPIDER ACTIVE
                   </span>
-                  <span className="font-mono font-bold tabular-nums text-slate-900">
+                  <span className="font-mono font-bold tabular-nums text-slate-900 dark:text-white">
                     {progress}% Complete
                   </span>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full border border-slate-300/60 bg-slate-200">
+                <div className="h-1.5 overflow-hidden rounded-full border border-slate-300/60 dark:border-slate-700 bg-slate-200 dark:bg-slate-800">
                   <motion.div
                     className="h-full origin-left rounded-full bg-gradient-to-r from-indigo-600 to-emerald-500 shadow-xs"
                     initial={false}
@@ -1058,13 +1464,13 @@ export default function AuditDashboard() {
                     style={{ width: '100%' }}
                   />
                 </div>
-                <div className="mt-2 flex justify-between font-mono text-[11px] text-slate-600">
+                <div className="mt-2 flex justify-between font-mono text-[11px] text-slate-600 dark:text-slate-400">
                   <span>
-                    Status: <strong className="uppercase text-indigo-700">{status}</strong>
+                    Status: <strong className="uppercase text-indigo-700 dark:text-indigo-400">{status}</strong>
                   </span>
                   <span>
                     URLs Extracted:{' '}
-                    <strong className="font-bold tabular-nums text-slate-900">{pagesCrawled}</strong>
+                    <strong className="font-bold tabular-nums text-slate-900 dark:text-white">{pagesCrawled}</strong>
                   </span>
                 </div>
               </motion.div>
@@ -1080,7 +1486,7 @@ export default function AuditDashboard() {
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                className="mx-3 sm:mx-6 mt-3 sm:mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 p-3.5 shadow-xs shrink-0"
+                className="mx-3 sm:mx-6 mt-3 sm:mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border border-emerald-200 dark:border-emerald-800/80 bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 dark:from-emerald-950/40 dark:via-teal-950/30 dark:to-indigo-950/40 p-3.5 shadow-xs shrink-0"
               >
                 <div className="flex items-center gap-3">
                   <motion.div
@@ -1092,10 +1498,10 @@ export default function AuditDashboard() {
                     <CheckCircle2 size={18} />
                   </motion.div>
                   <div>
-                    <h4 className="text-xs font-bold text-slate-900">
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">
                       Technical Audit Successfully Generated
                     </h4>
-                    <p className="text-[11px] text-slate-600">
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300">
                       All 32 technical parameters, Core Web Vitals, AEO and GEO metrics are live.
                     </p>
                   </div>
@@ -1115,7 +1521,7 @@ export default function AuditDashboard() {
                     whileHover={{ rotate: 90, scale: 1.1 }}
                     whileTap={tapPress}
                     transition={spring.press}
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200/60 hover:text-slate-700"
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
                     aria-label="Dismiss"
                   >
                     <X size={14} />
@@ -1150,7 +1556,14 @@ export default function AuditDashboard() {
           initialSettings={crawlerSettings}
           onSave={(newSettings) => {
             setCrawlerSettings(newSettings);
-            toast.success('Crawler settings updated and applied.');
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('audit_crawler_settings', JSON.stringify(newSettings));
+              } catch (e) {
+                console.warn('Failed to persist crawler settings to localStorage', e);
+              }
+            }
+            toast.success('Crawler settings updated and saved.');
           }}
           defaultTab={settingsTab}
         />

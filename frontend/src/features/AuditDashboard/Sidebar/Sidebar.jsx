@@ -25,6 +25,7 @@ import {
   tween,
 } from '@/lib/motion';
 import AuditProLogo from '@/components/ui/AuditProLogo';
+import ThemeToggle from '@/components/ui/ThemeToggle';
 
 const NAV_ITEM_CLASS =
   'relative flex w-full cursor-pointer items-center justify-between rounded-xl px-3.5 py-2.5 text-left text-xs outline-none transition-colors duration-150';
@@ -49,14 +50,14 @@ export default function Sidebar({
       label: 'Issues & Diagnostics',
       icon: AlertTriangle,
       badge: issuesCount > 0 ? issuesCount : null,
-      badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
+      badgeColor: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900/60',
     },
     {
       id: 'explorer',
       label: 'URL Data Grid',
       icon: ListTree,
       badge: pagesCount > 0 ? `${pagesCount} URLs` : null,
-      badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/60',
     },
     { id: 'performance', label: 'Speed & Vitals', icon: Zap, badge: 'Lighthouse' },
     { id: 'integrations', label: 'API Integrations', icon: Layers, badge: 'SEO/AEO' },
@@ -65,14 +66,14 @@ export default function Sidebar({
       label: 'Naruto Sample',
       icon: Sparkles,
       badge: 'Theme',
-      badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
+      badgeColor: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900/60',
     },
   ];
 
   const indicatorTransition = reduced ? { duration: 0 } : spring.snap;
 
   return (
-    <aside className="relative flex h-full w-full select-none flex-col border-r border-slate-200 bg-white px-3.5 py-5 shadow-sm overflow-y-auto custom-scrollbar">
+    <aside className="relative flex h-full w-full select-none flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/95 px-3.5 py-5 shadow-sm overflow-y-auto custom-scrollbar transition-colors duration-200">
       {/* ------------------------------------------------------------------ */}
       {/* Brand                                                              */}
       {/* ------------------------------------------------------------------ */}
@@ -93,7 +94,7 @@ export default function Sidebar({
         {isMobile && onCloseMobile && (
           <button
             onClick={onCloseMobile}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 md:hidden"
             aria-label="Close navigation"
           >
             <X size={18} />
@@ -112,7 +113,7 @@ export default function Sidebar({
       >
         <motion.div
           variants={staggerItem}
-          className="mb-1 flex items-center justify-between px-3 font-mono text-[10px] font-bold uppercase tracking-widest text-slate-400"
+          className="mb-1 flex items-center justify-between px-3 font-mono text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500"
         >
           <span>Navigation</span>
           <span className="text-[9px] font-normal">v20.4</span>
@@ -136,7 +137,7 @@ export default function Sidebar({
                 className={`${NAV_ITEM_CLASS} ${
                   isActive
                     ? 'text-white font-bold'
-                    : 'text-slate-700 font-semibold hover:bg-slate-100/80 hover:text-slate-900'
+                    : 'text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-100/80 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 {/* Gliding filled pill indicator */}
@@ -144,7 +145,7 @@ export default function Sidebar({
                   <motion.span
                     layoutId="sidebar-active-pill"
                     transition={indicatorTransition}
-                    className="absolute inset-0 rounded-xl bg-slate-900 shadow-md ring-1 ring-slate-900/10"
+                    className="absolute inset-0 rounded-xl bg-slate-900 dark:bg-slate-800 shadow-md ring-1 ring-slate-900/10 dark:ring-white/10"
                   />
                 )}
 
@@ -160,7 +161,7 @@ export default function Sidebar({
                 <span className="relative z-10 flex items-center gap-3">
                   <span
                     className={`flex transition-colors ${
-                      isActive ? 'text-emerald-400' : 'text-slate-500 group-hover:text-indigo-600'
+                      isActive ? 'text-emerald-400' : 'text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400'
                     }`}
                   >
                     <Icon size={18} />
@@ -178,8 +179,8 @@ export default function Sidebar({
                       transition={spring.soft}
                       className={`relative z-10 rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold ${
                         isActive
-                          ? 'border-slate-700 bg-slate-800 text-emerald-300'
-                          : tab.badgeColor || 'border-slate-200 bg-slate-100 text-slate-600'
+                          ? 'border-slate-700 bg-slate-800 dark:border-slate-600 dark:bg-slate-700 text-emerald-300'
+                          : tab.badgeColor || 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                       }`}
                     >
                       {tab.badge}
@@ -199,7 +200,7 @@ export default function Sidebar({
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={tween(duration.panel, ease.outQuint)}
-        className="mt-auto space-y-2 border-t border-slate-200 pt-4"
+        className="mt-auto space-y-2 border-t border-slate-200 dark:border-slate-800 pt-4"
       >
         <motion.button
           onClick={onOpenExport || onOpenExecutiveReport}
@@ -227,16 +228,24 @@ export default function Sidebar({
           initial="rest"
           whileHover="hover"
           animate="rest"
-          className="group relative flex w-full cursor-pointer items-center justify-between rounded-xl border border-transparent px-3.5 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
+          className="group relative flex w-full cursor-pointer items-center justify-between rounded-xl border border-transparent px-3.5 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100/80 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white"
         >
           <span className="flex items-center gap-2.5">
-            <span className="flex text-slate-500 group-hover:text-indigo-600">
+            <span className="flex text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
               <Settings size={16} />
             </span>
             <span>Crawler Settings</span>
           </span>
-          <span className="font-mono text-[10px] uppercase text-slate-400">Config</span>
+          <span className="font-mono text-[10px] uppercase text-slate-400 dark:text-slate-500">Config</span>
         </motion.button>
+
+        {/* Theme Preference Switcher in Sidebar Footer */}
+        <div className="flex items-center justify-between rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 py-1.5 px-3 mb-2">
+          <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+            <span>Theme Mode</span>
+          </span>
+          <ThemeToggle showLabel={false} />
+        </div>
       </motion.div>
     </aside>
   );

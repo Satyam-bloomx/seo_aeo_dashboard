@@ -74,7 +74,7 @@ export default function AnimatedModal({
               initial="initial"
               animate="animate"
               exit="exit"
-              className={`relative w-full ${SIZES[size]} flex flex-col overflow-hidden rounded-3xl bg-white border border-slate-200 shadow-[0_24px_64px_-16px_rgba(15,23,42,0.28)] text-slate-900 will-change-transform ${panelClassName}`}
+              className={`relative w-full ${SIZES[size]} flex flex-col overflow-hidden rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-[0_24px_64px_-16px_rgba(15,23,42,0.28)] dark:shadow-[0_24px_64px_-16px_rgba(0,0,0,0.85)] text-slate-900 dark:text-slate-100 will-change-transform ${panelClassName}`}
             >
               {children}
             </DialogPanel>

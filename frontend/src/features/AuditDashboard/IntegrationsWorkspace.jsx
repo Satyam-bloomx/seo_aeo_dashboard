@@ -15,6 +15,7 @@ import {
   Eye,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   Layers,
   ShieldCheck,
   Sparkles,
@@ -24,20 +25,24 @@ import {
   Check,
   ChevronRight,
   Target,
-  FileText
+  FileText,
+  Sliders,
+  Key,
+  Lock,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { spring, staggerContainer, staggerItem, tapPress } from '@/lib/motion';
+import { spring, tapPress } from '@/lib/motion';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { API_BASE_URL } from '@/api/client';
 
 const WORKSPACE_SERVICES = [
-  { id: 'search_console', name: 'Google Search Console', icon: Globe, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
-  { id: 'google_analytics', name: 'Google Analytics 4', icon: BarChart3, color: 'text-orange-600', bg: 'bg-orange-50 border-orange-200' },
-  { id: 'google_business', name: 'Google Business Profile', icon: MapPin, color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200' },
-  { id: 'pagespeed', name: 'PageSpeed & Vitals', icon: Zap, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
-  { id: 'synergy', name: 'SEO Audit Synergy', icon: Sparkles, color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200' },
+  { id: 'search_console', name: 'Google Search Console', icon: Globe, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900/60' },
+  { id: 'google_analytics', name: 'Google Analytics 4', icon: BarChart3, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-950/40 border-orange-200 dark:border-orange-900/60' },
+  { id: 'google_business', name: 'Google Business Profile', icon: MapPin, color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900/60' },
+  { id: 'pagespeed', name: 'PageSpeed & Vitals', icon: Zap, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/60' },
+  { id: 'synergy', name: 'SEO Audit Synergy', icon: Sparkles, color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-900/60' },
 ];
 
 export default function IntegrationsWorkspace({
@@ -45,7 +50,11 @@ export default function IntegrationsWorkspace({
   crawlId = null,
   initialService = 'search_console',
   onBackToGrid,
-  integrationsStatus = {}
+  integrationsStatus = {},
+  onOpenModal,
+  onOAuthConnect,
+  onRefreshStatus,
+  onAuditProperty
 }) {
   const [selectedService, setSelectedService] = useState(initialService);
   const [data, setData] = useState(null);
@@ -55,10 +64,47 @@ export default function IntegrationsWorkspace({
   const [searchQueryFilter, setSearchQueryFilter] = useState('');
   const [lastSynced, setLastSynced] = useState(null);
   const [latency, setLatency] = useState(null);
+  const [errorMessage, setErrorMessage] = useState(null);
 
-  // Fetch integration data from database cache
+  // Property selection & manual property ID state
+  const [availableProperties, setAvailableProperties] = useState([]);
+  const [selectedPropertyUrl, setSelectedPropertyUrl] = useState('');
+  const [manualPropertyId, setManualPropertyId] = useState('');
+  const [isLoadingProperties, setIsLoadingProperties] = useState(false);
+  const [isSavingProperty, setIsSavingProperty] = useState(false);
+  const [showPropertyDrawer, setShowPropertyDrawer] = useState(false);
+
+  // Check connection status from parent or current fetch
+  const isCurrentConnected = useMemo(() => {
+    if (selectedService === 'synergy') return true;
+    return Boolean(integrationsStatus[selectedService]?.connected);
+  }, [selectedService, integrationsStatus]);
+
+  // Fetch properties for Google services
+  const loadProperties = useCallback(async (serviceId) => {
+    if (serviceId !== 'search_console' && serviceId !== 'google_analytics') return;
+    setIsLoadingProperties(true);
+    try {
+      const res = await axios.get(`${API_BASE_URL}/integrations/google/properties/${projectId}?service=${serviceId}`);
+      if (res.data?.properties) {
+        setAvailableProperties(res.data.properties);
+        if (res.data.selected_property) {
+          setSelectedPropertyUrl(res.data.selected_property);
+        } else if (res.data.properties.length > 0) {
+          setSelectedPropertyUrl(res.data.properties[0].siteUrl);
+        }
+      }
+    } catch (err) {
+      console.warn(`Could not load properties for ${serviceId}:`, err);
+    } finally {
+      setIsLoadingProperties(false);
+    }
+  }, [projectId]);
+
+  // Fetch integration data from backend
   const loadServiceData = useCallback(async (serviceId) => {
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       if (serviceId === 'synergy') {
         const targetCrawl = crawlId || 2;
@@ -73,28 +119,37 @@ export default function IntegrationsWorkspace({
         setData(res.data.data);
         setLastSynced(res.data.synced_at);
         setLatency(res.data.latency_ms);
+        if (res.data.data?.google_permission_error) {
+          setErrorMessage(res.data.data.google_permission_error);
+        }
+      }
+      // Also fetch property list if Google service
+      if (serviceId === 'search_console' || serviceId === 'google_analytics') {
+        loadProperties(serviceId);
       }
     } catch (err) {
       console.warn(`Failed to fetch ${serviceId} data:`, err);
-      toast.error(`Could not load ${serviceId.replace(/_/g, ' ')} telemetry.`);
+      const errDetail = err.response?.data?.detail || err.message || 'Could not load telemetry.';
+      setErrorMessage(errDetail);
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, crawlId]);
+  }, [projectId, crawlId, loadProperties]);
 
   useEffect(() => {
     loadServiceData(selectedService);
   }, [selectedService, loadServiceData]);
 
-  // Handle on-demand live refetch
+  // Handle on-demand live refetch / sync
   const handleRefetch = async () => {
     setIsSyncing(true);
+    setErrorMessage(null);
     try {
       if (selectedService === 'synergy') {
         const targetCrawl = crawlId || 2;
         const res = await axios.get(`${API_BASE_URL}/integrations/synergy/${targetCrawl}`);
         setSynergyData(res.data);
-        toast.success('Refreshed SEO audit cross-correlation matrix!');
+        toast.success('Refreshed SEO audit synergy cross-correlation matrix!');
         setIsSyncing(false);
         return;
       }
@@ -104,20 +159,56 @@ export default function IntegrationsWorkspace({
         setData(res.data.data);
         setLastSynced(res.data.synced_at);
         setLatency(res.data.latency_ms);
-        toast.success(`Synchronized ${selectedService.replace(/_/g, ' ').toUpperCase()}!`, {
-          description: `Live latency: ${res.data.latency_ms || 32}ms. Saved to database.`
-        });
+        if (res.data.data?.google_permission_error) {
+          setErrorMessage(res.data.data.google_permission_error);
+          toast.warning('Google returned a notice for this property.', {
+            description: res.data.data.google_permission_error
+          });
+        } else {
+          toast.success(`Synchronized ${selectedService.replace(/_/g, ' ').toUpperCase()}!`, {
+            description: `Live latency: ${res.data.latency_ms || 28}ms. Telemetry active.`
+          });
+        }
+        if (onRefreshStatus) onRefreshStatus();
       }
     } catch (err) {
       console.error('Sync failed:', err);
-      toast.error('Sync failed. Please check connection credentials.');
+      const msg = err.response?.data?.detail || 'Sync failed. Please check connection credentials.';
+      setErrorMessage(msg);
+      toast.error(msg);
     } finally {
       setIsSyncing(false);
     }
   };
 
+  // Handle property selection or manual Property ID save
+  const handleSelectProperty = async (propertyValue) => {
+    if (!propertyValue || !propertyValue.trim()) return;
+    setIsSavingProperty(true);
+    try {
+      const res = await axios.post(`${API_BASE_URL}/integrations/google/select-property`, {
+        project_id: projectId,
+        service: selectedService,
+        property_url: propertyValue.trim()
+      });
+      setSelectedPropertyUrl(res.data.selected_property || propertyValue.trim());
+      toast.success(`Active Property Updated!`, {
+        description: `Targeting: ${res.data.selected_property || propertyValue.trim()}`
+      });
+      setShowPropertyDrawer(false);
+      setManualPropertyId('');
+      // Reload live data immediately
+      await loadServiceData(selectedService);
+      if (onRefreshStatus) onRefreshStatus();
+    } catch (err) {
+      toast.error('Failed to save selected property.');
+    } finally {
+      setIsSavingProperty(false);
+    }
+  };
+
   const formattedSyncedTime = useMemo(() => {
-    if (!lastSynced) return 'Just now';
+    if (!lastSynced) return 'Awaiting initial sync';
     try {
       const date = new Date(lastSynced);
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -140,14 +231,14 @@ export default function IntegrationsWorkspace({
   return (
     <div className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-2 gap-5 pb-8">
       {/* Top Header & Navigation Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0 border-b border-slate-200/80 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0 border-b border-slate-200/80 dark:border-slate-800 pb-4">
         <div className="flex items-center gap-3">
           <motion.button
             onClick={onBackToGrid}
             whileTap={tapPress}
             transition={spring.press}
-            className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 shadow-xs transition-colors flex items-center gap-1.5 text-xs font-bold"
-            title="Return to Connections Grid"
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white shadow-xs transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+            title="Return to Connections Hub"
           >
             <ArrowLeft size={15} />
             <span>Connections</span>
@@ -155,44 +246,156 @@ export default function IntegrationsWorkspace({
 
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+              <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
                 <activeServiceObj.icon size={20} className={activeServiceObj.color} />
                 {activeServiceObj.name}
               </h2>
-              <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live Database Cache
-              </span>
+              {isCurrentConnected ? (
+                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80 flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Telemetry
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 flex items-center gap-1">
+                  Authentication Required
+                </span>
+              )}
             </div>
-            <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-              <span>{data?.property || data?.property_name || 'Verified Property Telemetry'}</span>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
+              <span>{data?.property || data?.property_name || selectedPropertyUrl || 'Telemetry Hub'}</span>
               <span>•</span>
-              <span className="font-mono text-[11px] text-slate-400 flex items-center gap-1">
+              <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500 flex items-center gap-1">
                 <Clock size={11} /> Last synced: {formattedSyncedTime}
               </span>
             </p>
           </div>
         </div>
 
-        {/* Refetch / Sync Action Button */}
-        <div className="flex items-center gap-2.5">
+        {/* Action Controls */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {(selectedService === 'search_console' || selectedService === 'google_analytics') && isCurrentConnected && (
+            <motion.button
+              onClick={() => setShowPropertyDrawer(!showPropertyDrawer)}
+              whileTap={tapPress}
+              transition={spring.press}
+              className="btn-secondary py-1.5 px-3 text-xs font-bold gap-1.5 shadow-xs cursor-pointer text-slate-700 dark:text-slate-200"
+            >
+              <Sliders size={13} className="text-indigo-600 dark:text-indigo-400" />
+              <span>Select Property</span>
+              <ChevronDown size={13} className={showPropertyDrawer ? 'rotate-180 transition-transform' : 'transition-transform'} />
+            </motion.button>
+          )}
+
+          {selectedService === 'search_console' && isCurrentConnected && selectedPropertyUrl && onAuditProperty && (
+            <motion.button
+              onClick={() => onAuditProperty(selectedPropertyUrl)}
+              whileTap={tapPress}
+              transition={spring.press}
+              className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+              title={`Initiate crawler audit for ${selectedPropertyUrl}`}
+            >
+              <Zap size={13} />
+              <span className="hidden sm:inline">Audit This Property</span>
+              <span className="sm:hidden">Audit</span>
+            </motion.button>
+          )}
+
           {latency && (
-            <span className="hidden sm:inline-flex text-[11px] font-mono font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+            <span className="hidden sm:inline-flex text-[11px] font-mono font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
               {latency}ms
             </span>
           )}
-          <motion.button
-            onClick={handleRefetch}
-            disabled={isSyncing || isLoading}
-            whileTap={tapPress}
-            transition={spring.press}
-            className="btn-primary py-2 px-4 text-xs font-bold gap-2 shadow-xs cursor-pointer"
-          >
-            <RefreshCw size={13} className={isSyncing ? "animate-spin text-white" : "text-white"} />
-            {isSyncing ? "Syncing API..." : "Refetch / Sync Now"}
-          </motion.button>
+
+          {isCurrentConnected && (
+            <motion.button
+              onClick={handleRefetch}
+              disabled={isSyncing || isLoading}
+              whileTap={tapPress}
+              transition={spring.press}
+              className="btn-primary py-2 px-4 text-xs font-bold gap-2 shadow-xs cursor-pointer"
+            >
+              <RefreshCw size={13} className={isSyncing ? "animate-spin text-white" : "text-white"} />
+              {isSyncing ? "Syncing Live API..." : "Sync Telemetry Now"}
+            </motion.button>
+          )}
         </div>
       </div>
+
+      {/* Property Selector Drawer (Search Console & GA4) */}
+      <AnimatePresence>
+        {showPropertyDrawer && (selectedService === 'search_console' || selectedService === 'google_analytics') && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xs"
+          >
+            <div className="flex-1 w-full space-y-2">
+              <div className="flex items-center gap-2">
+                <Globe size={16} className="text-indigo-600 dark:text-indigo-400" />
+                <h4 className="text-xs font-black uppercase tracking-wider font-mono text-indigo-900 dark:text-indigo-300">
+                  Target {selectedService === 'search_console' ? 'Google Search Console' : 'Google Analytics 4'} Property
+                </h4>
+              </div>
+
+              {availableProperties.length > 0 ? (
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <select
+                    value={selectedPropertyUrl}
+                    onChange={(e) => handleSelectProperty(e.target.value)}
+                    className="flex-1 text-xs font-mono bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-2xs"
+                  >
+                    <option value="">-- Choose verified property --</option>
+                    {availableProperties.map((p, idx) => (
+                      <option key={idx} value={p.siteUrl || p.id}>
+                        {p.displayName || p.siteUrl || p.name} {p.account ? `(${p.account})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <p className="text-xs text-indigo-800 dark:text-indigo-300 font-sans">
+                  {isLoadingProperties ? 'Discovering properties from Google API...' : 'No properties auto-discovered. You can enter your Property ID directly below.'}
+                </p>
+              )}
+
+              {/* Manual Property ID Input */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                <input
+                  type="text"
+                  placeholder={selectedService === 'search_console' ? 'e.g. sc-domain:example.com or https://example.com/' : 'Enter GA4 Property ID (e.g. 123456789 or properties/123456789)'}
+                  value={manualPropertyId}
+                  onChange={(e) => setManualPropertyId(e.target.value)}
+                  className="flex-1 px-3 py-1.5 text-xs font-mono bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-700 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:border-indigo-500"
+                />
+                <button
+                  onClick={() => handleSelectProperty(manualPropertyId)}
+                  disabled={!manualPropertyId.trim() || isSavingProperty}
+                  className="btn-primary py-1.5 px-3 text-xs font-bold whitespace-nowrap shadow-xs cursor-pointer"
+                >
+                  {isSavingProperty ? 'Saving...' : 'Set & Sync'}
+                </button>
+                {selectedService === 'search_console' && selectedPropertyUrl && onAuditProperty && (
+                  <button
+                    onClick={() => onAuditProperty(selectedPropertyUrl)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+                  >
+                    <Zap size={12} />
+                    <span>Run Crawler Audit</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowPropertyDrawer(false)}
+              className="text-xs text-indigo-700 dark:text-indigo-300 underline font-semibold cursor-pointer shrink-0 self-end md:self-center"
+            >
+              Close
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Service Selector Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar shrink-0">
@@ -209,8 +412,8 @@ export default function IntegrationsWorkspace({
               transition={spring.press}
               className={`relative px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-2 cursor-pointer select-none border ${
                 isSelected
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-                  : 'bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 border-slate-200 shadow-xs'
+                  ? 'bg-slate-900 dark:bg-indigo-600 text-white border-slate-900 dark:border-indigo-600 shadow-xs'
+                  : 'bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border-slate-200 dark:border-slate-800 shadow-xs'
               }`}
             >
               <Icon size={14} className={isSelected ? 'text-white' : svc.color} />
@@ -227,16 +430,133 @@ export default function IntegrationsWorkspace({
 
       {/* Main Content Area */}
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center p-16 gap-3 bg-white border border-slate-200/80 rounded-2xl shadow-xs">
-          <RefreshCw size={28} className="animate-spin text-indigo-600" />
-          <p className="text-xs font-mono font-bold text-slate-600">Loading verified telemetry from database...</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl animate-pulse shadow-xs">
+          {[1, 2, 3, 4].map(n => (
+            <div key={n} className="h-24 bg-slate-100 dark:bg-slate-800/80 rounded-xl" />
+          ))}
+          <div className="col-span-2 md:col-span-4 h-64 bg-slate-100 dark:bg-slate-800/80 rounded-xl mt-2" />
         </div>
+      ) : !isCurrentConnected && selectedService !== 'synergy' ? (
+        /* ============================================================== */
+        /* EMPTY / NOT CONNECTED STATE: ENTERPRISE SETUP HERO             */
+        /* ============================================================== */
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-8 sm:p-12 rounded-3xl bg-gradient-to-br from-white via-slate-50 to-indigo-50/40 dark:from-slate-900 dark:via-slate-900/90 dark:to-indigo-950/30 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center max-w-3xl mx-auto gap-6 my-4"
+        >
+          <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-md">
+            <activeServiceObj.icon size={32} className={activeServiceObj.color} />
+          </div>
+
+          <div className="space-y-2">
+            <span className="px-3 py-1 text-[11px] font-mono font-bold uppercase tracking-wider rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+              Authentication Required
+            </span>
+            <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+              Connect {activeServiceObj.name} Telemetry
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 max-w-lg leading-relaxed mx-auto">
+              Link your verified Google account or credentials to correlate crawled audit URLs with live traffic, clicks, impressions, bounce rates, and organic conversion paths.
+            </p>
+          </div>
+
+          {/* Key Capabilities Unlocked */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left w-full max-w-lg font-mono text-xs">
+            {selectedService === 'google_analytics' ? (
+              <>
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5">
+                  <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+                  <span className="text-slate-800 dark:text-slate-200">30d & 90d Sessions Telemetry</span>
+                </div>
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5">
+                  <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+                  <span className="text-slate-800 dark:text-slate-200">Traffic Channel Attribution</span>
+                </div>
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5">
+                  <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+                  <span className="text-slate-800 dark:text-slate-200">Engagement &amp; Bounce Rates</span>
+                </div>
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5">
+                  <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+                  <span className="text-slate-800 dark:text-slate-200">Zombie Page Pinpointer</span>
+                </div>
+              </>
+            ) : selectedService === 'search_console' ? (
+              <>
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5">
+                  <CheckCircle2 size={16} className="text-blue-500 shrink-0" />
+                  <span className="text-slate-800 dark:text-slate-200">Real Google Search Clicks</span>
+                </div>
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5">
+                  <CheckCircle2 size={16} className="text-blue-500 shrink-0" />
+                  <span className="text-slate-800 dark:text-slate-200">Top 50 Ranking Queries</span>
+                </div>
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5">
+                  <CheckCircle2 size={16} className="text-blue-500 shrink-0" />
+                  <span className="text-slate-800 dark:text-slate-200">SERP Impressions &amp; CTR</span>
+                </div>
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5">
+                  <CheckCircle2 size={16} className="text-blue-500 shrink-0" />
+                  <span className="text-slate-800 dark:text-slate-200">Device Share Breakdown</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5">
+                  <CheckCircle2 size={16} className="text-amber-500 shrink-0" />
+                  <span className="text-slate-800 dark:text-slate-200">Core Web Vitals Benchmarks</span>
+                </div>
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5">
+                  <CheckCircle2 size={16} className="text-amber-500 shrink-0" />
+                  <span className="text-slate-800 dark:text-slate-200">Lighthouse Performance Scores</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Connect Action Button */}
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-sm">
+            {selectedService === 'search_console' || selectedService === 'google_analytics' ? (
+              <button
+                onClick={() => {
+                  if (onOAuthConnect) onOAuthConnect(selectedService);
+                  else if (onOpenModal) onOpenModal({ id: selectedService, name: activeServiceObj.name, authType: 'oauth' });
+                }}
+                className="w-full btn-primary py-3 px-5 text-xs font-bold gap-2 shadow-md cursor-pointer justify-center"
+              >
+                <Globe size={15} />
+                Connect with Google OAuth
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  if (onOpenModal) onOpenModal({ id: selectedService, name: activeServiceObj.name, authType: 'api_key' });
+                }}
+                className="w-full btn-primary py-3 px-5 text-xs font-bold gap-2 shadow-md cursor-pointer justify-center"
+              >
+                <Key size={15} />
+                Configure API Key
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                if (onOpenModal) onOpenModal({ id: selectedService, name: activeServiceObj.name, authType: 'oauth' });
+              }}
+              className="w-full btn-secondary py-3 px-4 text-xs font-bold gap-2 shadow-xs cursor-pointer justify-center text-slate-700 dark:text-slate-200"
+            >
+              <Sliders size={14} />
+              Setup Guide &amp; Keys
+            </button>
+          </div>
+        </motion.div>
       ) : (
         <AnimatePresence mode="wait">
           {/* ============================================================== */}
           {/* 1. GOOGLE SEARCH CONSOLE WORKSPACE                             */}
           {/* ============================================================== */}
-          {selectedService === 'search_console' && data && (
+          {selectedService === 'search_console' && (
             <motion.div
               key="search_console"
               initial={{ opacity: 0, y: 6 }}
@@ -244,103 +564,104 @@ export default function IntegrationsWorkspace({
               exit={{ opacity: 0, y: -6 }}
               className="flex flex-col gap-5"
             >
-              {/* Google Permission / Account Status Banner */}
-              {data.google_permission_error && (
-                <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+              {/* Diagnostic / Permission Banner if Google restricted access */}
+              {errorMessage && (
+                <div className="p-4 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
                   <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 shrink-0">
+                    <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-800 flex items-center justify-center text-amber-700 dark:text-amber-400 shrink-0">
                       <AlertTriangle size={18} />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <h4 className="text-xs font-black uppercase font-mono tracking-wider">
-                          Google Search Console Permission Error
+                          Google Search Console Status
                         </h4>
-                        <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-100 text-rose-800 border border-rose-200 font-mono">
-                          Access Denied (403)
+                        <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 font-mono">
+                          Action Required
                         </span>
                       </div>
-                      <p className="text-xs text-amber-800 mt-1 leading-relaxed">
-                        Connected with Google account <span className="font-bold font-mono text-slate-900 bg-white/70 px-1.5 py-0.5 rounded border border-amber-200">{data.auth_account || 'satyam@bloomxsolutions.com'}</span>. 
-                        Google returned: <em>"{data.google_permission_error}"</em>.
+                      <p className="text-xs text-amber-800 dark:text-amber-300 mt-1 leading-relaxed">
+                        Account: <strong className="font-mono">{data?.auth_account || integrationsStatus['search_console']?.account_email || 'Authenticated Account'}</strong>. 
+                        Google returned: <em>"{errorMessage}"</em>.
                       </p>
-                      <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">
-                        🔒 <strong>Zero fabricated data:</strong> Because Google restricted access for this account, no queries or clicks are fabricated. To view live search keywords and clicks, add <strong>{data.auth_account || 'satyam@bloomxsolutions.com'}</strong> in <a href="https://search.google.com/search-console" target="_blank" rel="noreferrer" className="underline font-bold hover:text-amber-900">Google Search Console Settings</a> (or switch to the owner Google account).
+                      <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-1 leading-relaxed">
+                        To view live search keywords and clicks, make sure this Google account has been added to the Search Console property, or switch to the property selector above.
                       </p>
                     </div>
                   </div>
                   <button
-                    onClick={onBackToGrid}
-                    className="btn-secondary py-1.5 px-3 text-xs font-bold text-slate-800 shrink-0 bg-white hover:bg-slate-50 border border-amber-200 shadow-xs cursor-pointer"
+                    onClick={() => setShowPropertyDrawer(true)}
+                    className="btn-secondary py-1.5 px-3 text-xs font-bold text-slate-800 dark:text-slate-200 shrink-0 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-amber-200 dark:border-amber-800 shadow-xs cursor-pointer"
                   >
-                    Switch Account
+                    Select Property
                   </button>
                 </div>
               )}
+
               {/* Summary Metric Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-slate-500 mb-1">
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
                     <span className="text-xs font-bold uppercase tracking-wider font-mono">Total Clicks</span>
-                    <MousePointer size={16} className="text-blue-600" />
+                    <MousePointer size={16} className="text-blue-600 dark:text-blue-400" />
                   </div>
-                  <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-                    {data.summary?.total_clicks?.toLocaleString() || 0}
+                  <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tracking-tight tabular-nums">
+                    {data?.summary?.total_clicks?.toLocaleString() || 0}
                   </div>
-                  <span className="text-[11px] text-emerald-700 font-semibold mt-1 flex items-center gap-1">
+                  <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold mt-1 flex items-center gap-1">
                     <TrendingUp size={12} /> Google Search Clicks (28d)
                   </span>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-slate-500 mb-1">
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
                     <span className="text-xs font-bold uppercase tracking-wider font-mono">Impressions</span>
-                    <Eye size={16} className="text-purple-600" />
+                    <Eye size={16} className="text-purple-600 dark:text-purple-400" />
                   </div>
-                  <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-                    {data.summary?.total_impressions?.toLocaleString() || 0}
+                  <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tracking-tight tabular-nums">
+                    {data?.summary?.total_impressions?.toLocaleString() || 0}
                   </div>
-                  <span className="text-[11px] text-purple-700 font-semibold mt-1">
+                  <span className="text-[11px] text-purple-700 dark:text-purple-400 font-semibold mt-1">
                     Total SERP Appearances
                   </span>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-slate-500 mb-1">
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
                     <span className="text-xs font-bold uppercase tracking-wider font-mono">Average CTR</span>
-                    <TrendingUp size={16} className="text-emerald-600" />
+                    <TrendingUp size={16} className="text-emerald-600 dark:text-emerald-400" />
                   </div>
-                  <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-                    {data.summary?.average_ctr || '0.0%'}
+                  <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tracking-tight tabular-nums">
+                    {data?.summary?.average_ctr || '0.0%'}
                   </div>
-                  <span className="text-[11px] text-slate-500 font-semibold mt-1">
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-1">
                     Click-Through Rate Benchmark
                   </span>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-slate-500 mb-1">
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
                     <span className="text-xs font-bold uppercase tracking-wider font-mono">Avg SERP Position</span>
-                    <Target size={16} className="text-amber-600" />
+                    <Target size={16} className="text-amber-600 dark:text-amber-400" />
                   </div>
-                  <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-                    {data.summary?.average_position || '1.0'}
+                  <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tracking-tight tabular-nums">
+                    {data?.summary?.average_position || '0.0'}
                   </div>
-                  <span className="text-[11px] text-emerald-700 font-semibold mt-1">
-                    Page 1 Google Average
+                  <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold mt-1">
+                    Ranked Keyword Average
                   </span>
                 </div>
               </div>
 
               {/* Top Search Queries Table */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col gap-4">
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                      <Search size={16} className="text-blue-600" />
-                      Top Search Queries & Keywords
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Search size={16} className="text-blue-600 dark:text-blue-400" />
+                      Top Search Queries &amp; Keywords
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       Queries bringing live organic traffic from Google Search Console.
                     </p>
                   </div>
@@ -352,15 +673,15 @@ export default function IntegrationsWorkspace({
                       placeholder="Filter search queries..."
                       value={searchQueryFilter}
                       onChange={(e) => setSearchQueryFilter(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 font-mono"
+                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:border-indigo-500 font-mono"
                     />
                   </div>
                 </div>
 
-                <div className="overflow-x-auto border border-slate-200/80 rounded-xl custom-scrollbar">
+                <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-xl custom-scrollbar">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-slate-50/80 text-slate-600 border-b border-slate-200 font-mono font-bold">
+                      <tr className="bg-slate-50/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 font-mono font-bold">
                         <th className="py-2.5 px-4">Search Query</th>
                         <th className="py-2.5 px-4 text-right">Clicks</th>
                         <th className="py-2.5 px-4 text-right">Impressions</th>
@@ -369,27 +690,27 @@ export default function IntegrationsWorkspace({
                         <th className="py-2.5 px-4 text-center">Opportunity Alert</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 font-mono">
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono">
                       {filteredQueries.length > 0 ? (
                         filteredQueries.map((q, idx) => {
                           const rawCtr = parseFloat(q.ctr);
                           const isOpportunity = rawCtr < 3.0 && q.impressions > 1500;
 
                           return (
-                            <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
-                              <td className="py-2.5 px-4 font-bold text-slate-900 truncate max-w-xs">{q.query}</td>
-                              <td className="py-2.5 px-4 text-right font-bold text-blue-700">{q.clicks.toLocaleString()}</td>
-                              <td className="py-2.5 px-4 text-right text-slate-600">{q.impressions.toLocaleString()}</td>
-                              <td className="py-2.5 px-4 text-right text-emerald-700 font-semibold">{q.ctr}</td>
-                              <td className="py-2.5 px-4 text-right text-slate-800 font-bold">{q.position}</td>
+                            <tr key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50 transition-colors">
+                              <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-white truncate max-w-xs">{q.query}</td>
+                              <td className="py-2.5 px-4 text-right font-bold text-blue-700 dark:text-blue-400 tabular-nums">{q.clicks.toLocaleString()}</td>
+                              <td className="py-2.5 px-4 text-right text-slate-600 dark:text-slate-300 tabular-nums">{q.impressions.toLocaleString()}</td>
+                              <td className="py-2.5 px-4 text-right text-emerald-700 dark:text-emerald-400 font-semibold tabular-nums">{q.ctr}</td>
+                              <td className="py-2.5 px-4 text-right text-slate-800 dark:text-slate-200 font-bold tabular-nums">{q.position}</td>
                               <td className="py-2.5 px-4 text-center">
                                 {isOpportunity ? (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                                     <AlertTriangle size={10} /> High Imp / Low CTR
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                                    <Check size={10} /> Winning Query
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    <Check size={10} /> Ranking
                                   </span>
                                 )}
                               </td>
@@ -398,112 +719,15 @@ export default function IntegrationsWorkspace({
                         })
                       ) : (
                         <tr>
-                          <td colSpan={6} className="py-10 text-center font-sans">
-                            {data.google_permission_error ? (
-                              <div className="max-w-md mx-auto space-y-2 text-slate-600">
-                                <div className="w-10 h-10 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700 mx-auto mb-1">
-                                  <AlertTriangle size={20} />
-                                </div>
-                                <h4 className="text-xs font-bold text-slate-900">
-                                  Access Restricted by Google Search Console
-                                </h4>
-                                <p className="text-[11px] text-slate-500 leading-relaxed">
-                                  No search queries or clicks are shown because <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-800 font-mono">{data.auth_account || 'satyam@bloomxsolutions.com'}</code> does not have permission for this property in Google Search Console.
-                                </p>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-slate-400">No search queries found for this period.</p>
-                            )}
+                          <td colSpan={6} className="py-12 text-center font-sans">
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {errorMessage ? errorMessage : 'No keyword search telemetry recorded for this property in the last 28 days.'}
+                            </p>
                           </td>
                         </tr>
                       )}
                     </tbody>
                   </table>
-                </div>
-              </div>
-
-              {/* Top Pages & Device Distribution */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Top Pages */}
-                <div className="lg:col-span-2 p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col gap-3">
-                  <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                    <FileText size={16} className="text-indigo-600" />
-                    Top Performing Google Landing Pages
-                  </h3>
-                  <div className="overflow-x-auto border border-slate-200/80 rounded-xl">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 font-mono font-bold">
-                          <th className="py-2 px-3">Page URL</th>
-                          <th className="py-2 px-3 text-right">Clicks</th>
-                          <th className="py-2 px-3 text-right">Impressions</th>
-                          <th className="py-2 px-3 text-right">Avg CTR</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
-                        {data.top_pages && data.top_pages.length > 0 ? (
-                          data.top_pages.map((p, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/50">
-                              <td className="py-2 px-3 truncate max-w-xs text-indigo-700 font-medium">
-                                <a href={p.url} target="_blank" rel="noreferrer" className="hover:underline flex items-center gap-1 truncate">
-                                  {p.url} <ArrowUpRight size={11} className="shrink-0 text-slate-400" />
-                                </a>
-                              </td>
-                              <td className="py-2 px-3 text-right font-bold text-slate-900">{p.clicks}</td>
-                              <td className="py-2 px-3 text-right text-slate-600">{p.impressions?.toLocaleString()}</td>
-                              <td className="py-2 px-3 text-right text-emerald-700 font-bold">{p.ctr}</td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={4} className="py-8 text-center text-slate-400 font-sans text-xs">
-                              {data.google_permission_error ? 'Permission denied by Google - No landing page metrics available' : 'No landing pages recorded'}
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Device Share & Coverage */}
-                <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between gap-4">
-                  <div>
-                    <h3 className="text-sm font-extrabold text-slate-900 mb-3 flex items-center gap-2">
-                      <Layers size={16} className="text-emerald-600" />
-                      Search Device Share
-                    </h3>
-                    <div className="space-y-3 font-mono text-xs">
-                      {data.devices?.map((d, idx) => (
-                        <div key={idx} className="space-y-1">
-                          <div className="flex justify-between text-slate-700">
-                            <span className="font-bold">{d.device}</span>
-                            <span className="font-extrabold text-indigo-700">{d.share}</span>
-                          </div>
-                          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                            <div
-                              className="bg-indigo-600 h-2 rounded-full"
-                              style={{ width: d.share }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-100">
-                    <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 font-mono">Google Index Coverage</h4>
-                    <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                      <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900">
-                        <div className="text-lg font-bold">{data.index_coverage?.valid_indexed || 48}</div>
-                        <div className="text-[10px] text-emerald-700">Valid Indexed</div>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
-                        <div className="text-lg font-bold">{data.index_coverage?.crawled_not_indexed || 4}</div>
-                        <div className="text-[10px] text-amber-700">Discovered</div>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </div>
             </motion.div>
@@ -512,10 +736,7 @@ export default function IntegrationsWorkspace({
           {/* ============================================================== */}
           {/* 2. GOOGLE ANALYTICS 4 WORKSPACE                                */}
           {/* ============================================================== */}
-          {/* ============================================================== */}
-          {/* 2. GOOGLE ANALYTICS 4 WORKSPACE                                */}
-          {/* ============================================================== */}
-          {selectedService === 'google_analytics' && data && (
+          {selectedService === 'google_analytics' && (
             <motion.div
               key="google_analytics"
               initial={{ opacity: 0, y: 6 }}
@@ -523,107 +744,136 @@ export default function IntegrationsWorkspace({
               exit={{ opacity: 0, y: -6 }}
               className="flex flex-col gap-5"
             >
-              {/* Google Permission / Account Status Banner */}
-              {data.google_permission_error && (
-                <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle size={20} className="text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="text-xs font-black uppercase tracking-wider font-mono text-amber-800">
-                        Google Analytics 4 Status Notice
-                      </h4>
-                      <p className="text-xs mt-0.5 text-amber-900 leading-relaxed font-sans">
-                        {data.google_permission_error}
+              {/* Diagnostic / Action Required Banner */}
+              {errorMessage && (
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-50/90 to-orange-50/70 dark:from-amber-950/40 dark:to-orange-950/30 border border-amber-300 dark:border-amber-800/80 text-amber-950 dark:text-amber-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-800 flex items-center justify-center text-amber-700 dark:text-amber-400 shrink-0 shadow-xs">
+                      <AlertTriangle size={20} />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-xs font-black uppercase tracking-wider font-mono text-amber-900 dark:text-amber-200">
+                          Google Analytics 4 Action Required
+                        </h4>
+                        <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-amber-200/80 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
+                          Configuration Needed
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed font-sans">
+                        {errorMessage}
                       </p>
-                      {data.auth_account && (
-                        <p className="text-[11px] font-mono text-amber-700 mt-1">
-                          Connected Account: <span className="font-bold underline">{data.auth_account}</span>
+                      {data?.auth_account && (
+                        <p className="text-[11px] font-mono text-amber-800 dark:text-amber-300">
+                          Connected Account: <strong className="underline">{data.auth_account}</strong>
                         </p>
                       )}
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    {errorMessage.includes('Google Analytics Data API') && (
+                      <a
+                        href="https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn-primary py-2 px-3 text-xs font-bold gap-1.5 shadow-xs"
+                      >
+                        <ExternalLink size={13} />
+                        Enable API in Google Cloud
+                      </a>
+                    )}
+                    <button
+                      onClick={() => setShowPropertyDrawer(true)}
+                      className="btn-secondary py-2 px-3 text-xs font-bold gap-1.5 text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 border-amber-300 dark:border-amber-800 shadow-xs cursor-pointer"
+                    >
+                      <Sliders size={13} />
+                      Set GA4 Property ID
+                    </button>
                   </div>
                 </div>
               )}
 
               {/* Summary Metric Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-slate-500 mb-1">
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
                     <span className="text-xs font-bold uppercase tracking-wider font-mono">30d Total Sessions</span>
-                    <TrendingUp size={16} className="text-emerald-600" />
+                    <TrendingUp size={16} className="text-emerald-600 dark:text-emerald-400" />
                   </div>
-                  <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-                    {data.summary?.total_sessions?.toLocaleString() || 0}
+                  <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tracking-tight tabular-nums">
+                    {data?.summary?.total_sessions?.toLocaleString() || 0}
                   </div>
-                  <span className="text-[11px] text-emerald-700 font-semibold mt-1">
-                    Organic Search: {data.summary?.organic_sessions_30d?.toLocaleString() || 0}
+                  <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold mt-1">
+                    Organic: {data?.summary?.organic_sessions_30d?.toLocaleString() || 0} sessions
                   </span>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-slate-500 mb-1">
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
                     <span className="text-xs font-bold uppercase tracking-wider font-mono">Engaged Sessions</span>
-                    <BarChart3 size={16} className="text-blue-600" />
+                    <BarChart3 size={16} className="text-blue-600 dark:text-blue-400" />
                   </div>
-                  <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-                    {data.summary?.engaged_sessions?.toLocaleString() || 0}
+                  <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tracking-tight tabular-nums">
+                    {data?.summary?.engaged_sessions?.toLocaleString() || 0}
                   </div>
-                  <span className="text-[11px] text-blue-700 font-semibold mt-1">
-                    90d Total: {data.summary?.organic_sessions_90d?.toLocaleString() || 0}
+                  <span className="text-[11px] text-blue-700 dark:text-blue-400 font-semibold mt-1">
+                    90d Total: {data?.summary?.organic_sessions_90d?.toLocaleString() || 0}
                   </span>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-slate-500 mb-1">
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
                     <span className="text-xs font-bold uppercase tracking-wider font-mono">Engagement Rate</span>
-                    <CheckCircle2 size={16} className="text-emerald-600" />
+                    <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
                   </div>
-                  <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-                    {data.summary?.engagement_rate || '0.0%'}
+                  <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tracking-tight tabular-nums">
+                    {data?.summary?.engagement_rate || '0.0%'}
                   </div>
-                  <span className="text-[11px] text-slate-500 font-semibold mt-1">
-                    Bounce Rate: {data.summary?.average_bounce_rate || '0.0%'}
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-1">
+                    Bounce Rate: {data?.summary?.average_bounce_rate || '0.0%'}
                   </span>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-slate-500 mb-1">
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
                     <span className="text-xs font-bold uppercase tracking-wider font-mono">Avg Engagement Time</span>
-                    <Clock size={16} className="text-indigo-600" />
+                    <Clock size={16} className="text-indigo-600 dark:text-indigo-400" />
                   </div>
-                  <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-                    {data.summary?.average_engagement_time || '0s'}
+                  <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tracking-tight tabular-nums">
+                    {data?.summary?.average_engagement_time || '0s'}
                   </div>
-                  <span className="text-[11px] text-indigo-700 font-semibold mt-1">
+                  <span className="text-[11px] text-indigo-700 dark:text-indigo-400 font-semibold mt-1">
                     Per Session Duration
                   </span>
                 </div>
               </div>
 
-              {/* Traffic Channel Acquisition & Top Landing Pages */}
+              {/* Traffic Channel Attribution & Top Landing Pages */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* Traffic Channels */}
-                <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col gap-3">
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                      <Layers size={16} className="text-orange-600" />
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Layers size={16} className="text-orange-600 dark:text-orange-400" />
                       Traffic Channel Attribution
                     </h3>
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                       Last 30 Days
                     </span>
                   </div>
-                  {data.channels && data.channels.length > 0 ? (
+
+                  {data?.channels && data.channels.length > 0 ? (
                     <div className="space-y-3 font-mono text-xs mt-1">
                       {data.channels.map((c, idx) => (
                         <div key={idx} className="space-y-1">
-                          <div className="flex justify-between text-slate-700">
+                          <div className="flex justify-between text-slate-700 dark:text-slate-300">
                             <span className="font-bold">{c.channel}</span>
-                            <span className="font-extrabold text-slate-900">
+                            <span className="font-extrabold text-slate-900 dark:text-white tabular-nums">
                               {c.sessions?.toLocaleString()} ({c.percentage})
                             </span>
                           </div>
-                          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                          <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
                             <div
                               className={`h-2 rounded-full ${
                                 idx === 0 ? 'bg-emerald-500' :
@@ -638,38 +888,52 @@ export default function IntegrationsWorkspace({
                       ))}
                     </div>
                   ) : (
-                    <div className="p-8 text-center text-xs text-slate-400 font-mono">
-                      No traffic channel data available for this GA4 property.
+                    <div className="p-12 text-center text-xs text-slate-500 dark:text-slate-400 font-sans space-y-2">
+                      <p>No traffic channel telemetry returned for this property.</p>
+                      <button
+                        onClick={() => setShowPropertyDrawer(true)}
+                        className="text-xs text-indigo-600 dark:text-indigo-400 underline font-semibold cursor-pointer"
+                      >
+                        Change or verify GA4 Property ID
+                      </button>
                     </div>
                   )}
                 </div>
 
                 {/* Top Landing Pages */}
-                <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col gap-3">
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                      <FileText size={16} className="text-indigo-600" />
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                      <FileText size={16} className="text-indigo-600 dark:text-indigo-400" />
                       Top Landing Pages
                     </h3>
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200">
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                       Live Telemetry
                     </span>
                   </div>
-                  {data.top_landing_pages && data.top_landing_pages.length > 0 ? (
+
+                  {data?.top_landing_pages && data.top_landing_pages.length > 0 ? (
                     <div className="space-y-2 mt-1 max-h-[260px] overflow-y-auto custom-scrollbar pr-1">
                       {data.top_landing_pages.slice(0, 8).map((lp, idx) => (
-                        <div key={idx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-mono flex items-center justify-between gap-2">
-                          <span className="font-bold text-slate-900 truncate">{lp.path}</span>
+                        <div key={idx} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 text-xs font-mono flex items-center justify-between gap-2">
+                          <span className="font-bold text-slate-900 dark:text-white truncate">{lp.path}</span>
                           <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-[11px] font-extrabold text-indigo-700">{lp.sessions?.toLocaleString()} sess</span>
-                            <span className="text-[10px] text-slate-500">({lp.avg_time})</span>
+                            <span className="text-[11px] font-extrabold text-indigo-700 dark:text-indigo-400 tabular-nums">{lp.sessions?.toLocaleString()} sess</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400">({lp.avg_time})</span>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="p-8 text-center text-xs text-slate-400 font-mono">
-                      No landing page traffic recorded.
+                    <div className="p-12 text-center text-xs text-slate-500 dark:text-slate-400 font-sans space-y-2">
+                      <p>No landing page visits recorded for this period.</p>
+                      <button
+                        onClick={handleRefetch}
+                        disabled={isSyncing}
+                        className="text-xs text-indigo-600 dark:text-indigo-400 underline font-semibold cursor-pointer"
+                      >
+                        Refetch live GA4 data
+                      </button>
                     </div>
                   )}
                 </div>
@@ -680,7 +944,7 @@ export default function IntegrationsWorkspace({
           {/* ============================================================== */}
           {/* 3. GOOGLE BUSINESS PROFILE WORKSPACE                           */}
           {/* ============================================================== */}
-          {selectedService === 'google_business' && data && (
+          {selectedService === 'google_business' && (
             <motion.div
               key="google_business"
               initial={{ opacity: 0, y: 6 }}
@@ -688,54 +952,58 @@ export default function IntegrationsWorkspace({
               exit={{ opacity: 0, y: -6 }}
               className="flex flex-col gap-5"
             >
-              <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+              <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
                 <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0 shadow-xs">
+                  <div className="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0 shadow-xs">
                     <MapPin size={28} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-lg font-black text-slate-900">{data.business_name}</h3>
-                      <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                        {data.status || 'OPERATIONAL'}
+                      <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                        {data?.business_name || 'Business Location'}
+                      </h3>
+                      <span className="px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                        {data?.status || 'VERIFIED'}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-600 mt-1">{data.formatted_address}</p>
-                    <p className="text-xs font-mono text-slate-500 mt-0.5">{data.formatted_phone} • {data.primary_category}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{data?.formatted_address || 'Address configured in Places API'}</p>
+                    <p className="text-xs font-mono text-slate-500 dark:text-slate-400 mt-0.5">
+                      {data?.formatted_phone || 'Phone verified'} • {data?.primary_category || 'Local Business'}
+                    </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 bg-slate-50 px-5 py-3 rounded-2xl border border-slate-200">
+                <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-800 px-5 py-3 rounded-2xl border border-slate-200 dark:border-slate-700">
                   <div className="text-center">
-                    <div className="text-2xl font-black text-amber-500 font-mono">★ {data.rating || 4.9}</div>
-                    <div className="text-[10px] text-slate-500 font-mono">{data.total_reviews} Reviews</div>
+                    <div className="text-2xl font-black text-amber-500 font-mono tabular-nums">★ {data?.rating || '—'}</div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{data?.total_reviews || 0} Reviews</div>
                   </div>
-                  <div className="h-8 w-px bg-slate-200" />
+                  <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
                   <div className="text-center">
-                    <div className="text-2xl font-black text-emerald-600 font-mono">{data.nap_consistency_score || '98%'}</div>
-                    <div className="text-[10px] text-slate-500 font-mono">NAP Sync</div>
+                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">{data?.nap_consistency_score || 'Synced'}</div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">NAP Integrity</div>
                   </div>
                 </div>
               </div>
 
               {/* Local SEO & NAP Checklist */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col gap-3">
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                  <ShieldCheck size={16} className="text-emerald-600" />
-                  Local 3-Pack & Schema Synchronization Checklist
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-3">
+                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <ShieldCheck size={16} className="text-emerald-600 dark:text-emerald-400" />
+                  Local 3-Pack &amp; Schema Synchronization Checklist
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 font-mono text-xs mt-1">
-                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-200 flex items-center justify-between">
                     <span>Google Maps Verified Pin</span>
-                    <CheckCircle2 size={16} className="text-emerald-600" />
+                    <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
                   </div>
-                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-200 flex items-center justify-between">
                     <span>NAP Matches Website Contact</span>
-                    <CheckCircle2 size={16} className="text-emerald-600" />
+                    <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
                   </div>
-                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-200 flex items-center justify-between">
                     <span>LocalBusiness JSON-LD Schema</span>
-                    <CheckCircle2 size={16} className="text-emerald-600" />
+                    <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
                   </div>
                 </div>
               </div>
@@ -745,7 +1013,7 @@ export default function IntegrationsWorkspace({
           {/* ============================================================== */}
           {/* 4. PAGESPEED WORKSPACE                                         */}
           {/* ============================================================== */}
-          {selectedService === 'pagespeed' && data && (
+          {selectedService === 'pagespeed' && (
             <motion.div
               key="pagespeed"
               initial={{ opacity: 0, y: 6 }}
@@ -754,50 +1022,50 @@ export default function IntegrationsWorkspace({
               className="flex flex-col gap-5"
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col gap-3">
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
                       <Zap size={16} className="text-amber-500" />
                       Mobile Core Web Vitals
                     </h3>
-                    <span className="text-2xl font-black font-mono text-emerald-600">{data.mobile_score}/100</span>
+                    <span className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400 tabular-nums">{data?.mobile_score || '—'}/100</span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono text-xs pt-2">
-                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <div className="text-[10px] text-slate-500">LCP (Load Speed)</div>
-                      <div className="text-sm font-bold text-slate-900">{data.metrics?.lcp}</div>
+                    <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">LCP (Load Speed)</div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">{data?.metrics?.lcp || '—'}</div>
                     </div>
-                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <div className="text-[10px] text-slate-500">CLS (Visual Shift)</div>
-                      <div className="text-sm font-bold text-slate-900">{data.metrics?.cls}</div>
+                    <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">CLS (Visual Shift)</div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">{data?.metrics?.cls || '—'}</div>
                     </div>
-                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <div className="text-[10px] text-slate-500">INP (Interactivity)</div>
-                      <div className="text-sm font-bold text-slate-900">{data.metrics?.inp}</div>
+                    <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">INP (Interactivity)</div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">{data?.metrics?.inp || '—'}</div>
                     </div>
                   </div>
                 </div>
 
-                <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col gap-3">
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
                       <Zap size={16} className="text-emerald-500" />
                       Desktop Performance
                     </h3>
-                    <span className="text-2xl font-black font-mono text-emerald-600">{data.desktop_score}/100</span>
+                    <span className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400 tabular-nums">{data?.desktop_score || '—'}/100</span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono text-xs pt-2">
-                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <div className="text-[10px] text-slate-500">FCP</div>
-                      <div className="text-sm font-bold text-slate-900">{data.metrics?.fcp}</div>
+                    <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">FCP</div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">{data?.metrics?.fcp || '—'}</div>
                     </div>
-                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <div className="text-[10px] text-slate-500">TBT</div>
-                      <div className="text-sm font-bold text-slate-900">{data.metrics?.tbt}</div>
+                    <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">TBT</div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">{data?.metrics?.tbt || '—'}</div>
                     </div>
-                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                      <div className="text-[10px] text-slate-500">Status</div>
-                      <div className="text-sm font-bold text-emerald-700">Good / Passed</div>
+                    <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">Status</div>
+                      <div className="text-sm font-bold text-emerald-700 dark:text-emerald-400">Verified</div>
                     </div>
                   </div>
                 </div>
@@ -817,53 +1085,53 @@ export default function IntegrationsWorkspace({
               className="flex flex-col gap-5"
             >
               {/* Synergy Overview Card */}
-              <div className="p-5 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-purple-50/40 to-emerald-50/80 border border-indigo-100 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="p-5 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-purple-50/40 to-emerald-50/80 dark:from-indigo-950/40 dark:via-slate-900/60 dark:to-emerald-950/40 border border-indigo-100 dark:border-indigo-900/40 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2">
-                    <Sparkles className="text-indigo-600" size={18} />
-                    <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider font-mono">
+                    <Sparkles className="text-indigo-600 dark:text-indigo-400" size={18} />
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider font-mono">
                       Crawl Audit + Connected APIs Synergy Matrix
                     </h3>
                   </div>
-                  <p className="text-xs text-slate-600 mt-1 max-w-xl leading-relaxed">
-                    Combines your crawled technical SEO health with live Google Search Console & Google Analytics telemetry to uncover high-impact ranking and traffic opportunities.
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-xl leading-relaxed">
+                    Cross-correlates your crawled technical SEO health with live Google Search Console and Google Analytics telemetry to pinpoint high-impact traffic opportunities.
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2.5 font-mono text-xs">
-                  <div className="px-3 py-1.5 rounded-xl bg-white border border-indigo-200 text-indigo-900 font-bold shadow-2xs">
-                    {synergyData?.opportunities_summary?.ctr_booster_queries || 3} CTR Boosters
+                <div className="flex items-center gap-2.5 font-mono text-xs flex-wrap">
+                  <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-300 font-bold shadow-2xs">
+                    {synergyData?.opportunities_summary?.ctr_booster_queries ?? 0} CTR Boosters
                   </div>
-                  <div className="px-3 py-1.5 rounded-xl bg-white border border-rose-200 text-rose-900 font-bold shadow-2xs">
-                    {synergyData?.opportunities_summary?.zombie_pages_detected || 8} Zombie Pages
+                  <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-300 font-bold shadow-2xs">
+                    {synergyData?.opportunities_summary?.zombie_pages_detected ?? 0} Zombie Pages
                   </div>
-                  <div className="px-3 py-1.5 rounded-xl bg-white border border-amber-200 text-amber-900 font-bold shadow-2xs">
-                    {synergyData?.opportunities_summary?.canonical_conflicts || 6} Canonical Fixes
+                  <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300 font-bold shadow-2xs">
+                    {synergyData?.opportunities_summary?.canonical_conflicts ?? 0} Canonical Fixes
                   </div>
                 </div>
               </div>
 
               {/* 1. CTR Booster Queries */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col gap-3">
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                      <Target size={16} className="text-indigo-600" />
-                      CTR Boosters (High Impressions & Low Click-Through)
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Target size={16} className="text-indigo-600 dark:text-indigo-400" />
+                      CTR Boosters (High Impressions &amp; Low Click-Through)
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       Keywords ranking in top Google positions with heavy search volume but underperforming CTR.
                     </p>
                   </div>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200">
-                    Double Your Traffic
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                    High Opportunity
                   </span>
                 </div>
 
-                <div className="overflow-x-auto border border-slate-200/80 rounded-xl">
+                <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-xl">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 font-mono font-bold">
+                      <tr className="bg-slate-50/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 font-mono font-bold">
                         <th className="py-2.5 px-4">Keyword Query</th>
                         <th className="py-2.5 px-4 text-right">Impressions</th>
                         <th className="py-2.5 px-4 text-right">Clicks</th>
@@ -872,53 +1140,67 @@ export default function IntegrationsWorkspace({
                         <th className="py-2.5 px-4">Recommended Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 font-mono text-xs">
-                      {synergyData?.ctr_boosters?.map((b, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/60">
-                          <td className="py-2.5 px-4 font-bold text-slate-900">{b.query}</td>
-                          <td className="py-2.5 px-4 text-right text-slate-700">{b.impressions?.toLocaleString()}</td>
-                          <td className="py-2.5 px-4 text-right font-bold text-blue-600">{b.clicks}</td>
-                          <td className="py-2.5 px-4 text-right text-rose-600 font-bold">{b.ctr}</td>
-                          <td className="py-2.5 px-4 text-right font-bold text-slate-800">{b.position}</td>
-                          <td className="py-2.5 px-4 font-sans text-xs text-slate-600 font-medium">{b.action}</td>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono text-xs">
+                      {synergyData?.ctr_boosters && synergyData.ctr_boosters.length > 0 ? (
+                        synergyData.ctr_boosters.map((b, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50">
+                            <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-white">{b.query}</td>
+                            <td className="py-2.5 px-4 text-right text-slate-700 dark:text-slate-300 tabular-nums">{b.impressions?.toLocaleString()}</td>
+                            <td className="py-2.5 px-4 text-right font-bold text-blue-600 dark:text-blue-400 tabular-nums">{b.clicks}</td>
+                            <td className="py-2.5 px-4 text-right text-rose-600 dark:text-rose-400 font-bold tabular-nums">{b.ctr}</td>
+                            <td className="py-2.5 px-4 text-right font-bold text-slate-800 dark:text-slate-200 tabular-nums">{b.position}</td>
+                            <td className="py-2.5 px-4 font-sans text-xs text-slate-600 dark:text-slate-300 font-medium">{b.action}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-400 font-sans text-xs">
+                            Connect Google Search Console to automatically detect high-impression keywords with low click-through rates.
+                          </td>
                         </tr>
-                      ))}
+                      )}
                     </tbody>
                   </table>
                 </div>
               </div>
 
               {/* 2. Canonical Conflicts */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col gap-3">
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                      <AlertTriangle size={16} className="text-amber-600" />
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                      <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400" />
                       Google Canonical Mismatches
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       URLs where Googlebot selected a different canonical version than declared in the HTML header.
                     </p>
                   </div>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                     Indexing Health
                   </span>
                 </div>
 
                 <div className="space-y-2">
-                  {synergyData?.canonical_mismatches?.map((m, idx) => (
-                    <div key={idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="truncate max-w-md">
-                        <div className="text-slate-900 font-bold truncate">{m.url}</div>
-                        <div className="text-slate-500 text-[11px] truncate">
-                          Declared: <span className="text-indigo-600">{m.declared_canonical}</span> → Google: <span className="text-amber-700">{m.google_selected_canonical}</span>
+                  {synergyData?.canonical_mismatches && synergyData.canonical_mismatches.length > 0 ? (
+                    synergyData.canonical_mismatches.map((m, idx) => (
+                      <div key={idx} className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="truncate max-w-md">
+                          <div className="text-slate-900 dark:text-white font-bold truncate">{m.url}</div>
+                          <div className="text-slate-500 dark:text-slate-400 text-[11px] truncate">
+                            Declared: <span className="text-indigo-600 dark:text-indigo-400">{m.declared_canonical}</span> → Google: <span className="text-amber-700 dark:text-amber-400">{m.google_selected_canonical}</span>
+                          </div>
                         </div>
+                        <span className="text-[10px] font-sans font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 shrink-0">
+                          {m.action}
+                        </span>
                       </div>
-                      <span className="text-[10px] font-sans font-semibold text-slate-600 bg-white px-2 py-1 rounded-md border border-slate-200 shrink-0">
-                        {m.action}
-                      </span>
+                    ))
+                  ) : (
+                    <div className="p-6 text-center text-xs text-slate-400 font-sans">
+                      No canonical mismatch anomalies detected across audited crawl pages.
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             </motion.div>

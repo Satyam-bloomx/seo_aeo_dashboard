@@ -42,6 +42,11 @@ export const getAiExecutiveSummary = async (params) => {
   return response.data;
 };
 
+export const getAiDiagnoseIssue = async (params) => {
+  const response = await api.post('/audits/ai-diagnose-issue', params);
+  return response.data;
+};
+
 export const analyzePerformance = async (url, projectId = 1) => {
   const response = await api.post('/performance/analyze', { url, project_id: projectId });
   return response.data;

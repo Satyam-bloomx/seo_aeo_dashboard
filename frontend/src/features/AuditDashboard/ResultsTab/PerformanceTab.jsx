@@ -149,10 +149,10 @@ export default function PerformanceTab({ pages }) {
   }, [pages, strategy, customPerfData, inspectedUrl]);
 
   const getScoreColor = (score) => {
-    if (!score && score !== 0) return { text: 'text-slate-500', stroke: '#94A3B8', bg: 'bg-slate-50', border: 'border-slate-200', label: 'N/A' };
-    if (score >= 90) return { text: 'text-emerald-700', stroke: '#059669', bg: 'bg-emerald-50', border: 'border-emerald-200', label: 'Good' };
-    if (score >= 50) return { text: 'text-amber-700', stroke: '#D97706', bg: 'bg-amber-50', border: 'border-amber-200', label: 'Needs Improvement' };
-    return { text: 'text-rose-700', stroke: '#E11D48', bg: 'bg-rose-50', border: 'border-rose-200', label: 'Poor' };
+    if (!score && score !== 0) return { text: 'text-slate-500 dark:text-slate-400', stroke: '#94A3B8', bg: 'bg-slate-50 dark:bg-slate-800', border: 'border-slate-200 dark:border-slate-700', label: 'N/A' };
+    if (score >= 90) return { text: 'text-emerald-700 dark:text-emerald-300', stroke: '#059669', bg: 'bg-emerald-50 dark:bg-emerald-950/40', border: 'border-emerald-200 dark:border-emerald-900/50', label: 'Good' };
+    if (score >= 50) return { text: 'text-amber-700 dark:text-amber-300', stroke: '#D97706', bg: 'bg-amber-50 dark:bg-amber-950/40', border: 'border-amber-200 dark:border-amber-900/50', label: 'Needs Improvement' };
+    return { text: 'text-rose-700 dark:text-rose-300', stroke: '#E11D48', bg: 'bg-rose-50 dark:bg-rose-950/40', border: 'border-rose-200 dark:border-rose-900/50', label: 'Poor' };
   };
 
   const vitals = useMemo(() => {
@@ -210,15 +210,15 @@ export default function PerformanceTab({ pages }) {
       {/* Header & Device Strategy Toggle */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 shrink-0">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
             <Zap className="text-amber-500 shrink-0" size={24} />
             Performance & Core Web Vitals
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">Real-user Google Lighthouse diagnostics and field Core Web Vitals telemetry.</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Real-user Google Lighthouse diagnostics and field Core Web Vitals telemetry.</p>
         </div>
 
         {/* Strategy Buttons */}
-        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0 self-start sm:self-auto">
+        <div className="flex bg-slate-100 dark:bg-slate-900/80 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0 self-start sm:self-auto">
           <LayoutGroup id="perf-strategy">
             {STRATEGIES.map(({ id, label, Icon }) => {
               const isActive = strategy === id;
@@ -230,17 +230,17 @@ export default function PerformanceTab({ pages }) {
                   transition={spring.press}
                   aria-pressed={isActive}
                   className={`relative flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs font-bold cursor-pointer outline-none transition-colors duration-150 ${
-                    isActive ? 'text-slate-900 font-extrabold' : 'text-slate-600 hover:text-slate-900'
+                    isActive ? 'text-slate-900 dark:text-white font-extrabold' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   {isActive && (
                     <motion.span
                       layoutId="perf-strategy-pill"
                       transition={reduced ? { duration: 0 } : spring.snap}
-                      className="absolute inset-0 rounded-lg border border-slate-200 bg-white shadow-xs"
+                      className="absolute inset-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xs"
                     />
                   )}
-                  <Icon size={15} className="relative z-10 text-indigo-600" />
+                  <Icon size={15} className="relative z-10 text-indigo-600 dark:text-indigo-400" />
                   <span className="relative z-10">{label}</span>
                 </motion.button>
               );
@@ -250,21 +250,21 @@ export default function PerformanceTab({ pages }) {
       </div>
 
       {/* Single URL Inspector & Speed Tester Bar */}
-      <div className="p-3.5 sm:p-4 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3 shrink-0">
+      <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3 shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Globe size={16} className="text-indigo-600 shrink-0" />
-            <span className="text-xs font-bold font-mono text-slate-900 uppercase">Test Specific Page Speed</span>
+            <Globe size={16} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <span className="text-xs font-bold font-mono text-slate-900 dark:text-white uppercase">Test Specific Page Speed</span>
           </div>
 
           {inspectedUrl && (
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] font-mono font-bold bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg border border-indigo-200 truncate max-w-xs">
+              <span className="text-[11px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-900/50 truncate max-w-xs">
                 Inspecting: {inspectedUrl}
               </span>
               <button
                 onClick={handleResetToSitewide}
-                className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
                 title="Return to overall crawl average"
               >
                 <RotateCcw size={12} /> Sitewide
@@ -287,7 +287,7 @@ export default function PerformanceTab({ pages }) {
                   handleAnalyzeUrl();
                 }
               }}
-              className="w-full glass-input pl-9 pr-4 py-2 font-mono text-xs text-slate-900 placeholder-slate-400 rounded-xl"
+              className="w-full glass-input pl-9 pr-4 py-2 font-mono text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 rounded-xl"
             />
           </div>
 
@@ -324,7 +324,7 @@ export default function PerformanceTab({ pages }) {
         {/* Quick Selection Chips of Crawled URLs */}
         {crawledUrls.length > 0 && (
           <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar max-w-full pt-1 text-[11px] font-mono">
-            <span className="text-slate-400 font-semibold shrink-0">Quick Select:</span>
+            <span className="text-slate-400 dark:text-slate-500 font-semibold shrink-0">Quick Select:</span>
             {crawledUrls.slice(0, 6).map((u, i) => (
               <button
                 key={i}
@@ -335,7 +335,7 @@ export default function PerformanceTab({ pages }) {
                 className={`px-2.5 py-1 rounded-lg border transition-colors shrink-0 ${
                   inspectedUrl === u
                     ? 'bg-indigo-600 text-white border-indigo-600 font-bold shadow-2xs'
-                    : 'bg-slate-50 hover:bg-indigo-50 border-slate-200 text-slate-700 hover:text-indigo-700'
+                    : 'bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-700 dark:hover:text-indigo-300'
                 }`}
               >
                 {u.replace(/^https?:\/\/[^\/]+/, '') || '/'}
@@ -351,14 +351,14 @@ export default function PerformanceTab({ pages }) {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
 
             {/* Animated Lighthouse Gauge */}
-            <div className="glass-card p-6 flex flex-col items-center justify-center relative overflow-hidden text-center bg-white shadow-sm border border-slate-200 rounded-3xl">
+            <div className="glass-card p-6 flex flex-col items-center justify-center relative overflow-hidden text-center bg-white dark:bg-slate-900/90 shadow-sm border border-slate-200 dark:border-slate-800 rounded-3xl">
               <div className="relative w-40 h-40 sm:w-44 sm:h-44 flex items-center justify-center mb-3">
                 <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                   <circle
                     cx="50"
                     cy="50"
                     r="45"
-                    className="text-slate-100 stroke-current"
+                    className="text-slate-100 dark:text-slate-800 stroke-current"
                     strokeWidth="7"
                     fill="transparent"
                   />
@@ -379,14 +379,14 @@ export default function PerformanceTab({ pages }) {
                   <span ref={numberRef} className={`text-4xl font-extrabold font-mono ${scoreMeta.text}`}>
                     {metrics.overallScore}
                   </span>
-                  <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400">Score</span>
+                  <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500">Score</span>
                 </div>
               </div>
 
               <span className={`px-3 py-1 rounded-full text-xs font-bold font-mono border ${scoreMeta.bg} ${scoreMeta.text} ${scoreMeta.border}`}>
                 {scoreMeta.label} ({strategy.toUpperCase()})
               </span>
-              <p className="text-xs text-slate-500 mt-2 font-medium">Google Lighthouse v12.1 Engine</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">Google Lighthouse v12.1 Engine</p>
             </div>
 
             {/* 6 Core Web Vitals Bento Cards */}
@@ -403,16 +403,16 @@ export default function PerformanceTab({ pages }) {
                   variants={staggerItem}
                   whileHover={{ y: -3 }}
                   transition={spring.press}
-                  className="metric-card-item p-3.5 sm:p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between hover:border-indigo-300 transition-colors"
+                  className="metric-card-item p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-colors"
                 >
-                  <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">{v.label}</span>
+                  <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase">{v.label}</span>
                   <div className="my-2">
-                    <div className="text-2xl font-extrabold text-slate-900 font-mono">{v.value}</div>
-                    <p className={`text-[10px] font-semibold ${v.tone === 'indigo' ? 'text-indigo-700' : 'text-emerald-700'}`}>
+                    <div className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono">{v.value}</div>
+                    <p className={`text-[10px] font-semibold ${v.tone === 'indigo' ? 'text-indigo-700 dark:text-indigo-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
                       Target: {v.target}
                     </p>
                   </div>
-                  <div className="h-1 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                  <div className="h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
                     <motion.div
                       className={`h-full w-full origin-left rounded-full ${v.tone === 'indigo' ? 'bg-indigo-500' : 'bg-emerald-500'}`}
                       initial={{ scaleX: 0 }}
@@ -428,15 +428,15 @@ export default function PerformanceTab({ pages }) {
 
           {/* Actionable Opportunities List */}
           {opportunities.length > 0 && (
-            <div className="glass-card p-4 sm:p-5 bg-white border border-slate-200 rounded-3xl shadow-xs">
+            <div className="glass-card p-4 sm:p-5 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
                 <div className="flex items-center gap-2">
                   <Zap className="text-amber-500 shrink-0" size={18} />
-                  <h4 className="text-sm font-bold text-slate-900">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">
                     Actionable Speed Opportunities {inspectedUrl ? `for Selected Page` : ''}
                   </h4>
                 </div>
-                <span className="text-xs font-mono text-slate-500 font-semibold">{opportunities.length} optimizations available</span>
+                <span className="text-xs font-mono text-slate-500 dark:text-slate-400 font-semibold">{opportunities.length} optimizations available</span>
               </div>
 
               <motion.div
@@ -453,19 +453,19 @@ export default function PerformanceTab({ pages }) {
                     exit={{ opacity: 0, x: -12 }}
                     whileHover={{ x: 3 }}
                     transition={spring.press}
-                    className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:bg-slate-100/60 transition-colors"
+                    className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:bg-slate-100/60 dark:hover:bg-slate-800 transition-colors"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-amber-100 border border-amber-200 text-amber-800 flex items-center justify-center font-mono font-bold text-xs shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 flex items-center justify-center font-mono font-bold text-xs shrink-0">
                         {idx + 1}
                       </div>
                       <div>
-                        <h5 className="text-xs font-bold text-slate-900">{opp.title}</h5>
-                        <p className="text-[11px] text-slate-500">Implement browser compression and next-gen format delivery.</p>
+                        <h5 className="text-xs font-bold text-slate-900 dark:text-white">{opp.title}</h5>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">Implement browser compression and next-gen format delivery.</p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 font-mono text-xs text-emerald-800 font-bold bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 self-start sm:self-auto shrink-0">
+                    <div className="flex items-center gap-2 font-mono text-xs text-emerald-800 dark:text-emerald-300 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-md border border-emerald-200 dark:border-emerald-900/50 self-start sm:self-auto shrink-0">
                       <Clock size={12} /> Saves ~{opp.savings}
                     </div>
                   </motion.div>
@@ -476,12 +476,12 @@ export default function PerformanceTab({ pages }) {
           )}
         </>
       ) : (
-        <div className="p-12 text-center bg-white border border-dashed border-slate-300 rounded-3xl space-y-4 shadow-xs">
-          <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto shadow-xs">
+        <div className="p-12 text-center bg-white dark:bg-slate-900/80 border border-dashed border-slate-300 dark:border-slate-700 rounded-3xl space-y-4 shadow-xs">
+          <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-xs">
             <Zap size={32} />
           </div>
-          <h3 className="text-lg font-bold text-slate-900">No PageSpeed Telemetry Loaded</h3>
-          <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">No PageSpeed Telemetry Loaded</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
             Enter any webpage URL in the search input above to run an on-demand Google Lighthouse & Core Web Vitals diagnostic in isolation.
           </p>
         </div>

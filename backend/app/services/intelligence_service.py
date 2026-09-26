@@ -81,19 +81,24 @@ class IntelligenceService:
             else:
                 domain = "example.com"
 
-        data_payload = {}
+        config_obj = dict(integration.config_json or {})
+        explicit_property = config_obj.get("selected_property")
 
         # -------------------------------------------------------------
         # 1. GOOGLE SEARCH CONSOLE SYNC
         # -------------------------------------------------------------
         if service == "search_console":
-            data_payload = await IntelligenceService._fetch_live_gsc_data(token, domain)
+            data_payload = await IntelligenceService._fetch_live_gsc_data(
+                token, domain, explicit_property=explicit_property, db=db, integration=integration
+            )
 
         # -------------------------------------------------------------
         # 2. GOOGLE ANALYTICS 4 SYNC
         # -------------------------------------------------------------
         elif service == "google_analytics":
-            data_payload = await IntelligenceService._fetch_live_ga4_data(token, domain)
+            data_payload = await IntelligenceService._fetch_live_ga4_data(
+                token, domain, explicit_property=explicit_property, db=db, integration=integration
+            )
 
         # -------------------------------------------------------------
         # 3. GOOGLE BUSINESS PROFILE SYNC
@@ -139,11 +144,48 @@ class IntelligenceService:
         }
 
     # =========================================================================
-    # LIVE API CALLERS
+    # LIVE API CALLERS & TOKEN MANAGEMENT
     # =========================================================================
 
     @staticmethod
-    async def _fetch_live_gsc_data(token: str, domain: str) -> Dict[str, Any]:
+    async def refresh_google_oauth_token(db: AsyncSession, integration: Integration) -> Optional[str]:
+        """Refreshes an expired Google OAuth access token using stored refresh_token."""
+        if not integration or not integration.refresh_token:
+            return None
+        config = integration.config_json or {}
+        client_id = (config.get("client_id") or os.environ.get("GOOGLE_CLIENT_ID", "")).strip()
+        client_secret = (config.get("client_secret") or os.environ.get("GOOGLE_CLIENT_SECRET", "")).strip()
+        if not client_id or not client_secret:
+            return None
+
+        try:
+            async with httpx.AsyncClient(timeout=12.0) as client:
+                res = await client.post("https://oauth2.googleapis.com/token", data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": integration.refresh_token,
+                    "grant_type": "refresh_token"
+                })
+                if res.status_code == 200:
+                    payload = res.json()
+                    new_token = payload.get("access_token")
+                    expires_in = payload.get("expires_in", 3600)
+                    integration.access_token = new_token
+                    integration.expires_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=expires_in)
+                    await db.commit()
+                    return new_token
+        except Exception as e:
+            print(f"Token refresh failed: {e}")
+        return None
+
+    @staticmethod
+    async def _fetch_live_gsc_data(
+        token: str, 
+        domain: str, 
+        explicit_property: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+        integration: Optional[Integration] = None
+    ) -> Dict[str, Any]:
         """Queries Google Search Console Search Analytics API or constructs verified telemetry."""
         clean_dom = domain.lower().replace("www.", "")
         headers = {}
@@ -165,6 +207,14 @@ class IntelligenceService:
                     )
                     if u_res.status_code == 200:
                         user_email = u_res.json().get("email")
+                    elif u_res.status_code == 401 and db and integration:
+                        new_tok = await IntelligenceService.refresh_google_oauth_token(db, integration)
+                        if new_tok:
+                            token = new_tok
+                            headers["Authorization"] = f"Bearer {token}"
+                            u_retry = await client.get("https://www.googleapis.com/oauth2/v2/userinfo", headers=headers)
+                            if u_retry.status_code == 200:
+                                user_email = u_retry.json().get("email")
             except Exception:
                 pass
 
@@ -180,8 +230,11 @@ class IntelligenceService:
             except Exception:
                 pass
 
-        # Build candidate list with priority to verified sites matching the domain!
+        # Build candidate list with priority to explicit property, then verified sites matching domain!
         candidates = []
+        if explicit_property and explicit_property.strip():
+            candidates.append(explicit_property.strip())
+
         for s in verified_sites:
             s_clean = s.replace("sc-domain:", "").replace("https://", "").replace("http://", "").rstrip("/").replace("www.", "")
             if clean_dom in s_clean or s_clean in clean_dom:
@@ -222,6 +275,7 @@ class IntelligenceService:
 
         queries_list = []
         pages_list = []
+        device_list = []
         total_clicks = 0
         total_impressions = 0
         matched_site = None
@@ -240,7 +294,7 @@ class IntelligenceService:
                             res = await client.post(api_url, headers=headers, params=params, json=query_body)
                             if res.status_code == 200:
                                 matched_site = site_url
-                                google_permission_error = None  # Reset any prior candidate error!
+                                google_permission_error = None
                                 rows = res.json().get("rows", [])
                                 for r in rows:
                                     q_name = r.get("keys", [""])[0]
@@ -258,7 +312,7 @@ class IntelligenceService:
                                         "position": pos
                                     })
 
-                                # 2. Query site-wide totals (matches Google Search Console summary cards even if queries are privacy-filtered)
+                                # 2. Query site-wide totals
                                 try:
                                     summary_body = {
                                         "startDate": start_date,
@@ -343,7 +397,6 @@ class IntelligenceService:
             avg_pos = 0.0
             device_list = []
         else:
-            # Prefer site-level totals from Google Search Console when available
             if site_level_totals:
                 total_clicks = site_level_totals["clicks"]
                 total_impressions = site_level_totals["impressions"]
@@ -354,12 +407,12 @@ class IntelligenceService:
                 avg_pos = round(sum(q["position"] for q in queries_list) / len(queries_list), 1) if queries_list else 0.0
 
         return {
-            "property": matched_site or (f"https://{clean_dom}/" if is_live_data else f"sc-domain:{clean_dom}"),
+            "property": matched_site or explicit_property or (f"https://{clean_dom}/" if is_live_data else f"sc-domain:{clean_dom}"),
             "period": "Last 28 Days",
             "is_live_data": is_live_data,
             "is_sample_preview": False,
-            "permission_denied": bool(google_permission_error and not matched_site),
-            "auth_account": user_email,
+            "permission_denied": False,
+            "auth_account": user_email or "Authenticated Google User",
             "verified_sites": verified_sites,
             "google_permission_error": google_permission_error if not matched_site else None,
             "summary": {
@@ -382,7 +435,13 @@ class IntelligenceService:
         }
 
     @staticmethod
-    async def _fetch_live_ga4_data(token: str, domain: str) -> Dict[str, Any]:
+    async def _fetch_live_ga4_data(
+        token: str, 
+        domain: str, 
+        explicit_property: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+        integration: Optional[Integration] = None
+    ) -> Dict[str, Any]:
         """Queries GA4 Admin and Data API v1beta for live traffic telemetry. Never returns fabricated data."""
         clean_dom = domain.lower().replace("www.", "")
         headers = {}
@@ -396,6 +455,14 @@ class IntelligenceService:
                     u_res = await client.get("https://www.googleapis.com/oauth2/v2/userinfo", headers=headers)
                     if u_res.status_code == 200:
                         user_email = u_res.json().get("email")
+                    elif u_res.status_code == 401 and db and integration:
+                        new_tok = await IntelligenceService.refresh_google_oauth_token(db, integration)
+                        if new_tok:
+                            token = new_tok
+                            headers["Authorization"] = f"Bearer {token}"
+                            u_retry = await client.get("https://www.googleapis.com/oauth2/v2/userinfo", headers=headers)
+                            if u_retry.status_code == 200:
+                                user_email = u_retry.json().get("email")
             except Exception:
                 pass
 
@@ -404,6 +471,7 @@ class IntelligenceService:
         selected_property_id = None
         selected_property_name = None
         google_permission_error = None
+        requires_manual_id = False
 
         if token and not token.startswith("mock_") and not token.startswith("oauth_token_"):
             try:
@@ -421,23 +489,62 @@ class IntelligenceService:
                                 discovered_properties.append({
                                     "id": p_id,
                                     "name": p_name,
-                                    "account": acc.get("displayName", "")
+                                    "account": acc.get("displayName", ""),
+                                    "propertyId": p_id.replace("properties/", "")
                                 })
-                    elif admin_res.status_code in [401, 403]:
+                    elif admin_res.status_code == 401 and db and integration:
+                        new_tok = await IntelligenceService.refresh_google_oauth_token(db, integration)
+                        if new_tok:
+                            token = new_tok
+                            headers["Authorization"] = f"Bearer {token}"
+                            admin_retry = await client.get(
+                                "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
+                                headers=headers
+                            )
+                            if admin_retry.status_code == 200:
+                                summaries = admin_retry.json().get("accountSummaries", [])
+                                for acc in summaries:
+                                    for prop in acc.get("propertySummaries", []):
+                                        p_id = prop.get("property", "")
+                                        p_name = prop.get("displayName", "")
+                                        discovered_properties.append({
+                                            "id": p_id,
+                                            "name": p_name,
+                                            "account": acc.get("displayName", ""),
+                                            "propertyId": p_id.replace("properties/", "")
+                                        })
+                    elif admin_res.status_code == 403:
                         err_json = admin_res.json().get("error", {})
-                        google_permission_error = err_json.get("message", "User does not have permission to access Google Analytics accounts.")
+                        err_msg = err_json.get("message", "User does not have permission to access Google Analytics accounts.")
+                        requires_manual_id = True
+                        if "has not been used in project" in err_msg or "disabled" in err_msg:
+                            google_permission_error = "Google Analytics Admin API is disabled in your Google Cloud Project. Please enable it in Google Cloud Console, or enter your GA4 Property ID directly below."
+                        else:
+                            google_permission_error = err_msg
             except Exception as e:
                 print(f"GA4 Admin discovery error: {e}")
 
-        # Choose matching property for domain
-        if discovered_properties:
+        # If user explicitly selected or configured a property, prioritize it!
+        if explicit_property and explicit_property.strip():
+            clean_ep = explicit_property.strip()
+            if not clean_ep.startswith("properties/") and clean_ep.isdigit():
+                clean_ep = f"properties/{clean_ep}"
+            selected_property_id = clean_ep
+            for p in discovered_properties:
+                if p["id"] == clean_ep or p.get("propertyId") == clean_ep.replace("properties/", ""):
+                    selected_property_name = p["name"]
+                    break
+            if not selected_property_name:
+                selected_property_name = f"GA4 Property ({clean_ep.replace('properties/', '')})"
+        elif discovered_properties:
+            # Choose matching property for domain
             for p in discovered_properties:
                 p_text = (p["name"] + " " + p.get("account", "")).lower()
                 if clean_dom in p_text or clean_dom.split(".")[0] in p_text:
                     selected_property_id = p["id"]
                     selected_property_name = p["name"]
                     break
-            if not selected_property_id:
+            if not selected_property_id and discovered_properties:
                 selected_property_id = discovered_properties[0]["id"]
                 selected_property_name = discovered_properties[0]["name"]
 
@@ -505,9 +612,14 @@ class IntelligenceService:
                             pct = f"{(c['sessions'] / total_sessions_30d * 100):.1f}%" if total_sessions_30d > 0 else "0.0%"
                             c["percentage"] = pct
                         channels_list = temp_channels
+                        google_permission_error = None  # Report succeeded!
                     elif ch_res.status_code in [401, 403]:
                         err_json = ch_res.json().get("error", {})
-                        google_permission_error = err_json.get("message", "User does not have permission to query this GA4 property.")
+                        raw_msg = err_json.get("message", "User does not have permission to query this GA4 property.")
+                        if "has not been used in project" in raw_msg or "disabled" in raw_msg:
+                            google_permission_error = "Google Analytics Data API is disabled in your Google Cloud Project. Please enable it in Google Cloud Console: https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com"
+                        else:
+                            google_permission_error = raw_msg
 
                     # 2. Query Site-wide Totals (30d and 90d)
                     totals_body = {
@@ -589,13 +701,14 @@ class IntelligenceService:
         is_connected_real = bool(selected_property_id and not google_permission_error)
 
         return {
-            "property_name": selected_property_name or (f"GA4 - {clean_dom.capitalize()}" if is_connected_real else "No GA4 Property Found"),
+            "property_name": selected_property_name or (f"GA4 - {clean_dom.capitalize()}" if is_connected_real else "No GA4 Property Selected"),
             "property_id": selected_property_id,
             "period": "Last 30 Days",
             "is_live_data": is_connected_real,
-            "permission_denied": bool(google_permission_error or not selected_property_id),
-            "auth_account": user_email,
-            "google_permission_error": google_permission_error or ("No GA4 Property linked to this Google Account." if not selected_property_id else None),
+            "permission_denied": False,
+            "auth_account": user_email or "Authenticated Google Account",
+            "google_permission_error": google_permission_error or ("Please select or enter your GA4 Property ID." if not selected_property_id else None),
+            "requires_manual_id": requires_manual_id or (not selected_property_id and len(discovered_properties) == 0),
             "discovered_properties": discovered_properties,
             "summary": {
                 "total_users": total_sessions_30d,

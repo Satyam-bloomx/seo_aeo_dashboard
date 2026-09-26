@@ -128,18 +128,18 @@ export default function AuditProLogo({
       {showText && (
         <div className="flex flex-col">
           <div className="flex items-center gap-1.5 leading-none">
-            <span className="font-extrabold text-base tracking-tight text-slate-900 font-sans">
+            <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white font-sans transition-colors">
               Audit
             </span>
             <span className="font-black text-base tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-sky-600 to-emerald-600 font-sans">
               Pro
             </span>
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/60 uppercase tracking-widest ml-1">
-              AI//SEO
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 uppercase tracking-wider ml-1 transition-colors">
+              SPIDER
             </span>
           </div>
-          <span className="text-[10px] font-mono text-slate-400 tracking-wider mt-0.5">
-            ENGINE V20.4
+          <span className="text-[10px] font-mono text-slate-400 dark:text-slate-400 tracking-wider mt-0.5">
+            Technical SEO Architecture
           </span>
         </div>
       )}

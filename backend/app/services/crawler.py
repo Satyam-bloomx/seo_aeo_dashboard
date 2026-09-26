@@ -1,11 +1,6 @@
 import sys
 import asyncio
-
-if sys.platform == 'win32':
-    try:
-        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    except Exception:
-        pass
+import re
 from typing import Set, List
 from urllib.parse import urlparse
 import httpx
@@ -43,19 +38,21 @@ NON_PAGE_EXTENSIONS = (
     '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp', '.tiff', '.avif',
     '.pdf', '.zip', '.rar', '.tar', '.gz', '.7z', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
     '.mp4', '.mp3', '.avi', '.mov', '.wmv', '.wav', '.ogg', '.webm',
-    '.css', '.js', '.woff', '.woff2', '.ttf', '.eot', '.map'
+    '.css', '.js', '.woff', '.woff2', '.ttf', '.eot', '.map',
+    '.xml', '.rss', '.atom', '.json', '.txt'
 )
 
 class CrawlerService:
     def __init__(self, crawl_id: int, seed_url: str, db_session: AsyncSession, max_depth: int = 100, max_concurrent: int = 5, js_rendering: bool = False, max_pages: int = 500, stealth_delay: float = 0.0, ignore_url_params: bool = False, check_external_links: bool = False, exclude_paths: str = "", ignore_robots: bool = False, user_agent: str = "SEO-Spider-Bot", crawl_author_archives: bool = False):
         self.crawl_id = crawl_id
-        self.seed_url = seed_url
+        self.ignore_url_params = ignore_url_params
+        # Canonicalize and normalize seed URL immediately (RFC 3986)
+        self.seed_url = self._clean_crawl_url(seed_url)
         self.db = db_session
         self.max_depth = max_depth
         self.js_rendering = js_rendering
         self.max_pages = max_pages
         self.stealth_delay = stealth_delay
-        self.ignore_url_params = ignore_url_params
         self.check_external_links = check_external_links
         self.crawl_author_archives = crawl_author_archives
         
@@ -69,7 +66,7 @@ class CrawlerService:
             print("Playwright not installed. Falling back to HTTPX/curl_cffi.")
             self.js_rendering = False
             
-        self.max_concurrent = min(max_concurrent, 5)
+        self.max_concurrent = min(max(max_concurrent, 1), 10)
             
         self.visited_urls: Set[str] = set()
         self.queue: asyncio.Queue = asyncio.Queue()
@@ -77,11 +74,54 @@ class CrawlerService:
         self.request_lock = asyncio.Lock()
         self.last_request_time = 0.0
         
-        parsed_seed = urlparse(seed_url)
-        self.allowed_domain = parsed_seed.netloc
+        parsed_seed = urlparse(self.seed_url)
+        self.allowed_domain = parsed_seed.netloc.lower()
         
+    def _get_url_variants(self, url: str) -> List[str]:
+        """
+        Returns equivalent URL variants with and without trailing slash.
+        Used for RFC 3986 canonical deduplication so links are NEVER doubled.
+        """
+        try:
+            url_clean = url.split("#")[0].strip()
+            parsed = urlparse(url_clean)
+            scheme = (parsed.scheme or "https").lower()
+            netloc = parsed.netloc.lower()
+            if netloc.endswith(":80") and scheme == "http":
+                netloc = netloc[:-3]
+            elif netloc.endswith(":443") and scheme == "https":
+                netloc = netloc[:-4]
+
+            path = parsed.path or "/"
+            path = re.sub(r'/{2,}', '/', path)
+            query_part = f"?{parsed.query}" if parsed.query else ""
+            
+            # Root path (e.g. https://example.com/ and https://example.com)
+            if not path or path == "/":
+                return [
+                    f"{scheme}://{netloc}/{query_part}",
+                    f"{scheme}://{netloc}{query_part}"
+                ]
+            
+            # Subpaths (e.g. https://example.com/about/ and https://example.com/about)
+            if path.endswith("/"):
+                alt_path = path.rstrip("/")
+                return [
+                    f"{scheme}://{netloc}{path}{query_part}",
+                    f"{scheme}://{netloc}{alt_path}{query_part}"
+                ]
+            else:
+                alt_path = path + "/"
+                return [
+                    f"{scheme}://{netloc}{path}{query_part}",
+                    f"{scheme}://{netloc}{alt_path}{query_part}"
+                ]
+        except Exception:
+            return [url]
+
     async def run(self):
-        self.visited_urls.add(self.seed_url)
+        for variant in self._get_url_variants(self.seed_url):
+            self.visited_urls.add(variant)
         self.queue.put_nowait((self.seed_url, 0))
         
         self.active_integrations = []
@@ -109,8 +149,8 @@ class CrawlerService:
                     w.cancel()
                 await browser.close()
         elif HAS_CURL_CFFI:
-            async with CurlSession(impersonate="chrome124", verify=False, timeout=30) as client:
-                # Can't easily change curl_cffi user-agent when impersonating, so leave it or override headers if needed
+            curl_headers = {"User-Agent": self.user_agent} if self.user_agent else None
+            async with CurlSession(impersonate="chrome124", verify=False, timeout=30, headers=curl_headers) as client:
                 workers = [
                     asyncio.create_task(self._curl_worker(client, i))
                     for i in range(self.max_concurrent)
@@ -220,21 +260,24 @@ class CrawlerService:
                 if not response:
                     continue
 
+                clean_req = self._clean_crawl_url(url)
                 response_time_ms = int((time.time() - start_time) * 1000)
                 status_code = response.status_code
                 content_type = response.headers.get("content-type", "")
                 final_url = str(response.url)
+                clean_final = self._clean_crawl_url(final_url)
                 
-                # Check for 3xx redirect
-                has_redirect = (final_url.rstrip('/') != url.rstrip('/'))
+                # Check for 3xx redirect - only treat as redirect if the clean normalized target is genuinely different
+                has_redirect = (clean_final != clean_req)
                 if has_redirect:
-                    await self._save_redirect_page(url, current_depth, 301, final_url)
-                    clean_final = self._clean_crawl_url(final_url)
+                    await self._save_redirect_page(clean_req, current_depth, 301, clean_final)
                     parsed_final = urlparse(clean_final)
                     if parsed_final.netloc == self.allowed_domain:
-                        if clean_final not in self.visited_urls:
+                        variants = self._get_url_variants(clean_final)
+                        if not any(v in self.visited_urls for v in variants):
                             if len(self.visited_urls) < self.max_pages:
-                                self.visited_urls.add(clean_final)
+                                for v in variants:
+                                    self.visited_urls.add(v)
                                 if "text/html" in content_type.lower() and status_code < 400:
                                     html_content = response.text
                                     await self._process_page_data(clean_final, current_depth, html_content, status_code, content_type, response_time_ms)
@@ -243,15 +286,15 @@ class CrawlerService:
                     continue
 
                 if status_code >= 400:
-                    await self._save_error_page(url, current_depth, status_code=status_code, error_reason="Client/Server Error")
+                    await self._save_error_page(clean_req, current_depth, status_code=status_code, error_reason="Client/Server Error")
                     continue
                 
                 if "text/html" not in content_type.lower():
-                    await self._save_error_page(url, current_depth, status_code=status_code, error_reason="Non-HTML Asset")
+                    await self._save_error_page(clean_req, current_depth, status_code=status_code, error_reason="Non-HTML Asset")
                     continue
                 
                 html_content = response.text
-                await self._process_page_data(url, current_depth, html_content, status_code, content_type, response_time_ms)
+                await self._process_page_data(clean_req, current_depth, html_content, status_code, content_type, response_time_ms)
 
             except asyncio.CancelledError:
                 break
@@ -307,7 +350,7 @@ class CrawlerService:
                     pw_data = await self._fetch_with_playwright_single(url)
                     if pw_data and pw_data.get("status_code", 0) < 400:
                         pw_final = pw_data.get("final_url", url)
-                        if pw_final.rstrip('/') != url.rstrip('/'):
+                        if pw_final != url:
                             await self._save_redirect_page(url, current_depth, 301, pw_final)
                             clean_pw_final = self._clean_crawl_url(pw_final)
                             if urlparse(clean_pw_final).netloc == self.allowed_domain:
@@ -337,23 +380,26 @@ class CrawlerService:
                         await self._save_error_page(url, current_depth, status_code=st, error_reason="Blocked or Rate Limited")
                         continue
 
+                clean_req = self._clean_crawl_url(url)
                 response_time_ms = int((time.time() - start_time) * 1000)
                 status_code = response.status_code
                 content_type = response.headers.get("content-type", "")
                 final_url = str(response.url)
+                clean_final = self._clean_crawl_url(final_url)
                 
-                # Check for 3xx redirect hops in response history
-                has_redirect = len(response.history) > 0 or (final_url.rstrip('/') != url.rstrip('/'))
+                # Check for 3xx redirect hops in response history - only if clean_final is different from clean_req
+                has_redirect = (len(response.history) > 0 and clean_final != clean_req) or (clean_final != clean_req)
                 if has_redirect:
                     first_hop_status = response.history[0].status_code if response.history else 301
-                    await self._save_redirect_page(url, current_depth, first_hop_status, final_url)
+                    await self._save_redirect_page(clean_req, current_depth, first_hop_status, clean_final)
                     
-                    clean_final = self._clean_crawl_url(final_url)
                     parsed_final = urlparse(clean_final)
                     if parsed_final.netloc == self.allowed_domain:
-                        if clean_final not in self.visited_urls:
+                        variants = self._get_url_variants(clean_final)
+                        if not any(v in self.visited_urls for v in variants):
                             if len(self.visited_urls) < self.max_pages:
-                                self.visited_urls.add(clean_final)
+                                for v in variants:
+                                    self.visited_urls.add(v)
                                 if "text/html" in content_type.lower() and status_code < 400:
                                     html_content = response.text
                                     await self._process_page_data(clean_final, current_depth, html_content, status_code, content_type, response_time_ms)
@@ -362,15 +408,15 @@ class CrawlerService:
                     continue
                 
                 if status_code >= 400:
-                    await self._save_error_page(url, current_depth, status_code=status_code, error_reason="Client/Server Error")
+                    await self._save_error_page(clean_req, current_depth, status_code=status_code, error_reason="Client/Server Error")
                     continue
                 
                 if "text/html" not in content_type.lower():
-                    await self._save_error_page(url, current_depth, status_code=status_code, error_reason="Non-HTML Asset")
+                    await self._save_error_page(clean_req, current_depth, status_code=status_code, error_reason="Non-HTML Asset")
                     continue
                 
                 html_content = response.text
-                await self._process_page_data(url, current_depth, html_content, status_code, content_type, response_time_ms)
+                await self._process_page_data(clean_req, current_depth, html_content, status_code, content_type, response_time_ms)
 
             except asyncio.CancelledError:
                 break
@@ -411,12 +457,14 @@ class CrawlerService:
                     status_code = 200
                     
                 content_type = res.headers.get("content-type", "text/html") if res else "text/html"
+                final_url = page.url
                 await browser.close()
                 return {
                     "status_code": status_code,
                     "content_type": content_type,
                     "html_content": html_content,
-                    "response_time_ms": response_time_ms
+                    "response_time_ms": response_time_ms,
+                    "final_url": final_url
                 }
         except Exception as e:
             print(f"Playwright single fetch fallback error for {url}: {e}")
@@ -483,6 +531,28 @@ class CrawlerService:
                     await page.close()
                     continue
                 
+                # Check for 3xx redirect in Playwright before closing page
+                clean_req = self._clean_crawl_url(url)
+                final_url = page.url
+                clean_final = self._clean_crawl_url(final_url)
+                has_redirect = (clean_final != clean_req)
+                if has_redirect:
+                    await self._save_redirect_page(clean_req, current_depth, 301, clean_final)
+                    await page.close()
+                    parsed_final = urlparse(clean_final)
+                    if parsed_final.netloc == self.allowed_domain:
+                        variants = self._get_url_variants(clean_final)
+                        if not any(v in self.visited_urls for v in variants):
+                            if len(self.visited_urls) < self.max_pages:
+                                for v in variants:
+                                    self.visited_urls.add(v)
+                                if "text/html" in content_type.lower() and status_code < 400:
+                                    html_content = await page.content() if not page.is_closed() else ""
+                                    if html_content:
+                                        metrics = extract_seo_metrics(html_content, clean_final)
+                                        await self._process_page_data(clean_final, current_depth, html_content, status_code, content_type, response_time_ms, metrics)
+                    continue
+
                 # Fetch rendered HTML
                 html_content = await page.content()
                 
@@ -517,21 +587,6 @@ class CrawlerService:
                     if vid == "html-has-lang": accessibility["Lang Attribute Requires Valid Value"] = True
                     if "aria" in vid: accessibility["Required ARIA Attributes Must Be Provided"] = True
                 
-                # Check for 3xx redirect in Playwright
-                final_url = page.url
-                has_redirect = (final_url.rstrip('/') != url.rstrip('/'))
-                if has_redirect:
-                    await self._save_redirect_page(url, current_depth, 301, final_url)
-                    clean_final = self._clean_crawl_url(final_url)
-                    parsed_final = urlparse(clean_final)
-                    if parsed_final.netloc == self.allowed_domain:
-                        if clean_final not in self.visited_urls:
-                            if len(self.visited_urls) < self.max_pages:
-                                self.visited_urls.add(clean_final)
-                                await self._process_page_data(clean_final, current_depth, html_content, status_code, content_type, response_time_ms, metrics)
-                    await page.close()
-                    continue
-
                 await self._process_page_data(url, current_depth, html_content, status_code, content_type, response_time_ms, metrics)
 
             except asyncio.CancelledError:
@@ -544,12 +599,24 @@ class CrawlerService:
 
     def _clean_crawl_url(self, dest: str) -> str:
         try:
-            parsed = urlparse(dest)
-            scheme = parsed.scheme.lower()
+            url_clean = dest.split("#")[0].strip()
+            parsed = urlparse(url_clean)
+            scheme = (parsed.scheme or "https").lower()
             netloc = parsed.netloc.lower()
+            if netloc.endswith(":80") and scheme == "http":
+                netloc = netloc[:-3]
+            elif netloc.endswith(":443") and scheme == "https":
+                netloc = netloc[:-4]
+
             path = parsed.path or "/"
+            # Collapse double or multiple slashes in path (e.g. //service -> /service)
+            path = re.sub(r'/{2,}', '/', path)
+            if not path:
+                path = "/"
+
             if getattr(self, 'ignore_url_params', False):
                 return f"{scheme}://{netloc}{path}"
+
             if parsed.query:
                 from urllib.parse import parse_qsl, urlencode
                 tracking_prefixes = ('utm_', 'fbclid', 'gclid', 'msclkid', 'mc_cid', 'mc_eid', '_ga')
@@ -650,10 +717,36 @@ class CrawlerService:
                         is_excluded = True
                         break
                         
-                if not is_excluded and dest not in self.visited_urls:
+                variants = self._get_url_variants(dest)
+                already_visited = any(v in self.visited_urls for v in variants)
+                if not is_excluded and not already_visited:
                     if len(self.visited_urls) < self.max_pages:
-                        self.visited_urls.add(dest)
+                        for v in variants:
+                            self.visited_urls.add(v)
                         self.queue.put_nowait((dest, current_depth + 1))
+            elif not link["is_internal"] and getattr(self, 'check_external_links', False):
+                clean_ext = self._clean_crawl_url(dest_url)
+                ext_variants = self._get_url_variants(clean_ext)
+                if not any(v in self.visited_urls for v in ext_variants) and len(self.visited_urls) < self.max_pages:
+                    for v in ext_variants:
+                        self.visited_urls.add(v)
+                    asyncio.create_task(self._check_external_link(clean_ext, current_depth + 1))
+
+        # Record Canonical tag as a link if present and different from self
+        canon_dest = metrics.get("canonical_link_element_1")
+        if canon_dest:
+            clean_canon = self._clean_crawl_url(canon_dest)
+            clean_curr = self._clean_crawl_url(url)
+            if clean_canon != clean_curr:
+                db_links.append(Link(
+                    crawl_id=self.crawl_id,
+                    source_page_id=0, # will be populated below
+                    destination_url=canon_dest,
+                    anchor_text="Canonical Tag",
+                    is_follow=True,
+                    link_type="CANONICAL",
+                    is_internal=(urlparse(canon_dest).netloc.lower().replace("www.", "") == self.allowed_domain.replace("www.", ""))
+                ))
                 
         db_images = []
         for img in images:
@@ -711,6 +804,18 @@ class CrawlerService:
         async with self.db_lock:
             try:
                 self.db.add(page)
+                await self.db.flush()
+                # Create a redirect Link row so inlinks for redirect_url are accurately tracked
+                redirect_link = Link(
+                    crawl_id=self.crawl_id,
+                    source_page_id=page.id,
+                    destination_url=redirect_url,
+                    anchor_text=f"{status_code} Redirect",
+                    is_follow=True,
+                    link_type="REDIRECT",
+                    is_internal=(urlparse(redirect_url).netloc.lower().replace("www.", "") == self.allowed_domain.replace("www.", ""))
+                )
+                self.db.add(redirect_link)
                 await self.db.commit()
             except Exception as e:
                 print(f"Error saving redirect page {url} to DB: {e}")
@@ -765,3 +870,74 @@ class CrawlerService:
             except Exception as e:
                 print(f"Error saving error page {url} to DB: {e}")
                 await self.db.rollback()
+
+    async def _check_external_link(self, ext_url: str, depth: int):
+        """Checks external outbound links for broken/404 status without crawling recursively."""
+        try:
+            headers = {'User-Agent': self.user_agent}
+            async with httpx.AsyncClient(verify=False, timeout=8.0, headers=headers) as client:
+                try:
+                    resp = await client.head(ext_url, follow_redirects=True)
+                    if resp.status_code == 405: # Method Not Allowed for HEAD
+                        resp = await client.get(ext_url, follow_redirects=True)
+                except Exception:
+                    resp = await client.get(ext_url, follow_redirects=True)
+                    
+                status_code = resp.status_code
+                content_type = resp.headers.get("content-type", "")
+                status_name = "OK" if status_code == 200 else ("Not Found" if status_code == 404 else f"HTTP {status_code}")
+                
+                page_data = {
+                    "crawl_id": self.crawl_id,
+                    "url": ext_url,
+                    "content_type": content_type,
+                    "status_code": status_code,
+                    "status_name": status_name,
+                    "indexability": IndexabilityStatus.NON_INDEXABLE,
+                    "indexability_status": "External",
+                    "crawl_depth": depth,
+                    "folder_depth": urlparse(ext_url).path.count("/"),
+                    "audit_data": {
+                        "External": {"Status Code": status_code, "Content Type": content_type},
+                        "Response_Codes": {
+                            "Status Code": status_code,
+                            "2xx": 200 <= status_code < 300,
+                            "4xx": 400 <= status_code < 500,
+                            "5xx": status_code >= 500
+                        },
+                        "Indexability": {
+                            "Indexable": False,
+                            "Non-Indexable Reason": "External"
+                        }
+                    }
+                }
+                async with self.db_lock:
+                    try:
+                        self.db.add(Page(**page_data))
+                        await self.db.commit()
+                    except Exception as e:
+                        await self.db.rollback()
+                        print(f"Error saving external link check for {ext_url}: {e}")
+        except Exception as e:
+            page_data = {
+                "crawl_id": self.crawl_id,
+                "url": ext_url,
+                "status_code": 0,
+                "status_name": "Connection Error",
+                "indexability": IndexabilityStatus.NON_INDEXABLE,
+                "indexability_status": "External Error",
+                "crawl_depth": depth,
+                "folder_depth": urlparse(ext_url).path.count("/"),
+                "audit_data": {
+                    "External": {"Status Code": 0, "Error": str(e)},
+                    "Response_Codes": {"Status Code": 0, "Blocked": True, "Error": str(e)},
+                    "Indexability": {"Indexable": False, "Non-Indexable Reason": "External Error"}
+                }
+            }
+            async with self.db_lock:
+                try:
+                    self.db.add(Page(**page_data))
+                    await self.db.commit()
+                except Exception:
+                    await self.db.rollback()
+

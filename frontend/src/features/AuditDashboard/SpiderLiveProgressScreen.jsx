@@ -58,7 +58,7 @@ export default function SpiderLiveProgressScreen({
         variants={staggerContainer(0.06, 0.08)}
         initial="initial"
         animate="animate"
-        className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 sm:p-6 md:p-8 shadow-sm"
+        className="relative overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 md:p-8 shadow-sm"
       >
         {/* Ambient background glow */}
         <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
@@ -68,7 +68,7 @@ export default function SpiderLiveProgressScreen({
           
           {/* Left info & progress */}
           <div className="flex-1 space-y-4 max-w-xl text-center md:text-left w-full">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shadow-2xs">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -77,29 +77,29 @@ export default function SpiderLiveProgressScreen({
             </div>
 
             <div>
-              <h2 className="text-xl sm:text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
                 Auditing Website Architecture
               </h2>
-              <p className="text-xs sm:text-sm font-mono text-indigo-600 font-bold mt-1 truncate">
+              <p className="text-xs sm:text-sm font-mono text-indigo-600 dark:text-indigo-400 font-bold mt-1 truncate">
                 Target: {url || 'Active Website'}
               </p>
             </div>
 
             {/* Stage indicator */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1 text-left">
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-1 text-left">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-900 flex items-center gap-1.5">
-                  <Activity size={14} className="text-indigo-600 animate-pulse shrink-0" />
+                <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Activity size={14} className="text-indigo-600 dark:text-indigo-400 animate-pulse shrink-0" />
                   <span className="truncate">{currentStage.label}</span>
                 </span>
-                <span className="font-mono font-bold text-emerald-700 shrink-0 ml-2">{progress}%</span>
+                <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 shrink-0 ml-2">{progress}%</span>
               </div>
-              <p className="text-[11px] text-slate-500">{currentStage.sub}</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">{currentStage.sub}</p>
             </div>
 
             {/* Glowing Progress bar */}
             <div className="space-y-1.5">
-              <div className="h-2.5 w-full rounded-full bg-slate-100 overflow-hidden border border-slate-200 p-0.5">
+              <div className="h-2.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden border border-slate-200 dark:border-slate-700 p-0.5">
                 <motion.div
                   className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-teal-500 to-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
                   initial={{ width: '0%' }}
@@ -107,10 +107,10 @@ export default function SpiderLiveProgressScreen({
                   transition={{ duration: 0.5, ease: 'easeOut' }}
                 />
               </div>
-              <div className="flex justify-between text-[11px] font-mono text-slate-400">
-                <span>Discovered: <strong className="text-slate-700">{pagesCrawled} URLs</strong></span>
-                <span>Max Depth: <strong className="text-slate-700">{crawlerSettings.maxDepth || 4}</strong></span>
-                <span>Threads: <strong className="text-slate-700">{crawlerSettings.maxConcurrent || 5}</strong></span>
+              <div className="flex justify-between text-[11px] font-mono text-slate-400 dark:text-slate-500">
+                <span>Discovered: <strong className="text-slate-700 dark:text-slate-300">{pagesCrawled} URLs</strong></span>
+                <span>Max Depth: <strong className="text-slate-700 dark:text-slate-300">{crawlerSettings.maxDepth || 4}</strong></span>
+                <span>Threads: <strong className="text-slate-700 dark:text-slate-300">{crawlerSettings.maxConcurrent || 5}</strong></span>
               </div>
             </div>
           </div>
@@ -121,12 +121,12 @@ export default function SpiderLiveProgressScreen({
             <motion.div
               animate={reduced ? undefined : { rotate: 360 }}
               transition={{ repeat: Infinity, duration: 12, ease: 'linear' }}
-              className="absolute inset-0 rounded-full border border-dashed border-indigo-300/80"
+              className="absolute inset-0 rounded-full border border-dashed border-indigo-300/80 dark:border-indigo-500/40"
             />
             <motion.div
               animate={reduced ? undefined : { rotate: -360 }}
               transition={{ repeat: Infinity, duration: 8, ease: 'linear' }}
-              className="absolute inset-4 rounded-full border border-slate-200"
+              className="absolute inset-4 rounded-full border border-slate-200 dark:border-slate-800"
             />
             <motion.div
               animate={reduced ? undefined : { scale: [1, 1.08, 1], opacity: [0.3, 0.7, 0.3] }}
@@ -152,13 +152,13 @@ export default function SpiderLiveProgressScreen({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
         {/* Live Discovered URLs Ticker */}
-        <div className="lg:col-span-2 rounded-3xl bg-white border border-slate-200 p-5 shadow-sm space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="lg:col-span-2 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center gap-2">
-              <Radio size={16} className="text-indigo-600 animate-pulse" />
-              <h3 className="text-sm font-bold text-slate-900">Live Discovered Endpoints Stream</h3>
+              <Radio size={16} className="text-indigo-600 dark:text-indigo-400 animate-pulse" />
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Live Discovered Endpoints Stream</h3>
             </div>
-            <span className="text-[11px] font-mono text-slate-500 font-semibold">
+            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 font-semibold">
               {pages.length} URLs extracted
             </span>
           </div>
@@ -173,21 +173,21 @@ export default function SpiderLiveProgressScreen({
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0 }}
                     transition={tween(duration.fast, ease.outQuart)}
-                    className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs gap-2"
+                    className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 flex items-center justify-between text-xs gap-2"
                   >
                     <div className="flex items-center gap-2 truncate max-w-md">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
                         (page.status_code || 200) >= 400
-                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                          : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                       }`}>
                         {page.status_code || 200}
                       </span>
-                      <span className="font-mono text-slate-700 truncate" title={page.url}>
+                      <span className="font-mono text-slate-700 dark:text-slate-300 truncate" title={page.url}>
                         {page.url}
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                    <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 shrink-0">
                       {page.content_type || 'text/html'}
                     </span>
                   </motion.div>
@@ -203,27 +203,27 @@ export default function SpiderLiveProgressScreen({
         </div>
 
         {/* Real-time Tab Peek Cards */}
-        <div className="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm space-y-4 flex flex-col justify-between">
+        <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4 flex flex-col justify-between">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
-              <Layers size={16} className="text-indigo-600" /> Real-time Live Inspectors
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
+              <Layers size={16} className="text-indigo-600 dark:text-indigo-400" /> Real-time Live Inspectors
             </h3>
-            <p className="text-xs text-slate-500 leading-relaxed mb-4">
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4">
               You can switch to any tab below while the spider is active to inspect real-time tables as new URLs stream in:
             </p>
 
             <div className="space-y-2.5">
               <button
                 onClick={() => onSwitchTab && onSwitchTab('explorer')}
-                className="w-full p-3 rounded-xl bg-slate-50 hover:bg-indigo-50/70 border border-slate-200 hover:border-indigo-200 transition-all text-left flex items-center justify-between group cursor-pointer"
+                className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/50 border border-slate-200 dark:border-slate-700 hover:border-indigo-200 dark:hover:border-indigo-700 transition-all text-left flex items-center justify-between group cursor-pointer"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center">
                     <ListTree size={16} />
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold text-slate-900 group-hover:text-indigo-600">URL Data Grid</h4>
-                    <span className="text-[11px] font-mono text-slate-500">{pages.length} live records</span>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400">URL Data Grid</h4>
+                    <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">{pages.length} live records</span>
                   </div>
                 </div>
                 <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
@@ -231,15 +231,15 @@ export default function SpiderLiveProgressScreen({
 
               <button
                 onClick={() => onSwitchTab && onSwitchTab('issues')}
-                className="w-full p-3 rounded-xl bg-slate-50 hover:bg-rose-50/70 border border-slate-200 hover:border-rose-200 transition-all text-left flex items-center justify-between group cursor-pointer"
+                className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 hover:bg-rose-50/70 dark:hover:bg-rose-950/50 border border-slate-200 dark:border-slate-700 hover:border-rose-200 dark:hover:border-rose-700 transition-all text-left flex items-center justify-between group cursor-pointer"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center justify-center">
                     <AlertTriangle size={16} />
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold text-slate-900 group-hover:text-rose-600">Issues & Diagnostics</h4>
-                    <span className="text-[11px] font-mono text-slate-500">Live rule engine</span>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-rose-600 dark:group-hover:text-rose-400">Issues & Diagnostics</h4>
+                    <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">Live rule engine</span>
                   </div>
                 </div>
                 <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
@@ -247,15 +247,15 @@ export default function SpiderLiveProgressScreen({
 
               <button
                 onClick={() => onSwitchTab && onSwitchTab('performance')}
-                className="w-full p-3 rounded-xl bg-slate-50 hover:bg-amber-50/70 border border-slate-200 hover:border-amber-200 transition-all text-left flex items-center justify-between group cursor-pointer"
+                className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 hover:bg-amber-50/70 dark:hover:bg-amber-950/50 border border-slate-200 dark:border-slate-700 hover:border-amber-200 dark:hover:border-amber-700 transition-all text-left flex items-center justify-between group cursor-pointer"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center justify-center">
                     <Zap size={16} />
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold text-slate-900 group-hover:text-amber-600">Speed & Core Vitals</h4>
-                    <span className="text-[11px] font-mono text-slate-500">PageSpeed inspector</span>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400">Speed & Core Vitals</h4>
+                    <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">PageSpeed inspector</span>
                   </div>
                 </div>
                 <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
@@ -263,7 +263,7 @@ export default function SpiderLiveProgressScreen({
             </div>
           </div>
 
-          <div className="text-[11px] font-mono text-slate-400 text-center pt-2 border-t border-slate-100">
+          <div className="text-[11px] font-mono text-slate-400 dark:text-slate-500 text-center pt-2 border-t border-slate-100 dark:border-slate-800">
             Final synthesis reveals automatically on completion
           </div>
         </div>

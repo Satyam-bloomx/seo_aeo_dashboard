@@ -28,13 +28,14 @@ import { toast } from 'sonner';
 import ApiKeyModal from './ApiKeyModal';
 import IntegrationsWorkspace from './IntegrationsWorkspace';
 import { API_BASE_URL } from '@/api/client';
+import { copyToClipboard } from '@/utils/clipboard';
 
 const API_INTEGRATIONS = [
   {
     id: 'pagespeed',
     name: 'Google PageSpeed Insights',
     category: 'Speed & Vitals',
-    categoryColor: 'bg-amber-50 text-amber-700 border-amber-200',
+    categoryColor: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50',
     description: 'Retrieves live mobile & desktop Lighthouse performance scores, Core Web Vitals (LCP, CLS, INP), and speed opportunities.',
     authType: 'api_key',
     icon: <Zap className="text-amber-500" size={24} />,
@@ -45,7 +46,7 @@ const API_INTEGRATIONS = [
     id: 'openai',
     name: 'OpenAI GPT-4o Engine',
     category: 'AEO Voice & LLM',
-    categoryColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    categoryColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50',
     description: 'Enriches page content with AI Answer Engine Optimization (AEO) readiness, conversational voice search score, and extractability.',
     authType: 'api_key',
     icon: <Sparkles className="text-emerald-600" size={24} />,
@@ -56,7 +57,7 @@ const API_INTEGRATIONS = [
     id: 'perplexity',
     name: 'Perplexity AI Citations',
     category: 'AEO Voice & LLM',
-    categoryColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    categoryColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50',
     description: 'Performs live generative citation audits to benchmark whether your domain is cited in conversational AI search results.',
     authType: 'api_key',
     icon: <Globe className="text-cyan-600" size={24} />,
@@ -67,7 +68,7 @@ const API_INTEGRATIONS = [
     id: 'serpapi',
     name: 'SerpAPI Search Engine',
     category: 'GEO Local Search',
-    categoryColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    categoryColor: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900/50',
     description: 'Pulls live Google Search & Maps Local 3-Pack rank, SERP features (Featured Snippets, Knowledge Panels), and competitor positioning.',
     authType: 'api_key',
     icon: <Search className="text-indigo-600" size={24} />,
@@ -78,7 +79,7 @@ const API_INTEGRATIONS = [
     id: 'google_business',
     name: 'Google Business Profile',
     category: 'GEO Local Search',
-    categoryColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    categoryColor: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900/50',
     description: 'Verifies Name-Address-Phone (NAP) consistency, Google Maps location accuracy, and local business schema synchronization.',
     authType: 'api_key',
     icon: <MapPin className="text-rose-600" size={24} />,
@@ -89,7 +90,7 @@ const API_INTEGRATIONS = [
     id: 'google_analytics',
     name: 'Google Analytics 4 (GA4)',
     category: 'Analytics & Traffic',
-    categoryColor: 'bg-blue-50 text-blue-700 border-blue-200',
+    categoryColor: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/50',
     description: 'Imports live page sessions, bounce rates, average engagement duration, and organic conversion paths for crawled URLs.',
     authType: 'oauth',
     icon: <BarChart3 className="text-orange-500" size={24} />,
@@ -100,7 +101,7 @@ const API_INTEGRATIONS = [
     id: 'search_console',
     name: 'Google Search Console',
     category: 'Analytics & Traffic',
-    categoryColor: 'bg-blue-50 text-blue-700 border-blue-200',
+    categoryColor: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/50',
     description: 'Imports verified search queries, organic impressions, clicks, average SERP position, and Google URL indexation status.',
     authType: 'oauth',
     icon: <Globe className="text-blue-600" size={24} />,
@@ -111,7 +112,7 @@ const API_INTEGRATIONS = [
 
 const CATEGORIES = ['All', 'Speed & Vitals', 'AEO Voice & LLM', 'GEO Local Search', 'Analytics & Traffic'];
 
-export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedUrl = null }) {
+export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedUrl = null, onAuditProperty = null }) {
   const [integrations, setIntegrations] = useState({});
   const [activeModal, setActiveModal] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
@@ -124,6 +125,13 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
   const [gscProperties, setGscProperties] = useState([]);
   const [selectedGscProperty, setSelectedGscProperty] = useState('');
   const [loadingProperties, setLoadingProperties] = useState(false);
+
+  // GA4 Properties & Manual Override State
+  const [ga4Properties, setGa4Properties] = useState([]);
+  const [selectedGa4Property, setSelectedGa4Property] = useState('');
+  const [manualGa4PropertyId, setManualGa4PropertyId] = useState('');
+  const [loadingGa4Properties, setLoadingGa4Properties] = useState(false);
+  const [isSavingGa4Property, setIsSavingGa4Property] = useState(false);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -141,6 +149,15 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
         Object.assign(map, data);
       }
       setIntegrations(map);
+      
+      // Sync selected properties from DB status
+      if (map['search_console']?.selected_property) {
+        setSelectedGscProperty(map['search_console'].selected_property);
+      }
+      if (map['google_analytics']?.selected_property) {
+        setSelectedGa4Property(map['google_analytics'].selected_property);
+        setManualGa4PropertyId(map['google_analytics'].selected_property.replace(/^properties\//, ''));
+      }
     } catch (e) {
       console.warn("Could not fetch integrations status:", e);
     } finally {
@@ -168,6 +185,28 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
     }
   }, [projectId, integrations]);
 
+  const fetchGa4Properties = useCallback(async () => {
+    if (!integrations['google_analytics']?.connected) return;
+    try {
+      setLoadingGa4Properties(true);
+      const res = await axios.get(`${API_BASE_URL}/integrations/google/properties/${projectId}?service=google_analytics`);
+      if (res.data?.properties) {
+        setGa4Properties(res.data.properties);
+      }
+      if (res.data?.selected_property) {
+        setSelectedGa4Property(res.data.selected_property);
+        setManualGa4PropertyId(res.data.selected_property.replace(/^properties\//, ''));
+      } else if (integrations['google_analytics']?.selected_property) {
+        setSelectedGa4Property(integrations['google_analytics'].selected_property);
+        setManualGa4PropertyId(integrations['google_analytics'].selected_property.replace(/^properties\//, ''));
+      }
+    } catch (err) {
+      console.warn('Failed to fetch GA4 properties:', err);
+    } finally {
+      setLoadingGa4Properties(false);
+    }
+  }, [projectId, integrations]);
+
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
@@ -177,6 +216,38 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       fetchGscProperties();
     }
   }, [integrations, fetchGscProperties]);
+
+  useEffect(() => {
+    if (integrations['google_analytics']?.connected) {
+      fetchGa4Properties();
+    }
+  }, [integrations, fetchGa4Properties]);
+
+  const handleSelectGa4Property = async (propId) => {
+    if (!propId || !propId.trim()) {
+      toast.warning('Please enter a valid GA4 Property ID (numeric)');
+      return;
+    }
+    const cleanId = propId.trim().startsWith('properties/') ? propId.trim() : `properties/${propId.trim()}`;
+    setSelectedGa4Property(cleanId);
+    setManualGa4PropertyId(cleanId.replace(/^properties\//, ''));
+    setIsSavingGa4Property(true);
+    try {
+      await axios.post(`${API_BASE_URL}/integrations/google/select-property`, {
+        project_id: projectId,
+        service: 'google_analytics',
+        property_url: cleanId
+      });
+      toast.success('GA4 Property Saved & Synchronized', {
+        description: `Active Property: ${cleanId}`
+      });
+      fetchStatus();
+    } catch (e) {
+      toast.error('Failed to save selected GA4 property');
+    } finally {
+      setIsSavingGa4Property(false);
+    }
+  };
 
   const handleSelectProperty = async (propertyUrl) => {
     setSelectedGscProperty(propertyUrl);
@@ -293,12 +364,13 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
     }
   };
 
-  const handleCopyKey = (keyId, text) => {
+  const handleCopyKey = async (keyId, text) => {
     if (!text) return;
-    navigator.clipboard.writeText(text);
-    setCopiedKeyId(keyId);
-    toast.success("Masked key reference copied to clipboard");
-    setTimeout(() => setCopiedKeyId(null), 2000);
+    const ok = await copyToClipboard(text, "Key reference");
+    if (ok) {
+      setCopiedKeyId(keyId);
+      setTimeout(() => setCopiedKeyId(null), 2000);
+    }
   };
 
   const connectedCount = useMemo(() => {
@@ -318,6 +390,10 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
         initialService={workspaceService}
         onBackToGrid={() => setViewMode('grid')}
         integrationsStatus={integrations}
+        onOpenModal={(item) => setActiveModal(item)}
+        onOAuthConnect={(svc) => handleOAuthConnect(svc)}
+        onRefreshStatus={fetchStatus}
+        onAuditProperty={onAuditProperty}
       />
     );
   }
@@ -328,21 +404,21 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-            <Layers className="text-indigo-600" size={24} />
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
+            <Layers className="text-indigo-600 dark:text-indigo-400" size={24} />
             API Integrations Hub
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             Connect enterprise APIs to enrich live crawler audits with Core Web Vitals, AEO Voice & LLM Readiness, and GEO Local data.
           </p>
         </div>
 
         <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-2xs">
             <button
               onClick={() => setViewMode('grid')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                viewMode === 'grid' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                viewMode === 'grid' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               <Layers size={13} />
@@ -351,13 +427,13 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
             <button
               onClick={() => setViewMode('workspace')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                viewMode === 'workspace' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                viewMode === 'workspace' ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               <BarChart3 size={13} />
               Live Workspace
               {connectedCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-50 text-indigo-700 font-mono font-bold">
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-mono font-bold">
                   {connectedCount}
                 </span>
               )}
@@ -382,7 +458,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
               transition={spring.press}
               className="flex"
             >
-              <RefreshCw size={14} className={loadingStatus ? 'animate-spin text-indigo-600' : 'text-slate-500'} />
+              <RefreshCw size={14} className={loadingStatus ? 'animate-spin text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'} />
             </motion.span>
             Refresh Status
           </motion.button>
@@ -390,30 +466,30 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       </div>
 
       {/* Live Status Telemetry Banner */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-50/80 via-purple-50/30 to-emerald-50/70 border border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs shrink-0">
+      <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-50/80 via-purple-50/30 to-emerald-50/70 dark:from-indigo-950/40 dark:via-slate-900/60 dark:to-emerald-950/30 border border-indigo-100 dark:border-indigo-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs shrink-0">
         <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-xl bg-white border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0 shadow-xs">
+          <div className="w-11 h-11 rounded-xl bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800/80 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0 shadow-xs">
             <ShieldCheck size={22} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider font-mono">Live Audit Enrichment Status</h4>
-              <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-indigo-100 text-indigo-800">
+              <h4 className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider font-mono">Live Audit Enrichment Status</h4>
+              <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300">
                 {connectedCount} of {API_INTEGRATIONS.length} Active
               </span>
             </div>
-            <p className="text-xs text-slate-600 mt-1">
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
               Active APIs automatically hook into the crawl pipeline to enrich URLs with AI benchmarks and real performance metrics.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 text-xs font-mono font-bold bg-white border border-slate-200 px-4 py-2 rounded-xl shrink-0 shadow-xs">
+        <div className="flex items-center gap-2.5 text-xs font-mono font-bold bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl shrink-0 shadow-xs">
           <span className="relative flex h-2.5 w-2.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
           </span>
-          <span className="text-slate-800">
+          <span className="text-slate-800 dark:text-slate-200">
             {connectedCount > 0 ? `${connectedCount} Engines Synchronized` : 'Enrichment Engine Ready'}
           </span>
         </div>
@@ -437,7 +513,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                 className={`relative px-3.5 py-2 rounded-xl text-xs font-bold transition-colors shrink-0 flex items-center gap-2 cursor-pointer select-none ${
                   isSelected
                     ? 'text-white'
-                    : 'text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200/80 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 shadow-xs'
                 }`}
               >
                 {/* Gliding active indicator pill */}
@@ -445,12 +521,12 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                   <motion.span
                     layoutId="active-integration-category"
                     transition={spring.snap}
-                    className="absolute inset-0 -z-10 rounded-xl bg-slate-900 shadow-xs"
+                    className="absolute inset-0 -z-10 rounded-xl bg-slate-900 dark:bg-indigo-600 shadow-xs"
                   />
                 )}
                 <span>{category}</span>
                 <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                  isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                  isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
                 }`}>
                   {count}
                 </span>
@@ -482,8 +558,8 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
               transition={spring.press}
               className={`p-5 rounded-2xl transition-all border flex flex-col justify-between ${
                 isConnected
-                  ? 'bg-white border-emerald-400/80 shadow-xs ring-1 ring-emerald-400/20'
-                  : 'bg-white border-slate-200 shadow-xs hover:border-slate-300'
+                  ? 'bg-white dark:bg-slate-900/90 border-emerald-400/80 dark:border-emerald-500/60 shadow-xs ring-1 ring-emerald-400/20'
+                  : 'bg-white dark:bg-slate-900/90 border-slate-200 dark:border-slate-800 shadow-xs hover:border-slate-300 dark:hover:border-slate-700'
               }`}
             >
               <div>
@@ -491,13 +567,13 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-xs shrink-0 border ${
-                      isConnected ? 'bg-emerald-50/60 border-emerald-200' : 'bg-slate-50 border-slate-200'
+                      isConnected ? 'bg-emerald-50/60 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60' : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60'
                     }`}>
                       {item.icon}
                     </div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-sm font-bold text-slate-900">{item.name}</h3>
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">{item.name}</h3>
                         <AnimatePresence mode="wait" initial={false}>
                           {isConnected ? (
                             <motion.span
@@ -506,7 +582,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                               animate={{ opacity: 1, scale: 1 }}
                               exit={{ opacity: 0, scale: 0.8 }}
                               transition={spring.soft}
-                              className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-300/80 px-2.5 py-0.5 rounded-full shadow-2xs"
+                              className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300/80 dark:border-emerald-700/60 px-2.5 py-0.5 rounded-full shadow-2xs"
                             >
                               <span className="relative flex h-2 w-2">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -521,7 +597,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                               animate={{ opacity: 1, scale: 1 }}
                               exit={{ opacity: 0, scale: 0.8 }}
                               transition={spring.soft}
-                              className="text-[10px] font-mono font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200"
+                              className="text-[10px] font-mono font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700"
                             >
                               Disconnected
                             </motion.span>
@@ -538,14 +614,14 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                     href={item.docUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-slate-400 hover:text-indigo-600 transition-colors p-1"
+                    className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors p-1"
                     title="API Documentation"
                   >
                     <ExternalLink size={15} />
                   </a>
                 </div>
 
-                <p className="text-xs text-slate-600 leading-relaxed mb-4">{item.description}</p>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-4">{item.description}</p>
 
                 {/* Masked Key Display for Connected API Keys */}
                 <AnimatePresence initial={false}>
@@ -556,12 +632,12 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
                       transition={spring.soft}
-                      className="mb-4 flex items-center justify-between text-[11px] font-mono bg-slate-50/90 px-3 py-2 rounded-xl border border-slate-200 text-slate-700"
+                      className="mb-4 flex items-center justify-between text-[11px] font-mono bg-slate-50/90 dark:bg-slate-800/70 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
                     >
                       <div className="flex items-center gap-1.5 truncate">
-                        <Key size={12} className="text-emerald-600 shrink-0" />
-                        <span className="text-slate-500">{item.authType === 'oauth' ? 'OAuth Token:' : 'API Key:'}</span>
-                        <span className="text-emerald-700 font-bold tracking-wider truncate">
+                        <Key size={12} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span className="text-slate-500 dark:text-slate-400">{item.authType === 'oauth' ? 'OAuth Token:' : 'API Key:'}</span>
+                        <span className="text-emerald-700 dark:text-emerald-400 font-bold tracking-wider truncate">
                           {maskedKey || (item.authType === 'oauth' ? 'Verified OAuth 2.0 Session' : '••••••••••••••••')}
                         </span>
                       </div>
@@ -569,30 +645,65 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         <button
                           onClick={() => handleCopyKey(item.id, maskedKey)}
                           title="Copy masked reference"
-                          className="text-slate-400 hover:text-slate-700 p-1 shrink-0 transition-colors"
+                          className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 shrink-0 transition-colors cursor-pointer"
                         >
-                          {copiedKeyId === item.id ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                          {copiedKeyId === item.id ? <Check size={13} className="text-emerald-600 dark:text-emerald-400" /> : <Copy size={13} />}
                         </button>
                       )}
                     </motion.div>
                   )}
                 </AnimatePresence>
 
+                {/* Account Email Badge */}
+                {item.account_email && isConnected && (
+                  <div className="mb-3 flex items-center justify-between text-[11px] font-mono bg-blue-50/60 dark:bg-blue-950/30 px-3 py-1.5 rounded-xl border border-blue-200 dark:border-blue-900/50 text-blue-950 dark:text-blue-200">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <Globe size={12} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                      <span className="text-slate-500 dark:text-slate-400">Account:</span>
+                      <span className="font-bold truncate">{item.account_email}</span>
+                    </div>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold shrink-0">Authorized</span>
+                  </div>
+                )}
+
+                {/* Permission Error Callout */}
+                {item.permission_error && isConnected && (
+                  <div className="mb-3 p-3 rounded-xl text-xs bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <AlertCircle size={14} className="text-amber-600 shrink-0" />
+                      <span>Google API Permission Notice</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed font-mono">
+                      {item.permission_error}
+                    </p>
+                    {item.permission_error.includes('analyticsdata') && (
+                      <a
+                        href="https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] text-indigo-700 dark:text-indigo-400 font-bold hover:underline"
+                      >
+                        Enable Google Analytics Data API in Cloud Console <ExternalLink size={11} />
+                      </a>
+                    )}
+                  </div>
+                )}
+
                 {/* Screaming Frog Standard: Verified Google Property Selector */}
                 {item.id === 'search_console' && isConnected && (
-                  <div className="mb-4 p-3 rounded-xl bg-blue-50/70 border border-blue-200">
+                  <div className="mb-4 p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60">
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
-                        <Globe size={13} className="text-blue-600" />
+                      <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <Globe size={13} className="text-blue-600 dark:text-blue-400" />
                         Selected Search Console Property
                       </span>
-                      {loadingProperties && <RefreshCw size={12} className="animate-spin text-blue-600" />}
+                      {loadingProperties && <RefreshCw size={12} className="animate-spin text-blue-600 dark:text-blue-400" />}
                     </div>
                     {gscProperties.length > 0 ? (
                       <select
                         value={selectedGscProperty}
                         onChange={(e) => handleSelectProperty(e.target.value)}
-                        className="w-full text-xs font-mono bg-white border border-blue-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-2xs"
+                        className="w-full text-xs font-mono bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-2xs"
                       >
                         {gscProperties.map((p) => (
                           <option key={p.siteUrl} value={p.siteUrl}>
@@ -601,14 +712,96 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         ))}
                       </select>
                     ) : (
-                      <div className="flex items-center justify-between text-[11px] text-slate-600 font-mono">
+                      <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 font-mono">
                         <span>{loadingProperties ? 'Querying verified web properties...' : 'Using default seed URL domain.'}</span>
                         <button
                           onClick={fetchGscProperties}
-                          className="text-xs text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
+                          className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold underline cursor-pointer"
                         >
                           Refresh
                         </button>
+                      </div>
+                    )}
+                    {onAuditProperty && selectedGscProperty && (
+                      <div className="mt-2 pt-2 border-t border-blue-200/60 dark:border-blue-900/40 flex items-center justify-between">
+                        <span className="text-[10px] text-blue-700 dark:text-blue-300 font-mono truncate max-w-[180px]">
+                          Target: {selectedGscProperty}
+                        </span>
+                        <button
+                          onClick={() => onAuditProperty(selectedGscProperty)}
+                          className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                        >
+                          <Zap size={11} />
+                          <span>Audit This Property</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Screaming Frog Standard: Verified GA4 Property Selector & Manual Override */}
+                {item.id === 'google_analytics' && isConnected && (
+                  <div className="mb-4 p-3 rounded-xl bg-orange-50/70 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/60 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <BarChart3 size={13} className="text-orange-600 dark:text-orange-400" />
+                        Target GA4 Property
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {loadingGa4Properties && <RefreshCw size={12} className="animate-spin text-orange-600 dark:text-orange-400" />}
+                        <button
+                          type="button"
+                          onClick={fetchGa4Properties}
+                          title="Refresh GA4 properties"
+                          className="text-[10px] text-orange-700 dark:text-orange-300 hover:underline font-bold cursor-pointer"
+                        >
+                          Refresh
+                        </button>
+                      </div>
+                    </div>
+
+                    {ga4Properties.length > 0 ? (
+                      <select
+                        value={selectedGa4Property || item.selected_property || ''}
+                        onChange={(e) => handleSelectGa4Property(e.target.value)}
+                        className="w-full text-xs font-mono bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500/20 shadow-2xs"
+                      >
+                        <option value="">-- Choose GA4 Property --</option>
+                        {ga4Properties.map((p) => (
+                          <option key={p.name || p.propertyId} value={p.name || `properties/${p.propertyId}`}>
+                            {p.displayName || p.name} ({p.propertyId || p.name})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={manualGa4PropertyId}
+                            onChange={(e) => setManualGa4PropertyId(e.target.value)}
+                            placeholder="GA4 Property ID (e.g. 349182749)"
+                            className="flex-1 text-xs font-mono bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 shadow-2xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSelectGa4Property(manualGa4PropertyId)}
+                            disabled={isSavingGa4Property || !manualGa4PropertyId.trim()}
+                            className="px-2.5 py-1.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors shadow-2xs whitespace-nowrap"
+                          >
+                            {isSavingGa4Property ? 'Saving...' : 'Set & Sync'}
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
+                          Find your numeric Property ID in GA4 &gt; Admin &gt; Property Settings.
+                        </p>
+                      </div>
+                    )}
+
+                    {(selectedGa4Property || item.selected_property) && (
+                      <div className="flex items-center justify-between text-[10px] font-mono text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-800">
+                        <span className="truncate">Active: {selectedGa4Property || item.selected_property}</span>
+                        <Check size={11} className="shrink-0" />
                       </div>
                     )}
                   </div>
@@ -625,20 +818,20 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                       transition={spring.soft}
                       className={`mb-4 p-3 rounded-xl text-xs font-mono border flex items-center justify-between gap-2 ${
                         testRes.status === 'success'
-                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
                           : testRes.status === 'error'
-                          ? 'bg-rose-50 border-rose-200 text-rose-800'
-                          : 'bg-indigo-50 border-indigo-200 text-indigo-800'
+                          ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                          : 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300'
                       }`}
                     >
                       <div className="flex items-center gap-2 truncate">
-                        {testRes.status === 'success' && <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />}
-                        {testRes.status === 'error' && <AlertCircle size={15} className="text-rose-600 shrink-0" />}
-                        {testRes.status === 'testing' && <RefreshCw size={14} className="animate-spin text-indigo-600 shrink-0" />}
+                        {testRes.status === 'success' && <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />}
+                        {testRes.status === 'error' && <AlertCircle size={15} className="text-rose-600 dark:text-rose-400 shrink-0" />}
+                        {testRes.status === 'testing' && <RefreshCw size={14} className="animate-spin text-indigo-600 dark:text-indigo-400 shrink-0" />}
                         <span className="truncate">{testRes.status === 'testing' ? 'Verifying live credentials...' : testRes.message}</span>
                       </div>
                       {testRes.latency_ms && (
-                        <span className="text-[10px] text-emerald-700 bg-white/80 border border-emerald-200 px-2 py-0.5 rounded-md font-bold shrink-0">
+                        <span className="text-[10px] text-emerald-700 dark:text-emerald-300 bg-white/80 dark:bg-slate-900/80 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md font-bold shrink-0">
                           {testRes.latency_ms}ms
                         </span>
                       )}
@@ -648,7 +841,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
               </div>
 
               {/* Action Buttons */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
                 {isConnected ? (
                   <>
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -671,16 +864,16 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         disabled={isTesting}
                         whileTap={tapPress}
                         transition={spring.press}
-                        className="btn-secondary py-1.5 px-2.5 text-xs font-bold gap-1.5 text-slate-700 shadow-2xs"
+                        className="btn-secondary py-1.5 px-2.5 text-xs font-bold gap-1.5 text-slate-700 dark:text-slate-200 shadow-2xs"
                       >
-                        <Play size={12} className={isTesting ? "animate-spin text-indigo-600" : "text-indigo-600"} />
+                        <Play size={12} className={isTesting ? "animate-spin text-indigo-600 dark:text-indigo-400" : "text-indigo-600 dark:text-indigo-400"} />
                         {isTesting ? "Testing..." : "Test"}
                       </motion.button>
                       <motion.button
                         onClick={() => setActiveModal(item)}
                         whileTap={tapPress}
                         transition={spring.press}
-                        className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 font-semibold px-2.5 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+                        className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-semibold px-2.5 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                       >
                         <Edit3 size={12} />
                         Update
@@ -689,7 +882,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         onClick={() => handleDisconnect(item.id)}
                         whileTap={tapPress}
                         transition={spring.press}
-                        className="flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700 font-semibold px-2.5 py-1 rounded-lg hover:bg-rose-50 transition-colors"
+                        className="flex items-center gap-1 text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 font-semibold px-2.5 py-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors cursor-pointer"
                       >
                         <Trash2 size={12} />
                         Disconnect
@@ -708,15 +901,26 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         <Key size={14} /> Configure API Key
                       </motion.button>
                     ) : (
-                      <motion.button
-                        onClick={() => setActiveModal(item)}
-                        whileTap={tapPress}
-                        transition={spring.press}
-                        className="w-full btn-primary py-2 text-xs font-bold gap-2 shadow-xs cursor-pointer"
-                        title="Configure User-Defined OAuth (Client ID & Secret)"
-                      >
-                        <Sliders size={14} /> Configure OAuth Application
-                      </motion.button>
+                      <div className="w-full flex items-center gap-2">
+                        <motion.button
+                          onClick={() => handleOAuthConnect(item.id)}
+                          whileTap={tapPress}
+                          transition={spring.press}
+                          className="flex-1 btn-primary py-2 text-xs font-bold gap-2 shadow-xs cursor-pointer"
+                          title="1-Click Connect with Google"
+                        >
+                          <Globe size={14} /> Connect with Google
+                        </motion.button>
+                        <motion.button
+                          onClick={() => setActiveModal(item)}
+                          whileTap={tapPress}
+                          transition={spring.press}
+                          className="p-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl cursor-pointer"
+                          title="Configure Custom OAuth Client ID / Secret"
+                        >
+                          <Sliders size={14} />
+                        </motion.button>
+                      </div>
                     )}
                   </>
                 )}

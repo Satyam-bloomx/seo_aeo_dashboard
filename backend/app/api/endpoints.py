@@ -4,13 +4,33 @@ from sqlalchemy.future import select
 from sqlalchemy import func
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
+import re
+from urllib.parse import urlparse
 
 from app.core.database import get_db, AsyncSessionLocal
-from app.models.domain import Project, Crawl, Page, Link
+from app.models.domain import Project, Crawl, Page, Link, Integration
 from app.models.schemas import CrawlRequest, CrawlResponse, PageSummary, LinkSummary
 from app.services.crawler import CrawlerService
 
 router = APIRouter()
+
+def normalize_seed_url(url: str) -> str:
+    url = url.strip()
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "https://" + url
+    parsed = urlparse(url)
+    scheme = (parsed.scheme or "https").lower()
+    netloc = parsed.netloc.lower()
+    if netloc.endswith(":80") and scheme == "http":
+        netloc = netloc[:-3]
+    elif netloc.endswith(":443") and scheme == "https":
+        netloc = netloc[:-4]
+    path = parsed.path or "/"
+    path = re.sub(r'/{2,}', '/', path)
+    if not path:
+        path = "/"
+    query = f"?{parsed.query}" if parsed.query else ""
+    return f"{scheme}://{netloc}{path}{query}"
 
 async def _cleanup_old_crawls(db: AsyncSession):
     try:
@@ -73,6 +93,9 @@ async def _run_crawler_task(crawl_id: int, seed_url: str, request: CrawlRequest)
 
 @router.post("/crawls", response_model=CrawlResponse)
 async def start_crawl(request: CrawlRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    # Normalize seed URL to RFC 3986 format with root trailing slash
+    request.seed_url = normalize_seed_url(request.seed_url)
+
     # Clean up old data before starting a new crawl to save space
     try:
         await _cleanup_old_crawls(db)
@@ -108,6 +131,15 @@ async def start_crawl(request: CrawlRequest, background_tasks: BackgroundTasks, 
     return crawl
 
 
+@router.delete("/crawls")
+async def clear_all_crawls(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Crawl))
+    crawls = result.scalars().all()
+    for crawl in crawls:
+        await db.delete(crawl)
+    await db.commit()
+    return {"message": "All audit crawl data cleared successfully", "cleared_count": len(crawls)}
+
 @router.get("/crawls")
 async def list_crawls(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Crawl).order_by(Crawl.id.asc()))
@@ -137,7 +169,7 @@ async def get_crawl_status(crawl_id: int, db: AsyncSession = Depends(get_db)):
     }
 
 @router.get("/crawls/{crawl_id}/pages", response_model=List[PageSummary])
-async def get_crawl_pages(crawl_id: int, filter: str = "internal", skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
+async def get_crawl_pages(crawl_id: int, filter: str = "internal", skip: int = 0, limit: int = 1000, db: AsyncSession = Depends(get_db)):
     query = select(Page).where(Page.crawl_id == crawl_id)
     
     if filter == "internal":
@@ -482,3 +514,168 @@ async def generate_ai_executive_summary(req: AiExecutiveSummaryRequest, db: Asyn
     }
 
 
+
+
+class AiDiagnoseIssueRequest(BaseModel):
+    project_id: int = 1
+    issue_name: str
+    category: Optional[str] = None
+    domain: Optional[str] = None
+    total_affected: Optional[int] = 1
+    sample_pages: Optional[List[Dict[str, Any]]] = None
+    api_key: Optional[str] = None
+    ai_provider: Optional[str] = None
+
+# Global in-memory cache to guarantee zero duplicate token consumption
+AI_ISSUE_DIAGNOSES_CACHE: Dict[str, Dict[str, Any]] = {}
+
+@router.post("/audits/ai-diagnose-issue")
+async def generate_ai_issue_diagnosis(req: AiDiagnoseIssueRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Token-optimized AI issue diagnosis engine.
+    Synthesizes custom human-friendly root cause, impact, fix guide, before/after examples,
+    and pro-tips tailored to the specific audited website and affected page sample.
+    """
+    raw_domain = req.domain or "target-website.com"
+    clean_domain = raw_domain.lower().replace("https://", "").replace("http://", "").split("/")[0]
+    cache_key = f"{clean_domain}:{req.issue_name}"
+
+    if cache_key in AI_ISSUE_DIAGNOSES_CACHE:
+        cached = AI_ISSUE_DIAGNOSES_CACHE[cache_key]
+        return {**cached, "cached": True}
+
+    # 1. Resolve API Keys (Gemini preferred for speed/tokens, OpenAI also supported)
+    gemini_key = None
+    openai_key = None
+
+    if req.api_key:
+        if req.api_key.startswith("AIza") or req.ai_provider == "gemini":
+            gemini_key = req.api_key
+        elif req.api_key.startswith("sk-") or req.ai_provider == "openai":
+            openai_key = req.api_key
+
+    if not gemini_key:
+        gemini_key = os.getenv("GEMINI_API_KEY")
+
+    if not openai_key:
+        try:
+            res_int = await db.execute(
+                select(Integration).where(
+                    Integration.project_id == req.project_id,
+                    Integration.integration_type == "openai",
+                    Integration.connected == True
+                )
+            )
+            item = res_int.scalars().first()
+            openai_key = item.api_key if item else os.getenv("OPENAI_API_KEY")
+        except Exception:
+            openai_key = os.getenv("OPENAI_API_KEY")
+
+    # 2. Build strictly bounded, token-efficient prompt (under 250 input tokens)
+    samples = []
+    if req.sample_pages:
+        for p in req.sample_pages[:2]:
+            u = p.get("url", "")
+            t = (p.get("title_1") or p.get("title") or "")[:85]
+            h = (p.get("h1_1") or p.get("h1") or "")[:85]
+            m = (p.get("meta_desc_1") or p.get("meta_desc") or "")[:120]
+            st = p.get("status_code", 200)
+            samples.append(f"- URL: {u} (Status {st}) | Title: '{t}' | H1: '{h}' | Meta: '{m}'")
+
+    sample_summary = "\n".join(samples) if samples else "No specific page sample provided."
+
+    system_prompt = (
+        "You are an elite Principal Technical SEO & Answer Engine Optimization (AEO) Architect. "
+        "Output strictly valid JSON with exact keys: "
+        "'rootCause' (string, max 45 words: plain English explanation of what is happening on these pages), "
+        "'impact' (string, max 45 words: why this hurts search traffic, click-through rate, and AI search citations), "
+        "'fixGuide' (string, max 60 words: numbered step-by-step fix guide), "
+        "'exampleBefore' (string: exact bad HTML/markup or pattern found on this site), "
+        "'exampleAfter' (string: production-ready recommended fix with brand suffix), "
+        "'tip' (string, max 30 words: high-leverage strategic pro-tip)."
+    )
+
+    user_prompt = (
+        f"Domain: {clean_domain}\n"
+        f"Diagnostic Issue: {req.issue_name} (Category: {req.category or 'SEO'})\n"
+        f"Total Affected URLs: {req.total_affected}\n"
+        f"Sample Offending Page(s):\n{sample_summary}\n\n"
+        "Provide an executive, human-friendly, highly tailored technical diagnosis and solution for this specific website."
+    )
+
+    # 3. Try Gemini 2.5 Flash first (blazing fast, high reasoning, budget-controlled)
+    if gemini_key:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+            payload = {
+                "contents": [
+                    {"role": "user", "parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}
+                ],
+                "generationConfig": {
+                    "responseMimeType": "application/json",
+                    "maxOutputTokens": 600,
+                    "thinkingConfig": {"thinkingBudget": 0}
+                }
+            }
+            async with httpx.AsyncClient(timeout=14.0) as client:
+                res = await client.post(url, json=payload)
+                if res.status_code == 200:
+                    cand = res.json()["candidates"][0]
+                    content_str = cand["content"]["parts"][0]["text"]
+                    parsed = json.loads(content_str)
+                    result = {
+                        "success": True,
+                        "powered_by": "Google Gemini 2.5 Flash",
+                        "is_live_ai": True,
+                        "data": parsed
+                    }
+                    AI_ISSUE_DIAGNOSES_CACHE[cache_key] = result
+                    return result
+        except Exception as e:
+            print(f"Gemini live diagnosis error: {e}")
+
+    # 4. Try OpenAI (GPT-4o-mini)
+    if openai_key and ("sk-" in openai_key or "proj" in openai_key):
+        try:
+            async with httpx.AsyncClient(timeout=14.0) as client:
+                res = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {openai_key}"},
+                    json={
+                        "model": "gpt-4o-mini",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "response_format": {"type": "json_object"},
+                        "max_tokens": 500
+                    }
+                )
+                if res.status_code == 200:
+                    payload = res.json()
+                    ai_content = json.loads(payload["choices"][0]["message"]["content"])
+                    result = {
+                        "success": True,
+                        "powered_by": "OpenAI GPT-4o-mini",
+                        "is_live_ai": True,
+                        "data": ai_content
+                    }
+                    AI_ISSUE_DIAGNOSES_CACHE[cache_key] = result
+                    return result
+        except Exception as e:
+            print(f"OpenAI live diagnosis error: {e}")
+
+    # 5. Smart fallback when no key is active
+    return {
+        "success": True,
+        "powered_by": "Curated SEO Knowledge Base (Connect Gemini or OpenAI API Key for dynamic site-specific analysis)",
+        "is_live_ai": False,
+        "data": {
+            "rootCause": f"Condition '{req.issue_name}' detected on {req.total_affected} URL(s) on {clean_domain}.",
+            "impact": "Impairs search engine indexing hierarchy, click-through rate in SERPs, and conversational answer engine visibility.",
+            "fixGuide": "1. Audit affected page templates.\n2. Update HTML markup to comply with search engine guidelines.\n3. Re-crawl to verify resolution.",
+            "exampleBefore": f"<!-- Issue on {clean_domain}: {req.issue_name} -->",
+            "exampleAfter": f"<!-- Recommended standard markup for {clean_domain} -->",
+            "tip": "Align your on-page elements to distinguish visitor-facing headlines from search-facing snippets."
+        }
+    }
