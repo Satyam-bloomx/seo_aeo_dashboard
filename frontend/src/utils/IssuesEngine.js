@@ -385,38 +385,153 @@ export const RULE_METADATA = {
     exampleBefore: 'Outdated blog post from 2018 with 0 visits in 3 months.',
     exampleAfter: 'Redirect to updated 2026 comprehensive guide or merge into a resource hub.',
     tip: 'Pruning dead, zero-traffic pages often boosts the rankings of your remaining active pages.'
+  },
+  // --- SECURITY SUITE (SCREAMING FROG STANDARD) ---
+  'Security: Mixed Content': {
+    rootCause: 'An HTTPS web page is loading active resources (images, scripts, stylesheets, or iframes) over insecure HTTP connections.',
+    impact: 'Modern browsers block mixed active content or display a glaring "Not Secure" warning in the address bar, destroying customer trust and conversion rates.',
+    fixGuide: 'Change all hardcoded "http://" asset URLs inside your templates, CSS, and database to "https://" or site-root relative paths.',
+    exampleBefore: 'Page: "https://yourdomain.com/checkout"\nAsset: "<script src=\'http://cdn.example.com/widget.js\'>"',
+    exampleAfter: 'Page: "https://yourdomain.com/checkout"\nAsset: "<script src=\'https://cdn.example.com/widget.js\'>"',
+    tip: 'Search and replace "http://yourdomain.com" in your CMS database with "https://yourdomain.com".'
+  },
+  'Security: Missing HSTS Header': {
+    rootCause: 'Your web server does not send the Strict-Transport-Security (HSTS) response header.',
+    impact: 'Leaves visitors vulnerable to SSL-stripping man-in-the-middle attacks when they first connect over insecure Wi-Fi.',
+    fixGuide: 'Add the HSTS response header in your web server or CDN (Nginx, Cloudflare, Apache, Vercel) with at least 1 year max-age.',
+    exampleBefore: 'Response Headers: (No Strict-Transport-Security header present)',
+    exampleAfter: 'Strict-Transport-Security: max-age=31536000; includeSubDomains; preload',
+    tip: 'HSTS guarantees browsers will refuse to load any unencrypted HTTP versions of your site.'
+  },
+  'Security: Missing Content-Security-Policy Header': {
+    rootCause: 'The page lacks a Content-Security-Policy (CSP) response header or meta tag.',
+    impact: 'Vulnerable to cross-site scripting (XSS) and rogue script injections from malicious browser extensions or compromised third-party plugins.',
+    fixGuide: 'Configure a Content-Security-Policy header specifying trusted script, style, and image origins.',
+    exampleBefore: 'Headers: (No Content-Security-Policy header returned)',
+    exampleAfter: 'Content-Security-Policy: default-src \'self\'; script-src \'self\' https://trustedscripts.com;',
+    tip: 'Start in "Content-Security-Policy-Report-Only" mode to test before strictly enforcing.'
+  },
+  'Security: Missing X-Content-Type-Options Header': {
+    rootCause: 'The server response is missing "X-Content-Type-Options: nosniff".',
+    impact: 'Browsers may attempt to guess (sniff) the MIME type of a file, potentially executing malicious user-uploaded text or image files as executable JavaScript.',
+    fixGuide: 'Configure your web server or edge CDN to send "X-Content-Type-Options: nosniff" on all responses.',
+    exampleBefore: 'HTTP Response: (Header missing)',
+    exampleAfter: 'X-Content-Type-Options: nosniff',
+    tip: 'This is a zero-risk 1-line configuration in Nginx or Cloudflare Transform Rules.'
+  },
+  'Security: Missing X-Frame-Options Header': {
+    rootCause: 'The page does not declare X-Frame-Options (or CSP frame-ancestors).',
+    impact: 'Malicious third-party sites can embed your pages inside an invisible <iframe> and execute clickjacking attacks against logged-in users.',
+    fixGuide: 'Add "X-Frame-Options: SAMEORIGIN" or "DENY" to your global server headers.',
+    exampleBefore: 'Header: (Missing)',
+    exampleAfter: 'X-Frame-Options: SAMEORIGIN',
+    tip: 'If you embed your own site in apps, use SAMEORIGIN; otherwise, use DENY.'
+  },
+  'Security: Missing Secure Referrer-Policy Header': {
+    rootCause: 'The page either lacks a Referrer-Policy or uses an insecure policy like "unsafe-url" or "no-referrer-when-downgrade".',
+    impact: 'May leak sensitive customer URL query parameters (session tokens, user IDs, internal search queries) to external websites when users click outbound links.',
+    fixGuide: 'Set "Referrer-Policy: strict-origin-when-cross-origin" in your HTTP response headers or <meta name="referrer">.',
+    exampleBefore: 'Referrer-Policy: unsafe-url',
+    exampleAfter: 'Referrer-Policy: strict-origin-when-cross-origin',
+    tip: '"strict-origin-when-cross-origin" protects path privacy while preserving referral traffic attribution in analytics.'
+  },
+  'Security: Unsafe Cross-Origin Links': {
+    rootCause: 'Outbound external links with target="_blank" do not have rel="noopener" or rel="noreferrer".',
+    impact: 'The destination page can access your window object via `window.opener` and redirect your visitor to a phishing page in the background (tabnabbing).',
+    fixGuide: 'Add rel="noopener noreferrer" to all external links opening in new browser tabs.',
+    exampleBefore: '<a href="https://external-partner.com" target="_blank">Partner Site</a>',
+    exampleAfter: '<a href="https://external-partner.com" target="_blank" rel="noopener noreferrer">Partner Site</a>',
+    tip: 'Modern frameworks often handle this, but legacy CMS content frequently contains manual target="_blank" tags.'
+  },
+  'Security: Protocol-Relative Resource Links': {
+    rootCause: 'Resources are linked using protocol-relative syntax ("//domain.com/asset.js").',
+    impact: 'Deprecated practice that can trigger unexpected HTTP requests or mixed content warnings on modern secure browsers.',
+    fixGuide: 'Update all protocol-relative references to explicit "https://" URLs.',
+    exampleBefore: '<script src="//cdn.example.com/bundle.js"></script>',
+    exampleAfter: '<script src="https://cdn.example.com/bundle.js"></script>',
+    tip: 'Explicit HTTPS is always faster because modern HTTP/2 and HTTP/3 protocols require TLS.'
+  },
+  // --- INTERNAL LINK SCORE & GRAPH RULES ---
+  'Links: Pages With High Crawl Depth': {
+    rootCause: 'The page requires 4 or more clicks from the homepage to reach.',
+    impact: 'Search engine bots crawl deeply buried pages much less frequently, and search engines assign them negligible link equity and lower rankings.',
+    fixGuide: 'Add internal links from higher-level category hubs, parent pillar pages, or featured footer menus to bring crawl depth under 3.',
+    exampleBefore: 'Homepage -> Resources -> Articles -> 2024 -> Guides -> Page (Crawl Depth: 5)',
+    exampleAfter: 'Homepage -> Main Category Hub -> Page (Crawl Depth: 2)',
+    tip: 'Aim for 100% of your critical money and service pages to have a crawl depth of 1, 2, or 3.'
+  },
+  'Links: Pages With High Internal Outlinks': {
+    rootCause: 'The page has more than 150 internal followed links pointing to other pages.',
+    impact: 'Excessive internal links dilute the PageRank equity passed to each individual link and can trigger spam warnings.',
+    fixGuide: 'Streamline the page\'s navigation, prune redundant mega-menus, and consolidate internal link lists.',
+    exampleBefore: 'Page contains 320 footer and sidebar navigation links.',
+    exampleAfter: 'Consolidate mega-menu to essential category hubs (reducing outlinks to 65).',
+    tip: 'Keep total links per page under 100–150 to maximize PageRank flow to priority pages.'
+  },
+  'Links: Non-Indexable Page Inlinks Only': {
+    rootCause: 'This indexable page is only linked to by non-indexable URLs (such as 404 error pages, 301 redirects, or noindex pages).',
+    impact: 'Googlebot cannot easily discover or flow link equity to this page because legitimate indexable pages do not link to it.',
+    fixGuide: 'Add followed internal links from live, indexable parent pages, blog posts, or main navigation menus.',
+    exampleBefore: 'Page is only linked from an old 301 redirect URL and a 404 page.',
+    exampleAfter: 'Add internal link directly from the active services directory page.',
+    tip: 'Always ensure important pages are anchored from high-authority indexable pages.'
+  },
+  // --- XML SITEMAPS RECONCILIATION RULES ---
+  'Sitemaps: Non-Indexable URLs in Sitemap': {
+    rootCause: 'Your sitemap.xml contains URLs that return 4xx/5xx errors, redirect (3xx), are marked noindex, or are canonicalised elsewhere.',
+    impact: 'Wastes search engine crawl budget, sends contradictory indexing signals, and reduces Google\'s trust in your sitemap accuracy.',
+    fixGuide: 'Regenerate your XML sitemap to strictly include only 200 OK, canonical, indexable URLs.',
+    exampleBefore: 'Sitemap contains: "https://yourdomain.com/deleted-product" (Returns 404 Not Found)',
+    exampleAfter: 'Remove deleted URL from sitemap.xml so only live 200 OK URLs remain.',
+    tip: 'A clean sitemap should only ever contain 100% canonical, indexable destination pages.'
+  },
+  'Sitemaps: Orphan URLs': {
+    rootCause: 'A URL exists in your XML sitemap but has zero internal links pointing to it anywhere on your crawled website.',
+    impact: 'Orphan pages receive no internal link equity and are treated by search engines as neglected, low-priority content.',
+    fixGuide: 'Add at least 1–2 internal links from relevant category hubs or blog posts pointing to this orphan URL.',
+    exampleBefore: 'Sitemap lists "/special-offer", but no link anywhere on the site points to it.',
+    exampleAfter: 'Add link from main navigation or homepage banner to "/special-offer".',
+    tip: 'If an orphan page is outdated or temporary, remove it from the sitemap and 301 redirect it.'
+  },
+  'Sitemaps: URLs Not In Sitemap': {
+    rootCause: 'This page is live, 200 OK, and indexable, but is missing from your XML sitemap.',
+    impact: 'Search engines may take longer to discover new updates or changes to this page.',
+    fixGuide: 'Update your XML sitemap generation plugin or script to include all live, indexable content pages.',
+    exampleBefore: 'New product page crawled successfully, but absent from sitemap.xml.',
+    exampleAfter: 'Include page in sitemap.xml with updated `<lastmod>` timestamp.',
+    tip: 'Automate sitemap generation upon page publishing in your CMS.'
   }
 };
 
 const CATEGORY_CONFIGS = {
   Page_Titles: { 
-    'Missing': 'Issue', 'Duplicate': 'Issue', 'Over 60 Characters': 'Warning', 
+    'Missing': 'Issue', 'Duplicate': 'Issue', 'Over 60 Characters': 'Opportunity', 
     'Below 30 Characters': 'Opportunity', 'Multiple': 'Issue', 'Outside <head>': 'Issue',
     'Same as H1': 'Opportunity'
   },
   Meta_Description: { 
-    'Missing': 'Issue', 'Duplicate': 'Issue', 'Over 155 Characters': 'Warning', 
-    'Below 70 Characters': 'Opportunity', 'Multiple': 'Issue', 'Outside <head>': 'Issue'
+    'Missing': 'Warning', 'Duplicate': 'Warning', 'Over 155 Characters': 'Opportunity', 
+    'Below 70 Characters': 'Opportunity', 'Multiple': 'Warning', 'Outside <head>': 'Issue'
   },
   H1: { 
-    'Missing': 'Issue', 'Duplicate': 'Warning', 'Over 70 Characters': 'Opportunity', 
-    'Multiple': 'Issue', 'Non-Sequential': 'Warning', 'Alt Text in H1': 'Opportunity'
+    'Missing': 'Warning', 'Duplicate': 'Warning', 'Over 70 Characters': 'Opportunity', 
+    'Multiple': 'Opportunity', 'Non-Sequential': 'Warning', 'Alt Text in H1': 'Opportunity'
   },
   H2: {
-    'Missing': 'Warning', 'Duplicate': 'Opportunity', 'Over 70 Characters': 'Opportunity', 
-    'Multiple': 'Opportunity', 'Non-Sequential': 'Warning'
+    'Missing': 'Opportunity', 'Duplicate': 'Opportunity', 'Over 70 Characters': 'Opportunity', 
+    'Multiple': 'Opportunity', 'Non-Sequential': 'Opportunity'
   },
   Content: {
     'Exact Duplicates': 'Issue', 'Near Duplicates': 'Warning', 'Low Content Pages': 'Warning',
     'Soft 404 Pages': 'Issue', 'Readability Difficult': 'Opportunity', 'Readability Very Difficult': 'Warning',
-    'Lorem Ipsum Placeholder': 'Issue'
+    'Lorem Ipsum Placeholder': 'Warning'
   },
   Images: {
     'Missing Alt Text': 'Warning', 'Missing Alt Attribute': 'Warning', 
     'Alt Text Over 100 Characters': 'Opportunity', 'Missing Size Attributes': 'Opportunity'
   },
   Canonicals: {
-    'Missing': 'Warning', 'Multiple': 'Issue', 'Multiple Conflicting': 'Issue',
+    'Missing': 'Opportunity', 'Multiple': 'Issue', 'Multiple Conflicting': 'Issue',
     'Canonical Is Relative': 'Warning', 'Outside <head>': 'Issue'
   },
   Directives: {
@@ -428,11 +543,29 @@ const CATEGORY_CONFIGS = {
     'HTML Document Over 2MB': 'Warning'
   },
   JavaScript: {
-    'Pages with Blocked Resources': 'Warning', 'Pages with JavaScript Errors': 'Issue',
+    'Pages with Blocked Resources': 'Warning', 'Pages with JavaScript Errors': 'Warning',
     'Uses Old AJAX Crawling Scheme URLs': 'Opportunity'
   },
   Security: {
-    'HTTP URLs': 'Issue'
+    'HTTP URLs': 'Issue',
+    'Mixed Content': 'Issue',
+    'Missing HSTS Header': 'Warning',
+    'Missing Content-Security-Policy Header': 'Warning',
+    'Missing X-Content-Type-Options Header': 'Warning',
+    'Missing X-Frame-Options Header': 'Warning',
+    'Missing Secure Referrer-Policy Header': 'Opportunity',
+    'Unsafe Cross-Origin Links': 'Warning',
+    'Protocol-Relative Resource Links': 'Opportunity'
+  },
+  Links: {
+    'Pages With High Crawl Depth': 'Opportunity',
+    'Pages With High Internal Outlinks': 'Opportunity',
+    'Non-Indexable Page Inlinks Only': 'Warning'
+  },
+  Sitemaps: {
+    'Non-Indexable URLs in Sitemap': 'Issue',
+    'Orphan URLs': 'Warning',
+    'URLs Not In Sitemap': 'Opportunity'
   }
 };
 

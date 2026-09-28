@@ -280,7 +280,7 @@ class CrawlerService:
                                     self.visited_urls.add(v)
                                 if "text/html" in content_type.lower() and status_code < 400:
                                     html_content = response.text
-                                    await self._process_page_data(clean_final, current_depth, html_content, status_code, content_type, response_time_ms)
+                                    await self._process_page_data(clean_final, current_depth, html_content, status_code, content_type, response_time_ms, headers=dict(response.headers))
                                 elif status_code >= 400:
                                     await self._save_error_page(clean_final, current_depth, status_code=status_code, error_reason="Client/Server Error")
                     continue
@@ -294,7 +294,7 @@ class CrawlerService:
                     continue
                 
                 html_content = response.text
-                await self._process_page_data(clean_req, current_depth, html_content, status_code, content_type, response_time_ms)
+                await self._process_page_data(clean_req, current_depth, html_content, status_code, content_type, response_time_ms, headers=dict(response.headers))
 
             except asyncio.CancelledError:
                 break
@@ -402,7 +402,7 @@ class CrawlerService:
                                     self.visited_urls.add(v)
                                 if "text/html" in content_type.lower() and status_code < 400:
                                     html_content = response.text
-                                    await self._process_page_data(clean_final, current_depth, html_content, status_code, content_type, response_time_ms)
+                                    await self._process_page_data(clean_final, current_depth, html_content, status_code, content_type, response_time_ms, headers=dict(response.headers))
                                 elif status_code >= 400:
                                     await self._save_error_page(clean_final, current_depth, status_code=status_code, error_reason="Client/Server Error")
                     continue
@@ -416,7 +416,7 @@ class CrawlerService:
                     continue
                 
                 html_content = response.text
-                await self._process_page_data(clean_req, current_depth, html_content, status_code, content_type, response_time_ms)
+                await self._process_page_data(clean_req, current_depth, html_content, status_code, content_type, response_time_ms, headers=dict(response.headers))
 
             except asyncio.CancelledError:
                 break
@@ -549,7 +549,7 @@ class CrawlerService:
                                 if "text/html" in content_type.lower() and status_code < 400:
                                     html_content = await page.content() if not page.is_closed() else ""
                                     if html_content:
-                                        metrics = extract_seo_metrics(html_content, clean_final)
+                                        metrics = extract_seo_metrics(html_content, clean_final, headers=response.headers if response else None)
                                         await self._process_page_data(clean_final, current_depth, html_content, status_code, content_type, response_time_ms, metrics)
                     continue
 
@@ -567,7 +567,7 @@ class CrawlerService:
                 await page.close()
                 
                 # Process metrics
-                metrics = extract_seo_metrics(html_content, url)
+                metrics = extract_seo_metrics(html_content, url, headers=response.headers if response else None)
                 
                 # Add JS rendering specifics
                 metrics["audit_data"]["JavaScript"]["Pages with JavaScript Errors"] = len(js_errors) > 0
@@ -628,11 +628,11 @@ class CrawlerService:
         except Exception:
             return dest
 
-    async def _process_page_data(self, url, current_depth, html_content, status_code, content_type, response_time_ms, pre_metrics=None):
+    async def _process_page_data(self, url, current_depth, html_content, status_code, content_type, response_time_ms, pre_metrics=None, headers=None):
         if pre_metrics:
             metrics = pre_metrics
         else:
-            metrics = extract_seo_metrics(html_content, url)
+            metrics = extract_seo_metrics(html_content, url, headers=headers)
             
         links, images = extract_links_and_images(html_content, url)
         

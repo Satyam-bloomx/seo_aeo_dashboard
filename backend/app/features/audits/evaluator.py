@@ -52,10 +52,10 @@ def evaluate_audits(raw_data):
     if h1_count == 1:
         checks.append(CheckResult("Meta", "SEO", "Exactly 1 H1 tag found", "Optimal for page structure", "N/A", status="passed", evidence="H1 count is 1"))
     elif h1_count == 0:
-        checks.append(CheckResult("Meta", "SEO", "Missing H1 heading on the page.", "Pages without H1 rank 20-30% lower on average.", "Add an <h1> tag to your page containing your primary keyword.", "Error", "failed", "H1 Count: 0"))
+        checks.append(CheckResult("Meta", "SEO", "Missing H1 heading on the page.", "Pages without H1 rank 20-30% lower on average.", "Add an <h1> tag to your page containing your primary keyword.", "Warning", "failed", "H1 Count: 0"))
     else:
         details = [{"page_url": url, "element": "<h1>", "issue": "Multiple H1 tags", "context": h} for h in h1_tags]
-        checks.append(CheckResult("Meta", "SEO", f"{h1_count} H1 tags found (should be exactly 1)", "Multiple H1s can confuse search engines about the primary topic.", "Ensure only one <h1> tag is present on the page.", "Error", "failed", f"H1 Count: {h1_count}", details=details))
+        checks.append(CheckResult("Meta", "SEO", f"{h1_count} H1 tags found (should be exactly 1)", "Multiple H1s can confuse search engines about the primary topic.", "Ensure only one <h1> tag is present on the page.", "Notice", "failed", f"H1 Count: {h1_count}", details=details))
         
     # Title Tag Length
     title = seo.get("on_page", {}).get("title")

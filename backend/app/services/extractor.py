@@ -25,13 +25,16 @@ def flesch_reading_ease(text: str) -> float:
     if words == 0: return 100.0
     return 206.835 - 1.015 * (words / sentences) - 84.6 * (syllables / words)
 
-def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
+def extract_seo_metrics(html_content: str, url: str, headers: Dict[str, str] = None) -> Dict[str, Any]:
     try:
         soup = BeautifulSoup(html_content, "lxml")
     except Exception:
         soup = BeautifulSoup(html_content, "html.parser")
     metrics: Dict[str, Any] = {}
     parsed_url = urlparse(url)
+    base_domain = parsed_url.netloc.lower()
+    if base_domain.startswith("www."):
+        base_domain = base_domain[4:]
     
     # 5. URI
     path_parts = [p for p in parsed_url.path.split('/') if p]
@@ -262,13 +265,77 @@ def extract_seo_metrics(html_content: str, url: str) -> Dict[str, Any]:
         "Pages with Chrome Issues": False
     }
 
+    # 3. Security (Screaming Frog Security Suite)
+    headers_lower = {str(k).lower(): str(v) for k, v in (headers or {}).items()}
+    is_https = url.startswith("https://")
+
+    # Mixed Content: On HTTPS, resources loaded via insecure HTTP
+    has_mixed_content = False
+    has_protocol_relative = False
+    if is_https:
+        res_tags = soup.find_all(['img', 'script', 'iframe', 'audio', 'video', 'source'], src=True)
+        for t in res_tags:
+            s = (t.get("src") or "").strip().lower()
+            if s.startswith("http://"):
+                has_mixed_content = True
+            elif s.startswith("//"):
+                has_protocol_relative = True
+        link_tags = soup.find_all('link', href=True)
+        for t in link_tags:
+            h = (t.get("href") or "").strip().lower()
+            if h.startswith("http://"):
+                has_mixed_content = True
+            elif h.startswith("//"):
+                has_protocol_relative = True
+
+    # Unsafe Cross-Origin Links (target="_blank" without rel="noopener" or rel="noreferrer")
+    has_unsafe_blank = False
+    for a in soup.find_all("a", target="_blank", href=True):
+        href = a.get("href", "").strip().lower()
+        if href.startswith(("http://", "https://")):
+            dest_host = urlparse(href).netloc.lower()
+            if dest_host.startswith("www."):
+                dest_host = dest_host[4:]
+            if dest_host and dest_host != base_domain:
+                rel = [r.lower() for r in a.get("rel", [])]
+                if not ("noopener" in rel or "noreferrer" in rel):
+                    has_unsafe_blank = True
+                    break
+
+    # Security Headers Inspection
+    hsts_val = headers_lower.get("strict-transport-security", "")
+    csp_val = headers_lower.get("content-security-policy", "")
+    csp_meta = soup.find("meta", attrs={"http-equiv": re.compile(r"^content-security-policy$", re.I)})
+    xcto_val = headers_lower.get("x-content-type-options", "").lower()
+    xfo_val = headers_lower.get("x-frame-options", "").lower()
+    ref_val = headers_lower.get("referrer-policy", "").lower()
+    ref_meta = soup.find("meta", attrs={"name": re.compile(r"^referrer$", re.I)})
+    ref_content = (ref_meta.get("content", "") if ref_meta else "").strip().lower()
+    effective_ref = ref_val or ref_content
+
+    missing_hsts = is_https and (not bool(hsts_val)) if headers is not None else False
+    missing_csp = (not bool(csp_val or csp_meta)) if headers is not None else False
+    missing_xcto = ("nosniff" not in xcto_val) if headers is not None else False
+    missing_xfo = (not bool(xfo_val or ("frame-ancestors" in (csp_val or "").lower()))) if headers is not None else False
+    missing_ref = ((not bool(effective_ref)) or (effective_ref in ("unsafe-url", "no-referrer-when-downgrade"))) if headers is not None else False
+
+    security_data = {
+        "HTTP URLs": url.startswith("http://"),
+        "HTTPS URLs": is_https,
+        "Mixed Content": has_mixed_content,
+        "Missing HSTS Header": missing_hsts,
+        "Missing Content-Security-Policy Header": missing_csp,
+        "Missing X-Content-Type-Options Header": missing_xcto,
+        "Missing X-Frame-Options Header": missing_xfo,
+        "Missing Secure Referrer-Policy Header": missing_ref,
+        "Unsafe Cross-Origin Links": has_unsafe_blank,
+        "Protocol-Relative Resource Links": has_protocol_relative
+    }
+
     metrics["audit_data"] = {
         "Internal": {},
         "External": {},
-        "Security": {
-            "HTTP URLs": url.startswith("http://"),
-            "HTTPS URLs": url.startswith("https://")
-        },
+        "Security": security_data,
         "Response_Codes": {},
         "URI": uri_data,
         "Page_Titles": title_data,

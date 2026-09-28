@@ -378,7 +378,9 @@ export default function TechnicalScoreModal({
                                         ? 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800'
                                         : isHigh
                                         ? 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50'
-                                        : 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50'
+                                        : isMedium
+                                        ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50'
+                                        : 'bg-blue-50/40 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900/50'
                                     }`}
                                   >
                                     <div className="flex items-start gap-2.5">
@@ -538,7 +540,9 @@ export default function TechnicalScoreModal({
                             ? 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800'
                             : isHigh
                             ? 'bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50'
-                            : 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50'
+                            : (check.priority === 'Medium' || check.type === 'Warning')
+                            ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50'
+                            : 'bg-blue-50/40 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900/50'
                         }`}
                       >
                         <div className="flex items-start gap-2.5">
@@ -564,7 +568,9 @@ export default function TechnicalScoreModal({
                                   ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
                                   : isHigh
                                   ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
-                                  : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                                  : (check.priority === 'Medium' || check.type === 'Warning')
+                                  ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                                  : 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300'
                               }`}>
                                 {isPassing ? 'Passing' : `${check.priority} Priority`}
                               </span>

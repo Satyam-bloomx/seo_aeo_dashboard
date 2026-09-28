@@ -1,8 +1,12 @@
 import asyncio
 import collections
 import json
+import math
 import re
 from typing import Dict, List, Set
+from urllib.parse import urlparse
+import xml.etree.ElementTree as ET
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm.attributes import flag_modified
@@ -43,8 +47,11 @@ class PostProcessor:
 
             # Fast URL lookup maps
             url_to_page: Dict[str, Page] = {p.url: p for p in pages}
+            id_to_page: Dict[int, Page] = {p.id: p for p in pages}
             inlink_counts = collections.defaultdict(int)
             outlink_counts = collections.defaultdict(int)
+            internal_followed_out = collections.defaultdict(set)
+            internal_followed_in = collections.defaultdict(set)
             links_to_non200 = collections.defaultdict(list)
 
             for link in links:
@@ -53,6 +60,12 @@ class PostProcessor:
                 dest_page = url_to_page.get(link.destination_url)
                 if dest_page and dest_page.status_code and dest_page.status_code >= 300:
                     links_to_non200[link.source_page_id].append(dest_page)
+
+                if getattr(link, 'is_internal', False) and getattr(link, 'is_follow', True):
+                    src_page = id_to_page.get(link.source_page_id)
+                    if src_page and dest_page and src_page.url != dest_page.url:
+                        internal_followed_out[src_page.url].add(dest_page.url)
+                        internal_followed_in[dest_page.url].add(src_page.url)
 
             # 2. Group pages for duplicate detection
             title_groups = collections.defaultdict(list)
@@ -179,7 +192,81 @@ class PostProcessor:
                                 p2.audit_data["Content"]["near_duplicate_urls"].append(p1.url)
                             flag_modified(p2, "audit_data")
 
-            # 5. Relational & Link Audits (Canonicals, Inlinks, Orphans, Internal Redirects)
+            # 5. Compute Internal Link Score (PageRank 1-100 Algorithm)
+            page_urls = [p.url for p in pages]
+            n_pages = len(page_urls)
+            link_scores: Dict[str, int] = {}
+            if n_pages > 0:
+                pr = {u: 1.0 / n_pages for u in page_urls}
+                d = 0.85
+                for _ in range(25):
+                    new_pr = {}
+                    dangling_sum = sum(pr[u] for u in page_urls if not internal_followed_out[u])
+                    for u in page_urls:
+                        incoming = sum(pr[v] / len(internal_followed_out[v]) for v in internal_followed_in[u])
+                        new_pr[u] = ((1.0 - d) / n_pages) + d * (incoming + (dangling_sum / n_pages))
+                    pr = new_pr
+
+                min_pr = min(pr.values())
+                max_pr = max(pr.values())
+                if max_pr > min_pr:
+                    log_min = math.log(max(min_pr, 1e-12))
+                    log_max = math.log(max(max_pr, 1e-12))
+                    if log_max > log_min:
+                        for u in page_urls:
+                            scaled = 1 + int(round(((math.log(max(pr[u], 1e-12)) - log_min) / (log_max - log_min)) * 99))
+                            link_scores[u] = max(1, min(100, scaled))
+                    else:
+                        for u in page_urls:
+                            scaled = 1 + int(round(((pr[u] - min_pr) / (max_pr - min_pr)) * 99))
+                            link_scores[u] = max(1, min(100, scaled))
+                else:
+                    link_scores = {u: 50 for u in page_urls}
+
+            # 6. Fetch and Parse XML Sitemaps for Crawl Reconciliation
+            sitemap_urls: Set[str] = set()
+            try:
+                first_url = pages[0].url
+                parsed_root = urlparse(first_url)
+                scheme = parsed_root.scheme or "https"
+                domain = parsed_root.netloc
+                
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                    candidate_sitemaps = [
+                        f"{scheme}://{domain}/sitemap.xml",
+                        f"{scheme}://{domain}/sitemap_index.xml",
+                        f"https://{domain}/sitemap.xml",
+                        f"http://{domain}/sitemap.xml"
+                    ]
+                    for s_url in candidate_sitemaps:
+                        try:
+                            resp = await client.get(s_url)
+                            if resp.status_code == 200 and resp.text:
+                                root = ET.fromstring(resp.text)
+                                sub_sitemaps = [elem.text.strip() for elem in root.findall('.//{http://www.sitemaps.org/schemas/sitemap/0.9}loc') if elem.text and elem.text.strip().endswith('.xml')]
+                                if sub_sitemaps:
+                                    for sub in sub_sitemaps[:5]:
+                                        try:
+                                            sub_resp = await client.get(sub)
+                                            if sub_resp.status_code == 200 and sub_resp.text:
+                                                sub_root = ET.fromstring(sub_resp.text)
+                                                for u_el in sub_root.findall('.//{http://www.sitemaps.org/schemas/sitemap/0.9}loc'):
+                                                    if u_el.text:
+                                                        sitemap_urls.add(u_el.text.strip())
+                                        except Exception:
+                                            pass
+                                else:
+                                    for u_el in root.findall('.//{http://www.sitemaps.org/schemas/sitemap/0.9}loc'):
+                                        if u_el.text:
+                                            sitemap_urls.add(u_el.text.strip())
+                                if sitemap_urls:
+                                    break
+                        except Exception:
+                            continue
+            except Exception as e:
+                print(f"[PostProcessor] Sitemap reconciliation notice: {e}")
+
+            # 7. Relational, Link & Sitemap Audits
             for p in pages:
                 if not p.audit_data:
                     continue
@@ -209,17 +296,51 @@ class PostProcessor:
                         if not target_is_indexable:
                             ad["Canonicals"]["Non-Indexable Canonical"] = True
 
-                # Check Inlinks and Orphan Pages
+                # Check Inlinks, Outlinks, and Link Score
                 page_inlinks = inlink_counts.get(p.url, 0)
                 page_outlinks = outlink_counts.get(p.id, 0)
+                p_score = link_scores.get(p.url, 50)
 
                 ad.setdefault("Links", {})
+                ad.setdefault("Internal", {})
+                ad["Links"]["Link_Score"] = p_score
                 ad["Links"]["Inlinks"] = page_inlinks
                 ad["Links"]["Outlinks"] = page_outlinks
+                ad["Internal"]["Link_Score"] = p_score
+                ad["Internal"]["Inlinks"] = page_inlinks
+                ad["Internal"]["Outlinks"] = page_outlinks
+
+                # Screaming Frog Link Diagnostic Filters
+                ad["Links"]["Pages With High Crawl Depth"] = (p.crawl_depth or 0) >= 4
+                ad["Links"]["Pages With High Internal Outlinks"] = page_outlinks > 150
+                
+                sources = internal_followed_in.get(p.url, set())
+                if sources:
+                    all_sources_non_indexable = all(
+                        (url_to_page[s].status_code != 200 or getattr(url_to_page[s], 'dir_noindex', False))
+                        for s in sources if s in url_to_page
+                    )
+                    ad["Links"]["Non-Indexable Page Inlinks Only"] = all_sources_non_indexable
+                else:
+                    ad["Links"]["Non-Indexable Page Inlinks Only"] = False
+
+                # Sitemaps Reconciliation & Diagnostic Filters
+                ad.setdefault("Sitemaps", {})
+                in_sitemap = (p.url in sitemap_urls) or (p.url.rstrip('/') in sitemap_urls) or (f"{p.url}/" in sitemap_urls)
+                ad["Sitemaps"]["URLs In Sitemap"] = in_sitemap
+                if in_sitemap:
+                    is_non_indexable = (p.status_code != 200) or bool(p.dir_noindex) or bool(ad.get("Canonicals", {}).get("Canonicalised"))
+                    ad["Sitemaps"]["Non-Indexable URLs in Sitemap"] = is_non_indexable
+                    ad["Sitemaps"]["Orphan URLs"] = (page_inlinks == 0 and (p.crawl_depth or 0) > 0)
+                    ad["Sitemaps"]["URLs Not In Sitemap"] = False
+                else:
+                    is_indexable = (p.status_code == 200) and not bool(p.dir_noindex) and not bool(ad.get("Canonicals", {}).get("Canonicalised"))
+                    ad["Sitemaps"]["URLs Not In Sitemap"] = is_indexable
+                    ad["Sitemaps"]["Non-Indexable URLs in Sitemap"] = False
+                    ad["Sitemaps"]["Orphan URLs"] = False
 
                 if page_inlinks == 0 and (p.crawl_depth or 0) > 0:
-                    if "Sitemaps" in ad:
-                        ad["Sitemaps"]["Orphan URLs"] = True
+                    ad["Sitemaps"]["Orphan URLs"] = True
                     if "Analytics" in ad:
                         ad["Analytics"]["Orphan URLs"] = True
 

@@ -87,6 +87,32 @@ const CATEGORY_PRIMARY_COLUMNS = {
   Content: [
     { key: 'word_count', label: 'Word Count' },
   ],
+  Internal: [
+    { key: 'link_score', label: 'Link Score' },
+    { key: 'status_code', label: 'Status Code' },
+    { key: 'indexability', label: 'Indexability' },
+    { key: 'inlinks', label: 'Inlinks' },
+    { key: 'outlinks', label: 'Outlinks' },
+    { key: 'crawl_depth', label: 'Crawl Depth' },
+  ],
+  Links: [
+    { key: 'link_score', label: 'Link Score' },
+    { key: 'inlinks', label: 'Inlinks' },
+    { key: 'outlinks', label: 'Outlinks' },
+    { key: 'crawl_depth', label: 'Crawl Depth' },
+  ],
+  Security: [
+    { key: 'mixed_content', label: 'Mixed Content' },
+    { key: 'hsts_header', label: 'HSTS' },
+    { key: 'csp_header', label: 'CSP' },
+    { key: 'x_content_type', label: 'X-Content-Type' },
+    { key: 'x_frame_options', label: 'X-Frame-Options' },
+  ],
+  Sitemaps: [
+    { key: 'in_sitemap', label: 'In Sitemap' },
+    { key: 'non_indexable_sitemap', label: 'Non-Indexable' },
+    { key: 'orphan_status', label: 'Orphan URL' },
+  ],
 };
 
 const ON_PAGE_HTML_CATEGORIES = [
@@ -114,6 +140,32 @@ export function getPageCellValue(page, colKey, activeCategory) {
   if (colKey === 'h1_2_length') return page.h1_2_length ?? (page.h1_2 ? page.h1_2.length : 0);
   if (colKey === 'h2_1_length') return page.h2_1_length ?? (page.h2_1 ? page.h2_1.length : 0);
   if (colKey === 'h2_2_length') return page.h2_2_length ?? (page.h2_2 ? page.h2_2.length : 0);
+
+  // Link Score & Graph
+  if (colKey === 'link_score') {
+    const score = page.audit_data?.Links?.Link_Score ?? page.audit_data?.Internal?.Link_Score;
+    return score !== undefined ? score : '';
+  }
+  if (colKey === 'inlinks') {
+    const inlinks = page.audit_data?.Links?.Inlinks ?? page.audit_data?.Internal?.Inlinks;
+    return inlinks !== undefined ? inlinks : '';
+  }
+  if (colKey === 'outlinks') {
+    const outlinks = page.audit_data?.Links?.Outlinks ?? page.audit_data?.Internal?.Outlinks;
+    return outlinks !== undefined ? outlinks : '';
+  }
+
+  // Security Suite Columns
+  if (colKey === 'mixed_content') return catData['Mixed Content'] ? 'Yes' : 'No';
+  if (colKey === 'hsts_header') return catData['Missing HSTS Header'] ? 'Missing' : 'Present';
+  if (colKey === 'csp_header') return catData['Missing Content-Security-Policy Header'] ? 'Missing' : 'Present';
+  if (colKey === 'x_content_type') return catData['Missing X-Content-Type-Options Header'] ? 'Missing' : 'nosniff';
+  if (colKey === 'x_frame_options') return catData['Missing X-Frame-Options Header'] ? 'Missing' : 'Present';
+
+  // Sitemaps Reconciliation Columns
+  if (colKey === 'in_sitemap') return catData['URLs In Sitemap'] ? 'Yes' : 'No';
+  if (colKey === 'non_indexable_sitemap') return catData['Non-Indexable URLs in Sitemap'] ? 'Non-Indexable' : 'Indexable';
+  if (colKey === 'orphan_status') return catData['Orphan URLs'] ? 'Yes' : 'No';
 
   // Screaming Frog Occurrence Counts (0 for missing, 1, 2, etc.)
   if (colKey === 'title_count') return (page.title_1 && String(page.title_1).trim() !== '') ? 1 : 0;
@@ -309,7 +361,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     if (!pages || pages.length === 0) return [];
 
     if (activeCategory === 'Internal') {
-      return ['status_code', 'indexability', 'content_type', 'word_count', 'title_1', 'h1_1', 'response_time_ms'];
+      return ['link_score', 'status_code', 'indexability', 'inlinks', 'outlinks', 'crawl_depth', 'content_type', 'word_count', 'title_1', 'h1_1', 'response_time_ms'];
     }
 
     const primary = CATEGORY_PRIMARY_COLUMNS[activeCategory] || [];
@@ -576,6 +628,22 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50'
         }`}>
           {value}
+        </span>
+      );
+    }
+
+    if (colKey === 'link_score' || colKey === 'Link_Score') {
+      if (value === '' || value === undefined || value === null) {
+        return <span className="text-slate-400 dark:text-slate-500 font-mono">-</span>;
+      }
+      const num = parseInt(value, 10) || 0;
+      let badgeClass = 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
+      if (num >= 70) badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50 font-bold';
+      else if (num >= 35) badgeClass = 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/50 font-semibold';
+      else badgeClass = 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50';
+      return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono border ${badgeClass}`}>
+          {num}
         </span>
       );
     }
