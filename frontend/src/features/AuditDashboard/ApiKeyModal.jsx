@@ -230,6 +230,7 @@ export default function ApiKeyModal({
   const [isSavingApp, setIsSavingApp] = useState(false);
   const [ga4PropertyOverride, setGa4PropertyOverride] = useState('');
   const [isSavingProperty, setIsSavingProperty] = useState(false);
+  const [hasExistingApp, setHasExistingApp] = useState(false);
 
   useEffect(() => {
     if (initialTab) {
@@ -243,6 +244,9 @@ export default function ApiKeyModal({
         .then(res => {
           if (res.data?.client_id) {
             setCustomClientId(res.data.client_id);
+            if (res.data.has_secret) {
+              setHasExistingApp(true);
+            }
           }
         })
         .catch(() => {});
@@ -307,10 +311,11 @@ export default function ApiKeyModal({
         client_secret: customClientSecret.trim(),
         property_id: ga4PropertyOverride.trim() || undefined
       });
+      setHasExistingApp(true);
       if (integration.id === 'google_analytics' && ga4PropertyOverride.trim()) {
         await handleSaveGa4Property();
       }
-      toast.success('Custom Google OAuth Credentials saved!');
+      toast.loading('Credentials saved! Redirecting to Google Sign-In...', { id: 'oauth-toast', duration: 4000 });
       setIsSavingApp(false);
       if (onOAuthConnect) onOAuthConnect(integration.id);
     } catch (err) {
@@ -523,6 +528,24 @@ export default function ApiKeyModal({
                       </p>
                     </div>
 
+                    {hasExistingApp && (
+                      <div className="p-3 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/60 flex items-center justify-between gap-2 shadow-2xs">
+                        <div className="flex items-center gap-2 text-xs truncate">
+                          <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span className="text-slate-700 dark:text-slate-300 truncate">
+                            Google Cloud App linked: <strong className="font-mono text-indigo-700 dark:text-indigo-300">{customClientId ? `${customClientId.slice(0, 16)}...apps.googleusercontent.com` : 'Credentials Configured'}</strong>
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setOauthTab('custom_app')}
+                          className="text-[11px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline shrink-0 cursor-pointer"
+                        >
+                          Edit App
+                        </button>
+                      </div>
+                    )}
+
                     {integration.id === 'google_analytics' && (
                       <div className="p-3 rounded-xl bg-orange-50/70 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/60 space-y-2">
                         <label className="block text-[11px] font-bold text-orange-950 dark:text-orange-200">
@@ -707,10 +730,15 @@ export default function ApiKeyModal({
                                 client_secret: customClientSecret.trim(),
                                 property_id: ga4PropertyOverride.trim() || undefined
                               });
+                              setHasExistingApp(true);
                               if (integration.id === 'google_analytics' && ga4PropertyOverride.trim()) {
                                 await handleSaveGa4Property();
                               }
-                              toast.success('Custom OAuth Credentials saved!');
+                              toast.info('Google App Credentials Saved!', {
+                                description: 'Step 1 complete. Now click "Sign In with Google" to authorize access to your analytics.',
+                                duration: 6000
+                              });
+                              setOauthTab('one_click');
                             } catch (e) {
                               toast.error('Failed to save credentials.');
                             } finally {

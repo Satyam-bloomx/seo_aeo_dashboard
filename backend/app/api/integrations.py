@@ -19,6 +19,7 @@ class IntegrationStatusResponse(BaseModel):
     id: str
     connected: bool
     has_key: bool = False
+    has_configured_app: bool = False
     masked_key: Optional[str] = None
     account_email: Optional[str] = None
     selected_property: Optional[str] = None
@@ -135,10 +136,22 @@ async def get_integration_status(project_id: int, db: AsyncSession = Depends(get
             has_key = True
             raw_key = env_keys[svc]
             
+        has_configured_app = False
+        if item and isinstance(item.config_json, dict):
+            has_configured_app = bool(item.config_json.get("client_id"))
+        if not has_configured_app and svc in ["search_console", "google_analytics"]:
+            sibling = "search_console" if svc == "google_analytics" else "google_analytics"
+            sib_item = integrations.get(sibling)
+            if sib_item and isinstance(sib_item.config_json, dict):
+                has_configured_app = bool(sib_item.config_json.get("client_id"))
+            if not has_configured_app:
+                has_configured_app = bool(os.getenv("GOOGLE_CLIENT_ID"))
+
         response.append(IntegrationStatusResponse(
             id=svc,
             connected=connected,
             has_key=has_key,
+            has_configured_app=has_configured_app,
             masked_key=_mask_key(raw_key),
             account_email=account_email,
             selected_property=selected_property,
@@ -718,7 +731,7 @@ async def google_auth_redirect(
         if sib_row and sib_row.config_json and isinstance(sib_row.config_json, dict):
             custom_client_id = sib_row.config_json.get("client_id")
 
-    google_client_id = (custom_client_id or os.environ.get("GOOGLE_CLIENT_ID", "")).strip()
+    google_client_id = (custom_client_id or os.environ.get("GOOGLE_CLIENT_ID", "")).strip().strip('"\'')
     origin = request.headers.get("origin") or ""
     referer = request.headers.get("referer") or ""
     
@@ -812,8 +825,8 @@ async def google_auth_callback(
                 if not custom_client_secret:
                     custom_client_secret = sib_row.config_json.get("client_secret")
 
-        google_client_id = (custom_client_id or os.environ.get("GOOGLE_CLIENT_ID", "")).strip()
-        google_client_secret = (custom_client_secret or os.environ.get("GOOGLE_CLIENT_SECRET", "")).strip()
+        google_client_id = (custom_client_id or os.environ.get("GOOGLE_CLIENT_ID", "")).strip().strip('"\'')
+        google_client_secret = (custom_client_secret or os.environ.get("GOOGLE_CLIENT_SECRET", "")).strip().strip('"\'')
         
         if not google_client_id or not google_client_secret:
             raise HTTPException(
@@ -886,10 +899,52 @@ async def google_auth_callback(
         cfg.pop("last_auth_error", None)
         integration.config_json = cfg
         flag_modified(integration, "config_json")
-        
         await db.commit()
 
-        # Trigger immediate telemetry sync if property is already selected
+        # Auto-discover property if none selected yet
+        if not cfg.get("selected_property"):
+            try:
+                if service == "google_analytics":
+                    async with httpx.AsyncClient(timeout=8.0) as admin_client:
+                        adm_res = await admin_client.get(
+                            "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
+                            headers={"Authorization": f"Bearer {access_token}"}
+                        )
+                        if adm_res.status_code == 200:
+                            summaries = adm_res.json().get("accountSummaries", [])
+                            for acc in summaries:
+                                prop_summaries = acc.get("propertySummaries", [])
+                                if prop_summaries:
+                                    first_prop = prop_summaries[0].get("property")
+                                    if first_prop:
+                                        cfg["selected_property"] = first_prop
+                                        integration.config_json = cfg
+                                        flag_modified(integration, "config_json")
+                                        await db.commit()
+                                        break
+                        elif adm_res.status_code in [401, 403]:
+                            err_j = adm_res.json().get("error", {})
+                            cfg["google_permission_error"] = err_j.get("message", "GA4 Admin API disabled in Google Cloud. Enter your GA4 Property ID directly.")
+                            integration.config_json = cfg
+                            flag_modified(integration, "config_json")
+                            await db.commit()
+                elif service == "search_console":
+                    async with httpx.AsyncClient(timeout=8.0) as gsc_client:
+                        gsc_res = await gsc_client.get(
+                            "https://www.googleapis.com/webmasters/v3/sites",
+                            headers={"Authorization": f"Bearer {access_token}"}
+                        )
+                        if gsc_res.status_code == 200:
+                            entries = gsc_res.json().get("siteEntry", [])
+                            if entries and entries[0].get("siteUrl"):
+                                cfg["selected_property"] = entries[0]["siteUrl"]
+                                integration.config_json = cfg
+                                flag_modified(integration, "config_json")
+                                await db.commit()
+            except Exception as auto_disc_err:
+                print(f"Post-auth auto-discovery notice: {auto_disc_err}")
+
+        # Trigger immediate telemetry sync if property is selected
         if integration.config_json and isinstance(integration.config_json, dict) and integration.config_json.get("selected_property"):
             try:
                 await IntelligenceService.sync_service_data(db, project_id, service)

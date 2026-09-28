@@ -134,6 +134,44 @@ class IntelligenceService:
         flag_modified(integration, "config_json")
         await db.commit()
 
+        # Retroactively enrich pages from the most recent crawl with the freshly synced data
+        if service in ["google_analytics", "search_console"]:
+            try:
+                crawl_res = await db.execute(
+                    select(Crawl).where(Crawl.project_id == project_id).order_by(Crawl.started_at.desc())
+                )
+                recent_crawl = crawl_res.scalars().first()
+                if recent_crawl:
+                    from app.services.enrichment_service import EnrichmentService
+                    enricher = EnrichmentService(db, recent_crawl.id)
+                    pages_res = await db.execute(
+                        select(Page).where(Page.crawl_id == recent_crawl.id)
+                    )
+                    recent_pages = pages_res.scalars().all()
+                    
+                    if service == "google_analytics":
+                        for idx, p in enumerate(recent_pages):
+                            p_ad = dict(p.audit_data or {})
+                            p_ad["Google_Analytics"] = enricher._generate_ga4_metrics(
+                                p, idx, ga4_connected=True, ga4_data=data_payload
+                            )
+                            p.audit_data = p_ad
+                            flag_modified(p, "audit_data")
+                            db.add(p)
+                    elif service == "search_console":
+                        for idx, p in enumerate(recent_pages):
+                            p_ad = dict(p.audit_data or {})
+                            p_ad["Search_Console"] = enricher._generate_gsc_metrics(
+                                page=p, idx=idx, gsc_intel=data_payload, inspection_data=None, gsc_connected=True
+                            )
+                            p.audit_data = p_ad
+                            flag_modified(p, "audit_data")
+                            db.add(p)
+                            
+                    await db.commit()
+            except Exception as enrich_err:
+                print(f"Retroactive page enrichment notice: {enrich_err}")
+
         return {
             "service": service,
             "connected": True,

@@ -139,12 +139,13 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
   const [loadingGa4Properties, setLoadingGa4Properties] = useState(false);
   const [isSavingGa4Property, setIsSavingGa4Property] = useState(false);
 
-  // Listen for OAuth error in URL search params or sessionStorage
+  // Listen for OAuth error or success in URL search params or sessionStorage
   useEffect(() => {
     let urlOauthError = null;
     let urlService = null;
     let urlOpenModal = null;
     let urlTabType = null;
+    let urlConnected = null;
 
     if (typeof window !== 'undefined') {
       const searchParams = new URLSearchParams(window.location.search);
@@ -152,6 +153,24 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       urlService = searchParams.get('service');
       urlOpenModal = searchParams.get('open_modal');
       urlTabType = searchParams.get('tab_type');
+      urlConnected = searchParams.get('connected');
+    }
+
+    if (urlConnected === 'true') {
+      fetchStatus();
+      const serviceName = urlService === 'google_analytics' 
+        ? 'Google Analytics 4' 
+        : urlService === 'search_console' 
+        ? 'Google Search Console' 
+        : 'Google Service';
+      toast.success(`${serviceName} connected successfully!`, {
+        description: 'Live telemetry is active and synchronized.',
+        duration: 7000
+      });
+      try {
+        const cleanUrl = window.location.pathname + (urlService ? `?tab=integrations&service=${urlService}` : '?tab=integrations');
+        window.history.replaceState({}, document.title, cleanUrl);
+      } catch {}
     }
 
     if (urlOauthError) {
@@ -184,7 +203,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
         }
       }
     } catch {}
-  }, []);
+  }, [fetchStatus]);
 
   const handleDismissError = async (serviceId) => {
     setServiceErrors(prev => {
@@ -645,6 +664,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
         {filteredIntegrations.map((item) => {
           const integrationState = integrations[item.id];
           const isConnected = Boolean(integrationState?.connected);
+          const hasConfiguredApp = Boolean(integrationState?.has_configured_app);
           const maskedKey = integrationState?.masked_key;
           const testRes = testResults[item.id];
           const isTesting = testingId === item.id;
@@ -662,6 +682,8 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                   ? 'bg-white dark:bg-slate-900/90 border-rose-400 dark:border-rose-600/80 shadow-xs ring-2 ring-rose-500/20'
                   : isConnected
                   ? 'bg-white dark:bg-slate-900/90 border-emerald-400/80 dark:border-emerald-500/60 shadow-xs ring-1 ring-emerald-400/20'
+                  : hasConfiguredApp
+                  ? 'bg-white dark:bg-slate-900/90 border-amber-300 dark:border-amber-800/80 shadow-xs ring-1 ring-amber-400/20'
                   : 'bg-white dark:bg-slate-900/90 border-slate-200 dark:border-slate-800 shadow-xs hover:border-slate-300 dark:hover:border-slate-700'
               }`}
             >
@@ -670,7 +692,13 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-xs shrink-0 border ${
-                      isConnected ? 'bg-emerald-50/60 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60' : hasError ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60' : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60'
+                      isConnected 
+                        ? 'bg-emerald-50/60 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60' 
+                        : hasError 
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60' 
+                        : hasConfiguredApp
+                        ? 'bg-amber-50/60 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60'
+                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60'
                     }`}>
                       {item.icon}
                     </div>
@@ -704,6 +732,18 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                               </span>
                               Connected
+                            </motion.span>
+                          ) : hasConfiguredApp ? (
+                            <motion.span
+                              key="configured"
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.8 }}
+                              transition={spring.soft}
+                              className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-700/60 px-2.5 py-0.5 rounded-full shadow-2xs"
+                            >
+                              <Sliders size={11} className="text-amber-600 dark:text-amber-400" />
+                              App Configured • Sign-In Required
                             </motion.span>
                           ) : (
                             <motion.span
@@ -1075,25 +1115,52 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         <Key size={14} /> Configure API Key
                       </motion.button>
                     ) : (
-                      <div className="w-full flex items-center gap-2">
-                        <motion.button
-                          onClick={() => handleOAuthConnect(item.id)}
-                          whileTap={tapPress}
-                          transition={spring.press}
-                          className="flex-1 btn-primary py-2 text-xs font-bold gap-2 shadow-xs cursor-pointer"
-                          title="1-Click Connect with Google"
-                        >
-                          <Globe size={14} /> Connect with Google
-                        </motion.button>
-                        <motion.button
-                          onClick={() => setActiveModal(item)}
-                          whileTap={tapPress}
-                          transition={spring.press}
-                          className="p-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl cursor-pointer"
-                          title="Configure Custom OAuth Client ID / Secret"
-                        >
-                          <Sliders size={14} />
-                        </motion.button>
+                      <div className="w-full space-y-2">
+                        {hasConfiguredApp && !hasError && (
+                          <div className="p-2 rounded-xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/50 flex items-center justify-between text-[11px] text-amber-900 dark:text-amber-300">
+                            <span className="truncate">OAuth App credentials saved.</span>
+                            <button
+                              type="button"
+                              onClick={() => setActiveModal(item)}
+                              className="font-bold underline cursor-pointer shrink-0 ml-1.5 hover:text-amber-950 dark:hover:text-amber-100"
+                            >
+                              Edit App
+                            </button>
+                          </div>
+                        )}
+                        <div className="w-full flex items-center gap-2">
+                          <motion.button
+                            onClick={() => handleOAuthConnect(item.id)}
+                            whileTap={tapPress}
+                            transition={spring.press}
+                            className="flex-1 btn-primary py-2 text-xs font-bold gap-2 shadow-xs cursor-pointer"
+                            title="Complete Google Sign-In authorization"
+                          >
+                            <Globe size={14} /> {hasConfiguredApp ? 'Complete Google Sign-In' : 'Connect with Google'}
+                          </motion.button>
+                          <motion.button
+                            onClick={() => setActiveModal(item)}
+                            whileTap={tapPress}
+                            transition={spring.press}
+                            className="p-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl cursor-pointer"
+                            title="Configure Custom OAuth Client ID / Secret or Service Account JSON"
+                          >
+                            <Sliders size={14} />
+                          </motion.button>
+                        </div>
+                        <div className="flex items-center justify-center pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setModalInitialTab('direct_token');
+                              setActiveModal(item);
+                            }}
+                            className="text-[11px] text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                          >
+                            <Key size={11} />
+                            <span>Or connect via Service Account JSON / Token</span>
+                          </button>
+                        </div>
                       </div>
                     )}
                   </>
