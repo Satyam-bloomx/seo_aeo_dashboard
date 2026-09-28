@@ -122,7 +122,7 @@ export default function ExportAuditModal({
           {/* HERO CARD: Master Excel Workbook (.xlsx) */}
           <motion.div
             variants={staggerItem}
-            className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-[#0B0F17] p-5 text-white shadow-xl transition-all hover:border-slate-700 hover:shadow-2xl"
+            className="group relative overflow-hidden rounded-2xl border border-neutral-800 bg-[#0a0a0a] p-5 text-[#f4f4f5] shadow-xl transition-all hover:border-neutral-700 hover:shadow-2xl"
           >
             {/* Ambient Background Gradient Effect */}
             <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl group-hover:bg-emerald-500/15 transition-all" />

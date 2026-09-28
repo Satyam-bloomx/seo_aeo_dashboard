@@ -14,7 +14,7 @@ const DIAGNOSTICS = [
 
 export default function NotFound() {
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#F8FAFC] p-6 font-sans text-slate-900">
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#F8FAFC] dark:bg-[#000000] p-6 font-sans text-slate-900 dark:text-[#f4f4f5]">
       <div className="ambient-bg" />
 
       <motion.div

@@ -961,8 +961,8 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
             }));
             fetchStatus();
           }}
-          onOAuthConnect={() => {
-            const svc = activeModal?.id;
+          onOAuthConnect={(svcId) => {
+            const svc = svcId || activeModal?.id;
             setActiveModal(null);
             if (svc) handleOAuthConnect(svc);
           }}

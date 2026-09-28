@@ -47,6 +47,7 @@ class GoogleOAuthAppRequest(BaseModel):
     service: str = "search_console"
     client_id: str
     client_secret: str
+    property_id: Optional[str] = None
 
 SUPPORTED_SERVICES = [
     "pagespeed",
@@ -609,7 +610,13 @@ async def save_google_oauth_credentials(req: GoogleOAuthAppRequest, db: AsyncSes
         config = dict(integration.config_json) if (integration.config_json and isinstance(integration.config_json, dict)) else {}
         config["client_id"] = client_id
         config["client_secret"] = client_secret
+        if req.property_id and req.property_id.strip() and svc == req.service:
+            clean_p = req.property_id.strip()
+            if req.service == "google_analytics" and not clean_p.startswith("properties/") and clean_p.isdigit():
+                clean_p = f"properties/{clean_p}"
+            config["selected_property"] = clean_p
         integration.config_json = config
+        flag_modified(integration, "config_json")
     
     await db.commit()
     return {
@@ -829,6 +836,14 @@ async def google_auth_callback(
         integration.expires_at = expires_at
         
         await db.commit()
+
+        # Trigger immediate telemetry sync if property is already selected
+        if integration.config_json and isinstance(integration.config_json, dict) and integration.config_json.get("selected_property"):
+            try:
+                await IntelligenceService.sync_service_data(db, project_id, service)
+            except Exception as sync_err:
+                print(f"Post-auth telemetry sync notice: {sync_err}")
+
         return {"status": "success", "message": f"{service} connected and authenticated successfully!"}
     except HTTPException:
         await db.rollback()

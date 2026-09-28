@@ -1264,6 +1264,24 @@ export default function AuditDashboard() {
       return <PerformanceTab pages={pages} />;
     }
 
+    if (activeTab === 'integrations') {
+      return (
+        <IntegrationsPanel
+          projectId={1}
+          crawlId={crawlId}
+          seedUrl={url}
+          onAuditProperty={(propUrl) => {
+            setUrl(propUrl);
+            setActiveTab('overview');
+          }}
+        />
+      );
+    }
+
+    if (activeTab === 'naruto') {
+      return <NarutoSamplePanel onClose={() => setActiveTab('overview')} />;
+    }
+
     return null;
   };
 
@@ -1277,7 +1295,7 @@ export default function AuditDashboard() {
         <Loading isBootloader onBootloaderComplete={() => setIsAppInitializing(false)} />
       )}
 
-      <div className="relative flex h-screen h-[100dvh] w-full overflow-hidden bg-[#F8FAFC] dark:bg-[#090D16] font-sans text-slate-900 dark:text-slate-100 transition-colors duration-200">
+      <div className="relative flex h-screen h-[100dvh] w-full overflow-hidden bg-[#F8FAFC] dark:bg-[#000000] font-sans text-slate-900 dark:text-[#f4f4f5] transition-colors duration-200">
         <div className="ambient-bg" />
 
         {/* ---------------------------------------------------------------- */}
@@ -1314,7 +1332,7 @@ export default function AuditDashboard() {
               initial="initial"
               animate="animate"
               exit="exit"
-              className="fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] will-change-transform md:hidden shadow-2xl bg-white dark:bg-slate-900"
+              className="fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] will-change-transform md:hidden shadow-2xl bg-white dark:bg-[#000000]"
             >
               <Sidebar
                 activeTab={activeTab}

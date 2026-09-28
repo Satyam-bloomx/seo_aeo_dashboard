@@ -1,30 +1,27 @@
 'use client';
 
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useMemo } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { easeCss } from '@/lib/motion';
 
 /**
- * AuditPro — Boot / Loading screen
- * --------------------------------
- * Deliberately quiet: one geometric mark, one wordmark, one hairline of
- * progress. No 3D payload, no telemetry dump, no text clutter.
- *
- * Motion breakdown
- *   0.00s  mark scales up from 0.8 with an ease-out-expo settle
- *   0.15s  the two orbit rings begin their infinite counter-rotation
- *   0.25s  wordmark characters float up on a 30ms stagger
- *   0.35s  progress ring + hairline bar charge 0 → 100
- *   exit   everything lifts 10px and fades on ease-out; no shutters
- *
- * Everything animated is `transform` / `opacity` / `stroke-dashoffset`, all of
- * which stay on the compositor.
+ * AuditPro — Cinematic Boot / Loading Screen
+ * ------------------------------------------
+ * Pure black canvas (#000000), deep atmospheric ambient lighting,
+ * iconic kinetic prism emblem, and real-time diagnostic telemetry.
  */
 
-const WORDMARK = 'AUDITPRO'.split('');
 const RING_R = 52;
 const RING_C = 2 * Math.PI * RING_R;
+
+const STAGES = [
+  { threshold: 0, text: 'Connecting to spider crawler protocol...' },
+  { threshold: 24, text: 'Calibrating technical SEO & AEO diagnostics...' },
+  { threshold: 52, text: 'Synthesizing PageRank & internal link graph...' },
+  { threshold: 78, text: 'Finalizing compliance matrix & vitals...' },
+  { threshold: 94, text: 'Workspace environment ready. Launching...' },
+];
 
 export default function Loading({
   isBootloader = false,
@@ -35,6 +32,14 @@ export default function Loading({
   const progressRingRef = useRef(null);
   const progressBarRef = useRef(null);
   const [progress, setProgress] = useState(0);
+
+  const currentStageText = useMemo(() => {
+    let current = STAGES[0].text;
+    for (const s of STAGES) {
+      if (progress >= s.threshold) current = s.text;
+    }
+    return current;
+  }, [progress]);
 
   const paintProgress = useCallback((value) => {
     const pct = Math.round(value);
@@ -55,17 +60,16 @@ export default function Loading({
         '(prefers-reduced-motion: reduce)'
       )?.matches;
 
-      // Reduced motion: skip straight to a filled, static state.
       if (reduced) {
         paintProgress(100);
-        gsap.set('.boot-el', { opacity: 1, y: 0, scale: 1 });
+        gsap.set('.boot-content', { opacity: 1, y: 0, scale: 1 });
         if (isBootloader && onBootloaderComplete) {
-          gsap.delayedCall(0.4, onBootloaderComplete);
+          gsap.delayedCall(0.3, onBootloaderComplete);
         }
         return;
       }
 
-      // --- Continuous orbit rotation (independent of the master timeline) ---
+      // Continuous kinetic emblem rotations
       gsap.to('.orbit-outer', {
         rotate: 360,
         duration: 9,
@@ -75,83 +79,73 @@ export default function Loading({
       });
       gsap.to('.orbit-inner', {
         rotate: -360,
-        duration: 6,
+        duration: 12,
         repeat: -1,
         ease: 'none',
         transformOrigin: '50% 50%',
       });
-      gsap.to('.core-glow', {
-        scale: 1.12,
-        opacity: 0.85,
-        duration: 1.6,
+      gsap.to('.pulse-aura', {
+        scale: 1.2,
+        opacity: 0.7,
+        duration: 1.8,
         repeat: -1,
         yoyo: true,
         ease: 'sine.inOut',
         transformOrigin: '50% 50%',
       });
 
-      // --- Master lifecycle ---
+      // Master entrance & progress lifecycle
       const tl = gsap.timeline({
         repeat: isBootloader ? 0 : -1,
-        repeatDelay: isBootloader ? 0 : 0.6,
+        repeatDelay: isBootloader ? 0 : 0.8,
         onRepeat: () => paintProgress(0),
       });
 
       tl.fromTo(
-        '.boot-mark',
-        { scale: 0.8, opacity: 0 },
-        { scale: 1, opacity: 1, duration: 0.7, ease: 'expo.out' }
+        '.boot-emblem',
+        { scale: 0.82, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.7, ease: 'back.out(1.4)' }
       )
         .fromTo(
-          '.boot-char',
-          { y: 14, opacity: 0 },
-          { y: 0, opacity: 1, duration: 0.5, stagger: 0.03, ease: 'power3.out' },
-          '-=0.45'
-        )
-        .fromTo(
           '.boot-meta',
-          { y: 8, opacity: 0 },
-          { y: 0, opacity: 1, duration: 0.45, stagger: 0.06, ease: 'power3.out' },
+          { y: 14, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.5, stagger: 0.06, ease: 'power3.out' },
           '-=0.35'
         );
 
-      // Progress charge — eased so it decelerates into 100 rather than
-      // slamming into it.
       const counter = { val: 0 };
       tl.to(
         counter,
         {
           val: 100,
-          duration: 1.3,
+          duration: 1.45,
           ease: 'power2.inOut',
           onUpdate: () => paintProgress(counter.val),
         },
-        '-=0.5'
+        '-=0.3'
       );
 
-      // Exit: single soft lift-and-fade. Fast, because nobody enjoys a
-      // loading screen taking its time to leave.
+      // Smooth exit
       tl.to(
-        '.boot-el',
+        '.boot-content',
         {
-          y: -10,
+          y: -14,
           opacity: 0,
-          duration: 0.42,
-          stagger: 0.04,
-          ease: 'power2.out',
+          duration: 0.38,
+          ease: 'power2.in',
         },
         '+=0.15'
       ).to(
         rootRef.current,
         {
           opacity: 0,
-          duration: 0.3,
+          duration: 0.28,
           ease: 'power2.out',
           onComplete: () => {
             if (isBootloader && onBootloaderComplete) onBootloaderComplete();
           },
         },
-        '-=0.2'
+        '-=0.15'
       );
     },
     { scope: rootRef, dependencies: [isBootloader] }
@@ -160,91 +154,98 @@ export default function Loading({
   return (
     <div
       ref={rootRef}
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden bg-[#F8FAFC] select-none font-sans"
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden bg-black select-none font-sans text-neutral-100"
       role="status"
       aria-live="polite"
       aria-label={`${label} — ${progress}%`}
     >
-      {/* Soft ambient wash so the flat slate doesn't read as dead space. */}
+      {/* Deep atmospheric gradient aura — smooth, deeply diffused glow */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-90"
-        style={{
-          backgroundImage:
-            'radial-gradient(circle at 50% 42%, rgba(224,231,255,0.75) 0%, transparent 55%), radial-gradient(circle at 50% 78%, rgba(209,250,229,0.5) 0%, transparent 55%)',
-        }}
+        className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-gradient-to-tr from-indigo-600/15 via-sky-500/10 to-emerald-500/10 rounded-full blur-[150px]"
       />
 
-      {/* Hairline grid — barely visible, gives the void some structure. */}
+      {/* Subtle hairline micro-grid */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-[0.045]"
+        className="pointer-events-none absolute inset-0 opacity-[0.025]"
         style={{
           backgroundImage:
-            'linear-gradient(to right, #0F172A 1px, transparent 1px), linear-gradient(to bottom, #0F172A 1px, transparent 1px)',
+            'linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)',
           backgroundSize: '64px 64px',
-          maskImage:
-            'radial-gradient(ellipse at center, black 20%, transparent 72%)',
-          WebkitMaskImage:
-            'radial-gradient(ellipse at center, black 20%, transparent 72%)',
         }}
       />
 
-      <div className="relative flex flex-col items-center gap-8 px-6">
-        {/* ---------------------------------------------------------------- */}
-        {/* Geometric mark                                                   */}
-        {/* ---------------------------------------------------------------- */}
-        <div className="boot-el boot-mark relative">
+      {/* Main Staging Content */}
+      <div className="boot-content relative z-10 flex flex-col items-center gap-7 px-6 max-w-sm w-full">
+        
+        {/* Animated Brand Emblem with Glowing Progress Ring */}
+        <div className="boot-emblem relative flex items-center justify-center">
           <svg
-            width="136"
-            height="136"
-            viewBox="0 0 136 136"
+            width="140"
+            height="140"
+            viewBox="0 0 140 140"
             fill="none"
             aria-hidden="true"
             className="overflow-visible"
           >
             <defs>
-              <linearGradient id="ap-grad" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stopColor="#4F46E5" />
-                <stop offset="55%" stopColor="#0EA5E9" />
-                <stop offset="100%" stopColor="#10B981" />
+              <linearGradient id="boot-progress-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#6366f1" />
+                <stop offset="50%" stopColor="#38bdf8" />
+                <stop offset="100%" stopColor="#10b981" />
               </linearGradient>
-              <radialGradient id="ap-core" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="#4F46E5" stopOpacity="0.32" />
-                <stop offset="100%" stopColor="#4F46E5" stopOpacity="0" />
-              </radialGradient>
+
+              <linearGradient id="boot-prism-1" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#4f46e5" />
+                <stop offset="50%" stopColor="#6366f1" />
+                <stop offset="100%" stopColor="#06b6d4" />
+              </linearGradient>
+
+              <linearGradient id="boot-prism-2" x1="100%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#10b981" />
+                <stop offset="50%" stopColor="#059669" />
+                <stop offset="100%" stopColor="#4f46e5" />
+              </linearGradient>
+
+              <filter id="boot-glow" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="4" result="blur" />
+                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+              </filter>
             </defs>
 
-            {/* Breathing core glow */}
+            {/* Glowing Aura Behind Core */}
             <circle
-              className="core-glow"
-              cx="68"
-              cy="68"
-              r="34"
-              fill="url(#ap-core)"
+              className="pulse-aura"
+              cx="70"
+              cy="70"
+              r="40"
+              fill="url(#boot-progress-grad)"
+              opacity="0.12"
+              filter="url(#boot-glow)"
             />
 
-            {/* Static track */}
+            {/* Inactive Track */}
             <circle
-              cx="68"
-              cy="68"
+              cx="70"
+              cy="70"
               r={RING_R}
-              stroke="#E2E8F0"
-              strokeWidth="2"
+              stroke="#1f1f1f"
+              strokeWidth="2.5"
               fill="none"
             />
 
-            {/* Progress ring — driven by stroke-dashoffset */}
+            {/* Active Circular Progress Ring */}
             <circle
               ref={progressRingRef}
-              cx="68"
-              cy="68"
+              cx="70"
+              cy="70"
               r={RING_R}
-              stroke="url(#ap-grad)"
-              strokeWidth="2.5"
+              stroke="url(#boot-progress-grad)"
+              strokeWidth="3"
               strokeLinecap="round"
               fill="none"
-              transform="rotate(-90 68 68)"
+              transform="rotate(-90 70 70)"
               style={{
                 strokeDasharray: RING_C,
                 strokeDashoffset: RING_C,
@@ -252,81 +253,112 @@ export default function Loading({
               }}
             />
 
-            {/* Outer dashed orbit */}
+            {/* Outer Counter-Rotating Dashed Orbit */}
             <g className="orbit-outer">
               <circle
-                cx="68"
-                cy="68"
-                r="40"
-                stroke="#CBD5E1"
-                strokeWidth="1"
-                strokeDasharray="2 10"
+                cx="70"
+                cy="70"
+                r="42"
+                stroke="#404040"
+                strokeWidth="1.2"
+                strokeDasharray="4 8"
                 fill="none"
+                opacity="0.7"
               />
-              <circle cx="68" cy="28" r="3" fill="#4F46E5" />
+              <circle cx="70" cy="28" r="2.5" fill="#38bdf8" />
             </g>
 
-            {/* Inner counter-rotating orbit */}
+            {/* Inner Rotating Telemetry Orbit */}
             <g className="orbit-inner">
               <circle
-                cx="68"
-                cy="68"
-                r="26"
-                stroke="#E2E8F0"
+                cx="70"
+                cy="70"
+                r="30"
+                stroke="#525252"
                 strokeWidth="1"
-                strokeDasharray="1 7"
+                strokeDasharray="2 7"
                 fill="none"
+                opacity="0.5"
               />
-              <circle cx="68" cy="42" r="2.5" fill="#10B981" />
+              <circle cx="70" cy="40" r="2" fill="#10b981" />
             </g>
 
-            {/* Solid centre dot */}
-            <circle cx="68" cy="68" r="5" fill="#0F172A" />
+            {/* Isometric Prism Logo Structure */}
+            <path
+              d="M70 42 L49 80 L60 80 L70 60 L80 80 L91 80 Z"
+              fill="url(#boot-prism-1)"
+              opacity="0.95"
+            />
+            <path
+              d="M70 42 L70 60 L80 80 L91 80 Z"
+              fill="url(#boot-prism-2)"
+              opacity="0.9"
+            />
+            <path
+              d="M57 70 L83 70"
+              stroke="#ffffff"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              opacity="0.9"
+            />
+
+            {/* Glowing Core Dot */}
+            <circle
+              cx="70"
+              cy="54"
+              r="3.5"
+              fill="#10b981"
+              filter="url(#boot-glow)"
+            />
+            <circle cx="70" cy="54" r="1.5" fill="#ffffff" />
           </svg>
         </div>
 
-        {/* ---------------------------------------------------------------- */}
-        {/* Wordmark                                                         */}
-        {/* ---------------------------------------------------------------- */}
-        <div className="boot-el flex flex-col items-center gap-2">
-          <div className="flex items-center" aria-hidden="true">
-            {WORDMARK.map((char, i) => (
-              <span
-                key={`${char}-${i}`}
-                className={`boot-char inline-block text-[22px] font-black tracking-[0.24em] ${
-                  i < 5 ? 'text-slate-900' : 'text-slate-400'
-                }`}
-              >
-                {char}
-              </span>
-            ))}
+        {/* Brand Headline */}
+        <div className="boot-meta flex flex-col items-center text-center gap-1.5">
+          <div className="flex items-center gap-2">
+            <span className="text-3xl font-black tracking-tight text-[#f4f4f5]">
+              Audit
+            </span>
+            <span className="text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400">
+              Pro
+            </span>
+            <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-neutral-900 text-emerald-400 border border-neutral-800 uppercase tracking-widest ml-1">
+              v20.4
+            </span>
           </div>
-          <p className="boot-meta text-[11px] font-medium text-slate-500">
-            {label}
+          <p className="text-xs font-mono text-[#a1a1aa] min-h-[18px] transition-all">
+            {currentStageText}
           </p>
         </div>
 
-        {/* ---------------------------------------------------------------- */}
-        {/* Hairline progress                                                */}
-        {/* ---------------------------------------------------------------- */}
-        <div className="boot-el boot-meta w-56 space-y-2">
-          <div className="h-[3px] w-full overflow-hidden rounded-full bg-slate-200/80">
+        {/* Hairline Progress Bar Container */}
+        <div className="boot-meta w-64 sm:w-72 space-y-2.5">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-900 border border-neutral-800">
             <div
               ref={progressBarRef}
-              className="h-full w-full origin-left rounded-full bg-gradient-to-r from-indigo-600 via-sky-500 to-emerald-500"
+              className="h-full w-full origin-left rounded-full bg-gradient-to-r from-indigo-500 via-sky-400 to-emerald-400 shadow-[0_0_12px_rgba(56,189,248,0.5)]"
               style={{
                 transform: 'scaleX(0)',
                 transition: `transform 90ms ${easeCss.outQuad}`,
               }}
             />
           </div>
-          <div className="flex items-center justify-between font-mono text-[10px] tracking-wider text-slate-400">
-            <span>LOADING</span>
-            <span className="tabular-nums font-semibold text-slate-600">
+
+          <div className="flex items-center justify-between font-mono text-[10px] tracking-wider text-neutral-400">
+            <span className="inline-flex items-center gap-1.5 font-semibold text-neutral-400">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+              </span>
+              INITIALIZING
+            </span>
+            <span className="tabular-nums font-bold text-[#f4f4f5]">
               {progress.toString().padStart(3, '0')}%
             </span>
           </div>
         </div>
+
       </div>
     </div>
   );

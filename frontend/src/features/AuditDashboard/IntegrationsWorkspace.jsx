@@ -744,6 +744,47 @@ export default function IntegrationsWorkspace({
               exit={{ opacity: 0, y: -6 }}
               className="flex flex-col gap-5"
             >
+              {/* Prominent Quick Setup Banner if GA4 Property is not yet chosen */}
+              {(!selectedPropertyUrl && !data?.property_id) && (
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-orange-50/90 via-amber-50/80 to-indigo-50/70 dark:from-orange-950/40 dark:via-amber-950/30 dark:to-indigo-950/30 border border-orange-300 dark:border-orange-800/80 text-orange-950 dark:text-orange-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/60 border border-orange-300 dark:border-orange-800 flex items-center justify-center text-orange-700 dark:text-orange-400 shrink-0 shadow-xs">
+                      <BarChart3 size={20} />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-xs font-black uppercase tracking-wider font-mono text-orange-950 dark:text-orange-200">
+                          Step 2: Connect GA4 Property
+                        </h4>
+                        <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-orange-200/80 dark:bg-orange-900 text-orange-900 dark:text-orange-200">
+                          Numeric ID Required
+                        </span>
+                      </div>
+                      <p className="text-xs text-orange-950 dark:text-orange-200 leading-relaxed font-sans">
+                        Enter your 9 or 10-digit GA4 Property ID (e.g. <code className="font-mono font-bold">123456789</code>) from Google Analytics &gt; Admin &gt; Property Settings to import live traffic channels, sessions, and bounce rate.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+                    <input
+                      type="text"
+                      placeholder="e.g. 123456789"
+                      value={manualPropertyId}
+                      onChange={(e) => setManualPropertyId(e.target.value)}
+                      className="w-full sm:w-48 px-3 py-1.5 text-xs font-mono bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:border-orange-500 shadow-2xs"
+                    />
+                    <button
+                      onClick={() => handleSelectProperty(manualPropertyId)}
+                      disabled={!manualPropertyId.trim() || isSavingProperty}
+                      className="btn-primary py-1.5 px-3.5 text-xs font-bold whitespace-nowrap shadow-xs cursor-pointer bg-orange-600 hover:bg-orange-700 border-orange-600"
+                    >
+                      {isSavingProperty ? 'Saving...' : 'Set & Fetch'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Diagnostic / Action Required Banner */}
               {errorMessage && (
                 <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-50/90 to-orange-50/70 dark:from-amber-950/40 dark:to-orange-950/30 border border-amber-300 dark:border-amber-800/80 text-amber-950 dark:text-amber-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
@@ -754,10 +795,10 @@ export default function IntegrationsWorkspace({
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="text-xs font-black uppercase tracking-wider font-mono text-amber-900 dark:text-amber-200">
-                          Google Analytics 4 Action Required
+                          Google Analytics 4 Notice
                         </h4>
                         <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-amber-200/80 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
-                          Configuration Needed
+                          Status Notice
                         </span>
                       </div>
                       <p className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed font-sans">

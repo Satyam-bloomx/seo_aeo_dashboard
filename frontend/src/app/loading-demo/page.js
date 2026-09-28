@@ -42,7 +42,7 @@ export default function LoadingDemoPage() {
   };
 
   return (
-    <div className="relative flex h-screen w-screen select-none flex-col overflow-hidden bg-[#F8FAFC] font-sans">
+    <div className="relative flex h-screen w-screen select-none flex-col overflow-hidden bg-[#F8FAFC] dark:bg-black font-sans">
       <div className="ambient-bg" />
 
       {/* What sits underneath, revealed once the loader lifts away. */}

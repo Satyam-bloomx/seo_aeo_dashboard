@@ -296,7 +296,8 @@ export default function ApiKeyModal({
         project_id: projectId,
         service: integration.id,
         client_id: customClientId.trim(),
-        client_secret: customClientSecret.trim()
+        client_secret: customClientSecret.trim(),
+        property_id: ga4PropertyOverride.trim() || undefined
       });
       if (integration.id === 'google_analytics' && ga4PropertyOverride.trim()) {
         await handleSaveGa4Property();
@@ -308,6 +309,38 @@ export default function ApiKeyModal({
       setIsSavingApp(false);
       const errMsg = err.response?.data?.detail || 'Failed to save Google OAuth credentials.';
       toast.error(errMsg);
+    }
+  };
+
+  const handleSaveDirectToken = async (e) => {
+    if (e) e.preventDefault();
+    if (!apiKey.trim()) {
+      toast.warning('Please enter an Access Token (ya29...) or Service Account JSON.');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE_URL}/integrations/key`, {
+        project_id: projectId,
+        service: integration.id,
+        service_name: integration.id,
+        api_key: apiKey.trim()
+      });
+      if (integration.id === 'google_analytics' && ga4PropertyOverride.trim()) {
+        await handleSaveGa4Property();
+      }
+      const maskedKey = res.data?.masked_key || '••••••••';
+      toast.success(`${integration.name} connected successfully!`, {
+        description: 'Credentials saved and telemetry active.'
+      });
+      if (onSuccess) onSuccess(integration.id, maskedKey);
+      if (onSaved) onSaved(integration.id, maskedKey);
+      if (onClose) onClose();
+    } catch (err) {
+      const errMsg = err.response?.data?.detail || 'Failed to save credentials.';
+      toast.error(errMsg);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -441,7 +474,7 @@ export default function ApiKeyModal({
                   }`}
                 >
                   <Globe size={14} className="text-indigo-600 dark:text-indigo-400" />
-                  1-Click Direct Sign-In
+                  1-Click Sign-In
                 </button>
                 <button
                   type="button"
@@ -453,7 +486,19 @@ export default function ApiKeyModal({
                   }`}
                 >
                   <Sliders size={14} className="text-indigo-600 dark:text-indigo-400" />
-                  Custom Cloud App
+                  Client ID &amp; Secret
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOauthTab('direct_token')}
+                  className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    oauthTab === 'direct_token'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Key size={14} className="text-indigo-600 dark:text-indigo-400" />
+                  Direct Token / JSON
                 </button>
               </div>
 
@@ -593,11 +638,29 @@ export default function ApiKeyModal({
                           </button>
                         </div>
                       </div>
+
+                      {integration.id === 'google_analytics' && (
+                        <div className="p-3 rounded-xl bg-orange-50/70 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/60 space-y-2">
+                          <label className="block text-[11px] font-bold text-orange-950 dark:text-orange-200">
+                            Target GA4 Property ID (Optional / Recommended)
+                          </label>
+                          <input
+                            type="text"
+                            value={ga4PropertyOverride}
+                            onChange={(e) => setGa4PropertyOverride(e.target.value)}
+                            placeholder="e.g. 349182749 or properties/349182749"
+                            className="w-full text-xs font-mono bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 shadow-2xs"
+                          />
+                          <p className="text-[10px] text-orange-800 dark:text-orange-300 leading-tight">
+                            Find your numeric Property ID in Google Analytics &gt; Admin &gt; Property Settings. Associates your property immediately upon OAuth sign-in.
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-indigo-100/80 dark:border-indigo-900/50">
                       <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight flex-1">
-                        💡 Tip: Create this Client ID in your Google Cloud account so you can authenticate any Google account directly!
+                        💡 Tip: Make sure the Redirect URI above is added in your Google Cloud OAuth Client credentials!
                       </span>
                       <div className="flex items-center gap-2 shrink-0">
                         <button
@@ -615,6 +678,80 @@ export default function ApiKeyModal({
                         >
                           {isSavingApp ? <Loader2 size={13} className="animate-spin" /> : <Globe size={13} />}
                           Save &amp; Connect with Google
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {oauthTab === 'direct_token' && (
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <Key size={15} className="text-indigo-600 dark:text-indigo-400" />
+                        Direct Access Token or Service Account JSON
+                      </h4>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                        Bypass browser consent screens entirely! Paste an OAuth Bearer Token (starts with <code>ya29...</code>) or your Google Cloud Service Account JSON key.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                          Token (ya29...) or Service Account JSON
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={apiKey}
+                          onChange={(e) => setApiKey(e.target.value)}
+                          placeholder='Paste ya29... token OR {"type": "service_account", "client_email": "...", "private_key": "..."}'
+                          className="w-full glass-input px-3 py-2 font-mono text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:border-indigo-500 custom-scrollbar resize-none"
+                        />
+                      </div>
+
+                      {integration.id === 'google_analytics' && (
+                        <div className="p-3 rounded-xl bg-orange-50/70 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/60 space-y-2">
+                          <label className="block text-[11px] font-bold text-orange-950 dark:text-orange-200">
+                            Target GA4 Property ID
+                          </label>
+                          <input
+                            type="text"
+                            value={ga4PropertyOverride}
+                            onChange={(e) => setGa4PropertyOverride(e.target.value)}
+                            placeholder="e.g. 349182749 or properties/349182749"
+                            className="w-full text-xs font-mono bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 shadow-2xs"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-indigo-100/80 dark:border-indigo-900/50">
+                      <button
+                        type="button"
+                        onClick={handleTestConnection}
+                        disabled={isTesting || !apiKey.trim()}
+                        className="btn-secondary py-2 px-3 text-xs font-bold gap-1.5 text-slate-700 dark:text-slate-200 shadow-2xs cursor-pointer"
+                      >
+                        {isTesting ? <Loader2 size={13} className="animate-spin text-indigo-600" /> : <ShieldCheck size={13} className="text-indigo-600" />}
+                        Test Credential
+                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={onClose}
+                          className="px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveDirectToken}
+                          disabled={isLoading || !apiKey.trim()}
+                          className="btn-primary py-2 px-3.5 text-xs font-bold gap-1.5 whitespace-nowrap shrink-0 shadow-xs cursor-pointer"
+                        >
+                          {isLoading ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                          Save &amp; Connect
                         </button>
                       </div>
                     </div>

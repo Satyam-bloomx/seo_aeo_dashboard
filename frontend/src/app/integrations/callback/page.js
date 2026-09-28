@@ -90,33 +90,33 @@ function CallbackContent() {
   }, [projectId, service, code, errorParam, errorDesc, router, serviceDisplayName]);
 
   return (
-    <div className="glass-card p-10 flex flex-col items-center max-w-md w-full text-center border border-slate-200 bg-white shadow-xl rounded-2xl text-slate-900">
+    <div className="glass-card p-10 flex flex-col items-center max-w-md w-full text-center border border-slate-200 dark:border-[#222222] bg-white dark:bg-[#0a0a0a] shadow-xl rounded-2xl text-slate-900 dark:text-[#f4f4f5]">
       {status === 'loading' && (
-        <Loader2 size={56} className="text-indigo-600 animate-spin mb-5" />
+        <Loader2 size={56} className="text-indigo-600 dark:text-indigo-400 animate-spin mb-5" />
       )}
       
       {status === 'success' && (
-        <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 mb-5 shadow-sm">
+        <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-5 shadow-sm">
           <CheckCircle2 size={36} />
         </div>
       )}
       
       {status === 'error' && (
-        <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 mb-5 shadow-sm">
+        <div className="w-16 h-16 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 flex items-center justify-center text-rose-600 dark:text-rose-400 mb-5 shadow-sm">
           <XCircle size={36} />
         </div>
       )}
 
-      <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-indigo-600 mb-1">
+      <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 mb-1">
         <ShieldCheck size={13} /> OAuth Verification
       </div>
-      <h2 className="text-xl font-extrabold text-slate-900 mb-2 tracking-tight">OAuth Connection Status</h2>
-      <p className="text-xs text-slate-500 leading-relaxed font-mono">{message}</p>
+      <h2 className="text-xl font-extrabold text-slate-900 dark:text-white mb-2 tracking-tight">OAuth Connection Status</h2>
+      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-mono">{message}</p>
       
       {status === 'error' && (
         <button 
           onClick={() => router.push('/?tab=integrations')}
-          className="mt-6 btn-primary py-2 px-5 text-xs font-bold shadow-xs"
+          className="mt-6 btn-primary py-2 px-5 text-xs font-bold shadow-xs cursor-pointer"
         >
           Return to Dashboard
         </button>
@@ -127,12 +127,12 @@ function CallbackContent() {
 
 export default function IntegrationsCallback() {
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6 relative">
+    <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#000000] flex flex-col items-center justify-center p-6 relative">
       <div className="ambient-bg"></div>
       <Suspense fallback={
-        <div className="glass-card p-10 flex flex-col items-center max-w-md w-full text-center border border-slate-200 bg-white shadow-md">
-          <Loader2 size={48} className="text-indigo-600 animate-spin mb-4" />
-          <p className="text-xs font-mono text-slate-500">Loading OAuth callback telemetry...</p>
+        <div className="glass-card p-10 flex flex-col items-center max-w-md w-full text-center border border-slate-200 dark:border-[#222222] bg-white dark:bg-[#0a0a0a] shadow-md">
+          <Loader2 size={48} className="text-indigo-600 dark:text-indigo-400 animate-spin mb-4" />
+          <p className="text-xs font-mono text-slate-500 dark:text-slate-400">Loading OAuth callback telemetry...</p>
         </div>
       }>
         <CallbackContent />
