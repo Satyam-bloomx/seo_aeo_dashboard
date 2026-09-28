@@ -14,6 +14,7 @@ import {
   Sparkles,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   ExternalLink,
   BookOpen,
   ChevronDown,
@@ -209,7 +210,8 @@ export default function ApiKeyModal({
   onClose,
   onSuccess,
   onSaved,
-  onOAuthConnect
+  onOAuthConnect,
+  initialTab = 'one_click'
 }) {
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -221,13 +223,19 @@ export default function ApiKeyModal({
   const [previewImage, setPreviewImage] = useState(null);
 
   // Screaming Frog-style User-Defined OAuth Application state & 1-Click Tabs
-  const [oauthTab, setOauthTab] = useState('one_click'); // 'one_click' | 'custom_app' | 'manual_token'
+  const [oauthTab, setOauthTab] = useState(initialTab || 'one_click'); // 'one_click' | 'custom_app' | 'direct_token'
   const [customClientId, setCustomClientId] = useState('');
   const [customClientSecret, setCustomClientSecret] = useState('');
   const [showClientSecret, setShowClientSecret] = useState(false);
   const [isSavingApp, setIsSavingApp] = useState(false);
   const [ga4PropertyOverride, setGa4PropertyOverride] = useState('');
   const [isSavingProperty, setIsSavingProperty] = useState(false);
+
+  useEffect(() => {
+    if (initialTab) {
+      setOauthTab(initialTab);
+    }
+  }, [initialTab]);
 
   useEffect(() => {
     if (integration?.authType === 'oauth') {
@@ -656,19 +664,63 @@ export default function ApiKeyModal({
                           </p>
                         </div>
                       )}
+                      {/* Testing Mode Warning */}
+                      <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs space-y-1">
+                        <div className="font-bold flex items-center gap-1.5 text-[11px]">
+                          <AlertTriangle size={13} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                          <span>Important: Google Cloud "Testing" Mode Notice</span>
+                        </div>
+                        <p className="text-[10px] text-amber-800 dark:text-amber-300 leading-tight">
+                          If your OAuth consent screen is in <strong>Testing</strong> mode in Google Cloud Console, Google will block sign-in with <em>access_denied</em> unless you add your Google email to <strong>OAuth consent screen &gt; Test users</strong>.
+                        </p>
+                        <p className="text-[10px] text-amber-800 dark:text-amber-300 leading-tight">
+                          💡 <strong>Instant Alternative:</strong> Switch to the <strong>Direct Token / JSON</strong> tab above to connect with a Service Account JSON or Access Token without OAuth restrictions!
+                        </p>
+                      </div>
                     </div>
 
                     <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-indigo-100/80 dark:border-indigo-900/50">
                       <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight flex-1">
                         💡 Tip: Make sure the Redirect URI above is added in your Google Cloud OAuth Client credentials!
                       </span>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
                         <button
                           type="button"
                           onClick={onClose}
                           className="px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg cursor-pointer"
                         >
                           Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!customClientId.trim() || !customClientSecret.trim()) {
+                              toast.warning('Please enter both Client ID & Client Secret.');
+                              return;
+                            }
+                            setIsSavingApp(true);
+                            try {
+                              await axios.post(`${API_BASE_URL}/integrations/google/credentials`, {
+                                project_id: projectId,
+                                service: integration.id,
+                                client_id: customClientId.trim(),
+                                client_secret: customClientSecret.trim(),
+                                property_id: ga4PropertyOverride.trim() || undefined
+                              });
+                              if (integration.id === 'google_analytics' && ga4PropertyOverride.trim()) {
+                                await handleSaveGa4Property();
+                              }
+                              toast.success('Custom OAuth Credentials saved!');
+                            } catch (e) {
+                              toast.error('Failed to save credentials.');
+                            } finally {
+                              setIsSavingApp(false);
+                            }
+                          }}
+                          disabled={isSavingApp}
+                          className="px-3 py-2 text-xs font-bold rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer transition-colors shadow-2xs"
+                        >
+                          Save Credentials Only
                         </button>
                         <button
                           type="button"

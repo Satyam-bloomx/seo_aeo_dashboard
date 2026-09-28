@@ -94,6 +94,9 @@ export default function IntegrationsWorkspace({
           setSelectedPropertyUrl(res.data.properties[0].siteUrl);
         }
       }
+      if (res.data?.error && (!res.data.properties || res.data.properties.length === 0)) {
+        setErrorMessage(res.data.error);
+      }
     } catch (err) {
       console.warn(`Could not load properties for ${serviceId}:`, err);
     } finally {

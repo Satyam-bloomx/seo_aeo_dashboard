@@ -10,6 +10,8 @@ import {
   Key,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
+  ArrowRight,
   ExternalLink,
   ShieldCheck,
   RefreshCw,
@@ -115,6 +117,7 @@ const CATEGORIES = ['All', 'Speed & Vitals', 'AEO Voice & LLM', 'GEO Local Searc
 export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedUrl = null, onAuditProperty = null }) {
   const [integrations, setIntegrations] = useState({});
   const [activeModal, setActiveModal] = useState(null);
+  const [modalInitialTab, setModalInitialTab] = useState('one_click');
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [testingId, setTestingId] = useState(null);
   const [testResults, setTestResults] = useState({});
@@ -126,6 +129,9 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
   const [selectedGscProperty, setSelectedGscProperty] = useState('');
   const [loadingProperties, setLoadingProperties] = useState(false);
 
+  // Connection / OAuth Error State
+  const [serviceErrors, setServiceErrors] = useState({});
+
   // GA4 Properties & Manual Override State
   const [ga4Properties, setGa4Properties] = useState([]);
   const [selectedGa4Property, setSelectedGa4Property] = useState('');
@@ -133,22 +139,90 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
   const [loadingGa4Properties, setLoadingGa4Properties] = useState(false);
   const [isSavingGa4Property, setIsSavingGa4Property] = useState(false);
 
+  // Listen for OAuth error in URL search params or sessionStorage
+  useEffect(() => {
+    let urlOauthError = null;
+    let urlService = null;
+    let urlOpenModal = null;
+    let urlTabType = null;
+
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      urlOauthError = searchParams.get('oauth_error');
+      urlService = searchParams.get('service');
+      urlOpenModal = searchParams.get('open_modal');
+      urlTabType = searchParams.get('tab_type');
+    }
+
+    if (urlOauthError) {
+      const decoded = decodeURIComponent(urlOauthError);
+      const targetSvc = urlService || 'google_analytics';
+      setServiceErrors(prev => ({ ...prev, [targetSvc]: decoded }));
+      toast.error(`Authentication Failed: ${decoded.slice(0, 100)}`, {
+        description: 'See the diagnostic details on the service card below.',
+        duration: 9000
+      });
+    }
+
+    if (urlOpenModal) {
+      const targetItem = API_INTEGRATIONS.find(i => i.id === urlOpenModal);
+      if (targetItem) {
+        setModalInitialTab(urlTabType || 'direct_token');
+        setActiveModal(targetItem);
+      }
+    }
+
+    // Also check sessionStorage for last error
+    try {
+      if (typeof window !== 'undefined') {
+        const stored = sessionStorage.getItem('last_integration_error');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed?.service && parsed?.error && (Date.now() - (parsed.timestamp || 0) < 3600000)) {
+            setServiceErrors(prev => ({ ...prev, [parsed.service]: parsed.error }));
+          }
+        }
+      }
+    } catch {}
+  }, []);
+
+  const handleDismissError = async (serviceId) => {
+    setServiceErrors(prev => {
+      const copy = { ...prev };
+      delete copy[serviceId];
+      return copy;
+    });
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('last_integration_error');
+      }
+      await axios.post(`${API_BASE_URL}/integrations/clear-error/${projectId}/${serviceId}`);
+    } catch {}
+  };
+
   const fetchStatus = useCallback(async () => {
     try {
       setLoadingStatus(true);
       const res = await axios.get(`${API_BASE_URL}/integrations/status/${projectId}`);
       const data = res.data;
       const map = {};
+      const errMap = {};
       if (Array.isArray(data)) {
         data.forEach(item => {
           if (item && item.id) {
             map[item.id] = item;
+            if (item.auth_error) {
+              errMap[item.id] = item.auth_error;
+            }
           }
         });
       } else if (data && typeof data === 'object') {
         Object.assign(map, data);
       }
       setIntegrations(map);
+      if (Object.keys(errMap).length > 0) {
+        setServiceErrors(prev => ({ ...prev, ...errMap }));
+      }
       
       // Sync selected properties from DB status
       if (map['search_console']?.selected_property) {
@@ -495,6 +569,31 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
         </div>
       </div>
 
+      {/* Active Service Error Summary Banner */}
+      {Object.keys(serviceErrors).length > 0 && (
+        <div className="p-4 rounded-2xl bg-rose-50/90 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 flex items-start justify-between gap-3 text-rose-900 dark:text-rose-200 shadow-xs shrink-0">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-900/60 border border-rose-300 dark:border-rose-700 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+              <AlertTriangle size={18} />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-rose-950 dark:text-rose-100 uppercase tracking-wider font-mono">
+                Google Authentication Notice
+              </h4>
+              <p className="text-xs text-rose-800 dark:text-rose-300 mt-0.5 leading-relaxed">
+                Google rejected authorization for {Object.keys(serviceErrors).map(s => s.replace(/_/g, ' ').toUpperCase()).join(', ')}. Review the diagnostic error details on the card below or connect directly using a Service Account JSON.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setServiceErrors({})}
+            className="text-xs text-rose-700 dark:text-rose-400 hover:underline font-bold px-2 py-1 cursor-pointer shrink-0"
+          >
+            Clear All
+          </button>
+        </div>
+      )}
+
       {/* Category Filter Navigation Bar */}
       <div className="shrink-0 flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
         <LayoutGroup id="integrations-category-filter">
@@ -549,6 +648,8 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
           const maskedKey = integrationState?.masked_key;
           const testRes = testResults[item.id];
           const isTesting = testingId === item.id;
+          const activeError = serviceErrors[item.id] || integrationState?.auth_error;
+          const hasError = Boolean(activeError);
 
           return (
             <motion.div
@@ -557,7 +658,9 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
               whileHover={{ y: -2 }}
               transition={spring.press}
               className={`p-5 rounded-2xl transition-all border flex flex-col justify-between ${
-                isConnected
+                hasError && !isConnected
+                  ? 'bg-white dark:bg-slate-900/90 border-rose-400 dark:border-rose-600/80 shadow-xs ring-2 ring-rose-500/20'
+                  : isConnected
                   ? 'bg-white dark:bg-slate-900/90 border-emerald-400/80 dark:border-emerald-500/60 shadow-xs ring-1 ring-emerald-400/20'
                   : 'bg-white dark:bg-slate-900/90 border-slate-200 dark:border-slate-800 shadow-xs hover:border-slate-300 dark:hover:border-slate-700'
               }`}
@@ -567,7 +670,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-xs shrink-0 border ${
-                      isConnected ? 'bg-emerald-50/60 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60' : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60'
+                      isConnected ? 'bg-emerald-50/60 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60' : hasError ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60' : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60'
                     }`}>
                       {item.icon}
                     </div>
@@ -575,7 +678,19 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-sm font-bold text-slate-900 dark:text-white">{item.name}</h3>
                         <AnimatePresence mode="wait" initial={false}>
-                          {isConnected ? (
+                          {hasError && !isConnected ? (
+                            <motion.span
+                              key="error"
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.8 }}
+                              transition={spring.soft}
+                              className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-rose-800 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60 border border-rose-300/80 dark:border-rose-700/60 px-2.5 py-0.5 rounded-full shadow-2xs"
+                            >
+                              <AlertTriangle size={11} className="text-rose-600 dark:text-rose-400" />
+                              OAuth Failed
+                            </motion.span>
+                          ) : isConnected ? (
                             <motion.span
                               key="connected"
                               initial={{ opacity: 0, scale: 0.8 }}
@@ -622,6 +737,65 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                 </div>
 
                 <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-4">{item.description}</p>
+
+                {/* OAuth / Connection Error Banner */}
+                {hasError && !isConnected && (
+                  <div className="mb-4 p-3.5 rounded-xl bg-rose-50/90 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-rose-950 dark:text-rose-100">
+                        <AlertTriangle size={15} className="text-rose-600 dark:text-rose-400 shrink-0" />
+                        <span>OAuth Authorization Failed</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDismissError(item.id)}
+                        className="text-[10px] text-rose-600 dark:text-rose-400 hover:underline font-semibold cursor-pointer"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                    <div className="p-2 rounded-lg bg-black/50 border border-rose-800/40 text-[11px] font-mono text-rose-300 select-all break-all leading-tight">
+                      {activeError}
+                    </div>
+                    {/* Actionable diagnosis */}
+                    {activeError.toLowerCase().includes('access_denied') && (
+                      <p className="text-[11px] text-rose-800 dark:text-rose-300 leading-tight">
+                        👉 <strong>Diagnosis:</strong> Google Cloud project is in <em>Testing</em> mode. Add your Google email to <strong>OAuth consent screen &gt; Test users</strong> in Google Cloud Console, OR bypass this by using a Service Account JSON.
+                      </p>
+                    )}
+                    {activeError.toLowerCase().includes('redirect_uri_mismatch') && (
+                      <p className="text-[11px] text-rose-800 dark:text-rose-300 leading-tight">
+                        👉 <strong>Diagnosis:</strong> Authorized redirect URI mismatch. Add <code>{typeof window !== 'undefined' ? `${window.location.origin}/integrations/callback` : 'your callback URL'}</code> to Authorized redirect URIs in Google Cloud Credentials.
+                      </p>
+                    )}
+                    {activeError.toLowerCase().includes('permission not granted') && (
+                      <p className="text-[11px] text-rose-800 dark:text-rose-300 leading-tight">
+                        👉 <strong>Diagnosis:</strong> You must check the permission box on Google's authorization screen to allow data access.
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2 pt-1 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalInitialTab('direct_token');
+                          setActiveModal(item);
+                        }}
+                        className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                      >
+                        <Key size={11} />
+                        <span>Bypass with Service Account JSON</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOAuthConnect(item.id)}
+                        className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                      >
+                        <RefreshCw size={11} />
+                        <span>Retry Google Sign-In</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Masked Key Display for Connected API Keys */}
                 <AnimatePresence initial={false}>
@@ -935,9 +1109,14 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
         <ApiKeyModal
           integration={activeModal}
           projectId={projectId}
-          onClose={() => setActiveModal(null)}
+          initialTab={modalInitialTab}
+          onClose={() => {
+            setActiveModal(null);
+            setModalInitialTab('one_click');
+          }}
           onSuccess={(serviceId, maskedKey) => {
             setActiveModal(null);
+            setModalInitialTab('one_click');
             setIntegrations(prev => ({
               ...prev,
               [serviceId]: {

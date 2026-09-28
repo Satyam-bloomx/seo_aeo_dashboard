@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useCallback, useMemo } from 'react';
+import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { easeCss } from '@/lib/motion';
@@ -54,6 +54,22 @@ export default function Loading({
     }
   }, []);
 
+  // Internal safety timer: guarantees loading screen NEVER hangs even if tab is backgrounded
+  useEffect(() => {
+    if (isBootloader && onBootloaderComplete) {
+      const timer = setTimeout(() => {
+        onBootloaderComplete();
+      }, 1800);
+      return () => clearTimeout(timer);
+    }
+  }, [isBootloader, onBootloaderComplete]);
+
+  const handleSkip = () => {
+    if (isBootloader && onBootloaderComplete) {
+      onBootloaderComplete();
+    }
+  };
+
   useGSAP(
     () => {
       const reduced = window.matchMedia?.(
@@ -64,7 +80,7 @@ export default function Loading({
         paintProgress(100);
         gsap.set('.boot-content', { opacity: 1, y: 0, scale: 1 });
         if (isBootloader && onBootloaderComplete) {
-          gsap.delayedCall(0.3, onBootloaderComplete);
+          gsap.delayedCall(0.1, onBootloaderComplete);
         }
         return;
       }
@@ -104,13 +120,13 @@ export default function Loading({
       tl.fromTo(
         '.boot-emblem',
         { scale: 0.82, opacity: 0 },
-        { scale: 1, opacity: 1, duration: 0.7, ease: 'back.out(1.4)' }
+        { scale: 1, opacity: 1, duration: 0.5, ease: 'back.out(1.4)' }
       )
         .fromTo(
           '.boot-meta',
           { y: 14, opacity: 0 },
-          { y: 0, opacity: 1, duration: 0.5, stagger: 0.06, ease: 'power3.out' },
-          '-=0.35'
+          { y: 0, opacity: 1, duration: 0.4, stagger: 0.05, ease: 'power3.out' },
+          '-=0.25'
         );
 
       const counter = { val: 0 };
@@ -118,11 +134,11 @@ export default function Loading({
         counter,
         {
           val: 100,
-          duration: 1.45,
+          duration: isBootloader ? 0.95 : 1.45,
           ease: 'power2.inOut',
           onUpdate: () => paintProgress(counter.val),
         },
-        '-=0.3'
+        '-=0.2'
       );
 
       // Smooth exit
@@ -131,21 +147,21 @@ export default function Loading({
         {
           y: -14,
           opacity: 0,
-          duration: 0.38,
+          duration: 0.28,
           ease: 'power2.in',
         },
-        '+=0.15'
+        '+=0.1'
       ).to(
         rootRef.current,
         {
           opacity: 0,
-          duration: 0.28,
+          duration: 0.2,
           ease: 'power2.out',
           onComplete: () => {
             if (isBootloader && onBootloaderComplete) onBootloaderComplete();
           },
         },
-        '-=0.15'
+        '-=0.1'
       );
     },
     { scope: rootRef, dependencies: [isBootloader] }
@@ -154,7 +170,8 @@ export default function Loading({
   return (
     <div
       ref={rootRef}
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden bg-black select-none font-sans text-neutral-100"
+      onClick={handleSkip}
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden bg-black select-none font-sans text-neutral-100 cursor-pointer"
       role="status"
       aria-live="polite"
       aria-label={`${label} — ${progress}%`}
@@ -358,6 +375,16 @@ export default function Loading({
             </span>
           </div>
         </div>
+
+        {isBootloader && (
+          <button
+            type="button"
+            onClick={handleSkip}
+            className="boot-meta text-[11px] font-mono text-neutral-400 hover:text-white transition-colors cursor-pointer border border-neutral-800 bg-neutral-950/80 px-3.5 py-1 rounded-full hover:border-neutral-700"
+          >
+            Click anywhere to continue →
+          </button>
+        )}
 
       </div>
     </div>

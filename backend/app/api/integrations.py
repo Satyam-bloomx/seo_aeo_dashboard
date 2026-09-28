@@ -23,6 +23,7 @@ class IntegrationStatusResponse(BaseModel):
     account_email: Optional[str] = None
     selected_property: Optional[str] = None
     permission_error: Optional[str] = None
+    auth_error: Optional[str] = None
     has_telemetry: bool = False
 
 class ApiKeyRequest(BaseModel):
@@ -105,26 +106,29 @@ async def get_integration_status(project_id: int, db: AsyncSession = Depends(get
         permission_error = None
         has_telemetry = False
         
-        if item and item.connected:
-            raw_key = item.api_key or item.access_token
-            # Disallow false 'connected' state if using AIza API key for private Google services
-            is_invalid_aiza = bool(svc in ["search_console", "google_analytics"] and raw_key and raw_key.startswith("AIza"))
-            
-            if is_invalid_aiza:
-                connected = False
-            else:
-                connected = bool(raw_key)
-            has_key = bool(raw_key)
-
+        auth_error = None
+        if item:
             config = item.config_json if isinstance(item.config_json, dict) else {}
-            selected_property = config.get("selected_property")
-            data_obj = config.get("data", {})
-            if isinstance(data_obj, dict):
-                account_email = data_obj.get("auth_account")
-                permission_error = data_obj.get("google_permission_error")
-                has_telemetry = bool(data_obj.get("is_live_data"))
-                if not selected_property:
-                    selected_property = data_obj.get("property") or data_obj.get("property_name")
+            auth_error = config.get("last_auth_error")
+            if item.connected:
+                raw_key = item.api_key or item.access_token
+                # Disallow false 'connected' state if using AIza API key for private Google services
+                is_invalid_aiza = bool(svc in ["search_console", "google_analytics"] and raw_key and raw_key.startswith("AIza"))
+                
+                if is_invalid_aiza:
+                    connected = False
+                else:
+                    connected = bool(raw_key)
+                has_key = bool(raw_key)
+
+                selected_property = config.get("selected_property")
+                data_obj = config.get("data", {})
+                if isinstance(data_obj, dict):
+                    account_email = data_obj.get("auth_account")
+                    permission_error = data_obj.get("google_permission_error")
+                    has_telemetry = bool(data_obj.get("is_live_data"))
+                    if not selected_property:
+                        selected_property = data_obj.get("property") or data_obj.get("property_name")
 
         elif env_keys.get(svc):
             connected = True
@@ -139,6 +143,7 @@ async def get_integration_status(project_id: int, db: AsyncSession = Depends(get
             account_email=account_email,
             selected_property=selected_property,
             permission_error=permission_error,
+            auth_error=auth_error,
             has_telemetry=has_telemetry
         ))
         
@@ -520,6 +525,26 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
         if token.lower().startswith("bearer "):
             token = token[7:].strip()
         
+        # Check if user provided Google Cloud Service Account JSON
+        if token.startswith("{"):
+            try:
+                import json
+                from google.oauth2 import service_account
+                from google.auth.transport.requests import Request as GoogleRequest
+                sa_info = json.loads(token)
+                creds = service_account.Credentials.from_service_account_info(
+                    sa_info,
+                    scopes=["https://www.googleapis.com/auth/analytics.readonly"]
+                )
+                creds.refresh(GoogleRequest())
+                token = creds.token
+            except Exception as sa_err:
+                return {
+                    "success": False,
+                    "status": "error",
+                    "detail": f"Invalid Google Service Account JSON: {str(sa_err)}. Please ensure client_email and private_key are valid."
+                }
+        
         # Reject simulated or mock tokens
         if token.startswith("oauth_token_") or token.startswith("mock_"):
             return {
@@ -532,7 +557,7 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
             return {
                 "success": False,
                 "status": "error",
-                "detail": "Google API Keys ('AIza...') cannot access Google Analytics 4 telemetry. GA4 requires OAuth 2.0 User authorization."
+                "detail": "Google API Keys ('AIza...') cannot access Google Analytics 4 telemetry. GA4 requires OAuth 2.0 User authorization or a Service Account JSON."
             }
             
         headers = {"Authorization": f"Bearer {token}"}
@@ -821,12 +846,33 @@ async def google_auth_callback(
                 refresh_token = payload.get("refresh_token")
                 expires_in = payload.get("expires_in", 3600)
                 expires_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=expires_in)
+                granted_scope = payload.get("scope", "")
+
+                # Check if user actually granted analytics scope
+                if service == "google_analytics" and "analytics" not in granted_scope.lower():
+                    cfg = dict(integration.config_json or {})
+                    err_msg = "Permission not granted: You must check the box for 'See and download your Google Analytics data' on the Google authorization screen."
+                    cfg["last_auth_error"] = err_msg
+                    cfg["last_auth_attempt"] = datetime.datetime.utcnow().isoformat()
+                    integration.config_json = cfg
+                    integration.connected = False
+                    flag_modified(integration, "config_json")
+                    await db.commit()
+                    raise HTTPException(status_code=400, detail=err_msg)
             else:
                 err_text = res.text
                 try:
-                    err_text = res.json().get("error_description", err_text)
+                    err_json = res.json()
+                    err_text = err_json.get("error_description") or err_json.get("error") or err_text
                 except Exception:
                     pass
+                cfg = dict(integration.config_json or {})
+                cfg["last_auth_error"] = f"Token exchange failed: {err_text}"
+                cfg["last_auth_attempt"] = datetime.datetime.utcnow().isoformat()
+                integration.config_json = cfg
+                integration.connected = False
+                flag_modified(integration, "config_json")
+                await db.commit()
                 raise HTTPException(status_code=400, detail=f"Google OAuth token exchange failed: {err_text}")
             
         integration.connected = True
@@ -834,6 +880,12 @@ async def google_auth_callback(
         if refresh_token:
             integration.refresh_token = refresh_token
         integration.expires_at = expires_at
+
+        # Clear any previous auth error on successful authentication
+        cfg = dict(integration.config_json or {})
+        cfg.pop("last_auth_error", None)
+        integration.config_json = cfg
+        flag_modified(integration, "config_json")
         
         await db.commit()
 
@@ -846,11 +898,58 @@ async def google_auth_callback(
 
         return {"status": "success", "message": f"{service} connected and authenticated successfully!"}
     except HTTPException:
-        await db.rollback()
+        # Note: We committed last_auth_error before raising, so rollback here won't discard the error message
         raise
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to authenticate {service}: {str(e)}")
+
+class RecordOAuthErrorRequest(BaseModel):
+    project_id: int = 1
+    service: str
+    error: str
+    error_description: Optional[str] = None
+
+@router.post("/google/record-error")
+async def record_oauth_error(req: RecordOAuthErrorRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Integration).where(
+        Integration.project_id == req.project_id,
+        Integration.integration_type == req.service
+    ))
+    integration = result.scalars().first()
+    if not integration:
+        integration = Integration(project_id=req.project_id, integration_type=req.service, connected=False)
+        db.add(integration)
+    
+    cfg = dict(integration.config_json or {})
+    err_detail = req.error_description or req.error
+    if "access_denied" in err_detail.lower():
+        err_detail = "Google Access Denied: If your OAuth app is in 'Testing' mode in Google Cloud Console, you must add your Google email under 'OAuth consent screen' > 'Test users'. Alternatively, paste a Service Account JSON in the modal."
+    elif "redirect_uri_mismatch" in err_detail.lower():
+        err_detail = f"Redirect URI Mismatch: Please ensure '{req.error_description or 'your callback URL'}' is listed in Google Cloud Console Credentials under Authorized Redirect URIs."
+        
+    cfg["last_auth_error"] = err_detail
+    cfg["last_auth_attempt"] = datetime.datetime.utcnow().isoformat()
+    integration.config_json = cfg
+    integration.connected = False
+    flag_modified(integration, "config_json")
+    await db.commit()
+    return {"status": "recorded", "error": cfg["last_auth_error"]}
+
+@router.post("/clear-error/{project_id}/{service}")
+async def clear_integration_error(project_id: int, service: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Integration).where(
+        Integration.project_id == project_id,
+        Integration.integration_type == service
+    ))
+    integration = result.scalars().first()
+    if integration and integration.config_json:
+        cfg = dict(integration.config_json)
+        cfg.pop("last_auth_error", None)
+        integration.config_json = cfg
+        flag_modified(integration, "config_json")
+        await db.commit()
+    return {"status": "cleared"}
 
 @router.delete("/disconnect/{project_id}/{service}")
 async def disconnect_integration_delete(project_id: int, service: str, db: AsyncSession = Depends(get_db)):
