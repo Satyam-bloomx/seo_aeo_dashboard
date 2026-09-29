@@ -26,6 +26,7 @@ import {
 } from '@/lib/motion';
 import AuditProLogo from '@/components/ui/AuditProLogo';
 import ThemeToggle from '@/components/ui/ThemeToggle';
+import UserMenu from '@/features/Auth/UserMenu';
 
 const NAV_ITEM_CLASS =
   'relative flex w-full cursor-pointer items-center justify-between rounded-xl px-3.5 py-2.5 text-left text-xs outline-none transition-colors duration-150';
@@ -240,12 +241,15 @@ export default function Sidebar({
         </motion.button>
 
         {/* Theme Preference Switcher in Sidebar Footer */}
-        <div className="flex items-center justify-between rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 py-1.5 px-3 mb-2">
-          <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+        <div className="flex items-center justify-between rounded-xl border border-slate-200/80 dark:border-white/[0.08] bg-slate-50/80 dark:bg-[#121620] py-1.5 px-3 mb-2">
+          <span className="text-[11px] font-medium text-slate-600 dark:text-[#D6E5FC]/70 flex items-center gap-1.5">
             <span>Theme Mode</span>
           </span>
           <ThemeToggle showLabel={false} />
         </div>
+
+        {/* User Info Profile Tab */}
+        <UserMenu />
       </motion.div>
     </aside>
   );
