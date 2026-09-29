@@ -15,7 +15,7 @@ import {
   Loader2,
   CheckCircle2
 } from 'lucide-react';
-import { duration, ease, spring, staggerContainer, staggerItem, tapPress, tween } from '@/lib/motion';
+import { duration, ease, fadeUp, spring, staggerContainer, staggerItem, tapPress, tween } from '@/lib/motion';
 
 const STAGES = [
   { threshold: 0, label: 'Initiating Spider & Robots Protocol', sub: 'Parsing robots.txt, sitemaps and seed endpoints...' },
@@ -53,98 +53,63 @@ export default function SpiderLiveProgressScreen({
   return (
     <div className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-1 space-y-6">
 
-      {/* Top Hero Banner with Kinetic Scanner */}
+      {/* Compact Live Progress Header */}
       <motion.div
-        variants={staggerContainer(0.06, 0.08)}
+        variants={fadeUp}
         initial="initial"
         animate="animate"
-        className="relative overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 md:p-8 shadow-sm"
+        className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0c0c0e] p-4 sm:p-5 shadow-xs"
       >
-        {/* Ambient background glow */}
-        <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
-        <div className="absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6 sm:gap-8">
-          
-          {/* Left info & progress */}
-          <div className="flex-1 space-y-4 max-w-xl text-center md:text-left w-full">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {/* Left: Title, Target & Current Stage */}
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#CAE366] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#CAE366]"></span>
               </span>
-              Screaming Frog Spider Active (v20.4)
-            </div>
-
-            <div>
-              <h2 className="text-xl sm:text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-                Auditing Website Architecture
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-[#D6E5FC] tracking-tight">
+                Auditing Website
               </h2>
-              <p className="text-xs sm:text-sm font-mono text-indigo-600 dark:text-indigo-400 font-bold mt-1 truncate">
-                Target: {url || 'Active Website'}
-              </p>
-            </div>
-
-            {/* Stage indicator */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-1 text-left">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                  <Activity size={14} className="text-indigo-600 dark:text-indigo-400 animate-pulse shrink-0" />
-                  <span className="truncate">{currentStage.label}</span>
+              {url && (
+                <span className="text-xs font-mono text-slate-500 dark:text-slate-400 truncate max-w-xs sm:max-w-md">
+                  · {url.replace(/^https?:\/\//, '')}
                 </span>
-                <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 shrink-0 ml-2">{progress}%</span>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">{currentStage.sub}</p>
+              )}
             </div>
 
-            {/* Glowing Progress bar */}
-            <div className="space-y-1.5">
-              <div className="h-2.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden border border-slate-200 dark:border-slate-700 p-0.5">
-                <motion.div
-                  className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-teal-500 to-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
-                  initial={{ width: '0%' }}
-                  animate={{ width: `${Math.max(5, progress)}%` }}
-                  transition={{ duration: 0.5, ease: 'easeOut' }}
-                />
-              </div>
-              <div className="flex justify-between text-[11px] font-mono text-slate-400 dark:text-slate-500">
-                <span>Discovered: <strong className="text-slate-700 dark:text-slate-300">{pagesCrawled} URLs</strong></span>
-                <span>Max Depth: <strong className="text-slate-700 dark:text-slate-300">{crawlerSettings.maxDepth || 4}</strong></span>
-                <span>Threads: <strong className="text-slate-700 dark:text-slate-300">{crawlerSettings.maxConcurrent || 5}</strong></span>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Kinetic Orbital Radar Scanner */}
-          <div className="relative flex items-center justify-center shrink-0 w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56">
-            {/* Radar outer rings */}
-            <motion.div
-              animate={reduced ? undefined : { rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 12, ease: 'linear' }}
-              className="absolute inset-0 rounded-full border border-dashed border-indigo-300/80 dark:border-indigo-500/40"
-            />
-            <motion.div
-              animate={reduced ? undefined : { rotate: -360 }}
-              transition={{ repeat: Infinity, duration: 8, ease: 'linear' }}
-              className="absolute inset-4 rounded-full border border-slate-200 dark:border-slate-800"
-            />
-            <motion.div
-              animate={reduced ? undefined : { scale: [1, 1.08, 1], opacity: [0.3, 0.7, 0.3] }}
-              transition={{ repeat: Infinity, duration: 2.4, ease: 'easeInOut' }}
-              className="absolute inset-8 rounded-full bg-emerald-500/10 blur-sm"
-            />
-
-            {/* Center pulsing core */}
-            <div className="relative z-10 flex flex-col items-center justify-center w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-slate-900 to-indigo-950 text-white shadow-xl border border-indigo-500/30">
-              <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-emerald-400">
-                {progress}%
-              </span>
-              <span className="text-[9px] font-mono uppercase tracking-widest text-slate-400">
-                Crawling
+            <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+              <Activity size={13} className="text-[#CAE366] animate-pulse shrink-0" />
+              <span className="font-medium truncate">{currentStage.label}</span>
+              <span className="hidden md:inline text-[11px] text-slate-400 dark:text-slate-500 truncate">
+                — {currentStage.sub}
               </span>
             </div>
           </div>
 
+          {/* Right: Progress stats & Bar */}
+          <div className="sm:w-72 shrink-0 space-y-2">
+            <div className="flex items-center justify-between text-xs font-mono">
+              <span className="text-slate-500 dark:text-slate-400">
+                <strong className="text-slate-900 dark:text-[#D6E5FC] font-semibold">{pagesCrawled}</strong> URLs extracted
+              </span>
+              <span className="font-bold text-[#CAE366] tabular-nums">{progress}%</span>
+            </div>
+
+            <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-white/10 overflow-hidden">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-[#CAE366]"
+                initial={{ width: '0%' }}
+                animate={{ width: `${Math.max(4, progress)}%` }}
+                transition={{ duration: 0.4, ease: 'easeOut' }}
+              />
+            </div>
+
+            <div className="flex justify-between text-[10px] font-mono text-slate-400 dark:text-slate-500">
+              <span>Depth: {crawlerSettings.maxDepth || 4}</span>
+              <span>Threads: {crawlerSettings.maxConcurrent || 5}</span>
+            </div>
+          </div>
         </div>
       </motion.div>
 

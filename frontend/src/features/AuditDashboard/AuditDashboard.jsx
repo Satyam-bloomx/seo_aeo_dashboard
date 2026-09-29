@@ -1540,7 +1540,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
 
           {/* Live crawl banner */}
           <AnimatePresence initial={false}>
-            {isAuditing && (
+            {isAuditing && activeTab !== 'overview' && (
               <motion.div
                 key="crawl-banner"
                 variants={bannerDrop}
@@ -1553,7 +1553,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                 <div className="mb-1.5 flex justify-between font-mono text-xs font-bold tracking-wide">
                   <span className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400">
                     <Loader2 size={14} className="animate-spin text-indigo-600 dark:text-indigo-400" />
-                    SCREAMING FROG SPIDER ACTIVE
+                    CRAWL IN PROGRESS
                   </span>
                   <span className="font-mono font-bold tabular-nums text-slate-900 dark:text-white">
                     {progress}% Complete
