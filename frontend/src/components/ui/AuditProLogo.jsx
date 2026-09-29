@@ -127,15 +127,9 @@ export default function AuditProLogo({
       {/* Brand Typography */}
       {showText && (
         <div className="flex flex-col">
-          <div className="flex items-center gap-1.5 leading-none">
+          <div className="flex items-center gap-1 leading-none">
             <span className="font-bold text-base tracking-tight text-slate-900 dark:text-white font-sans transition-colors">
-              BloomX
-            </span>
-            <span className="font-bold text-base tracking-tight text-[#CAE366] font-sans">
-              AuditPro
-            </span>
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#CAE366]/10 text-[#CAE366] border border-[#CAE366]/30 uppercase tracking-wider ml-1 transition-colors">
-              SPIDER
+              Audit<span className="text-[#CAE366]">Pro</span>
             </span>
           </div>
           <span className="text-[10px] font-sans text-slate-400 dark:text-[#D6E5FC]/60 tracking-wider mt-0.5">
