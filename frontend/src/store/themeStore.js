@@ -3,10 +3,10 @@ import { create } from 'zustand';
 const THEME_STORAGE_KEY = 'auditpro_theme';
 
 const getSystemTheme = () => {
-  if (typeof window === 'undefined') return 'light';
-  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light';
+  if (typeof window === 'undefined') return 'dark';
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+    ? 'light'
+    : 'dark';
 };
 
 const applyThemeToDOM = (resolvedTheme) => {
@@ -24,14 +24,14 @@ const applyThemeToDOM = (resolvedTheme) => {
 };
 
 export const useThemeStore = create((set, get) => ({
-  theme: 'system', // 'light' | 'dark' | 'system'
-  resolvedTheme: 'light', // 'light' | 'dark'
+  theme: 'dark', // 'light' | 'dark' | 'system'
+  resolvedTheme: 'dark', // 'light' | 'dark'
   mounted: false,
 
   initTheme: () => {
     if (typeof window === 'undefined') return;
 
-    let savedTheme = 'system';
+    let savedTheme = 'dark';
     try {
       const stored = localStorage.getItem(THEME_STORAGE_KEY);
       if (stored === 'light' || stored === 'dark' || stored === 'system') {

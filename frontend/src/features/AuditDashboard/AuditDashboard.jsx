@@ -1303,7 +1303,7 @@ export default function AuditDashboard() {
         <Loading isBootloader onBootloaderComplete={() => setIsAppInitializing(false)} />
       )}
 
-      <div className="relative flex h-screen h-[100dvh] w-full overflow-hidden bg-[#F8FAFC] dark:bg-[#000000] font-sans text-slate-900 dark:text-[#f4f4f5] transition-colors duration-200">
+      <div className="relative flex h-screen h-[100dvh] w-full overflow-hidden bg-[#F8FAFC] dark:bg-[#050505] font-sans text-slate-900 dark:text-[#FFFFFF] transition-colors duration-200">
         <div className="ambient-bg" />
 
         {/* ---------------------------------------------------------------- */}
@@ -1330,7 +1330,7 @@ export default function AuditDashboard() {
               animate="animate"
               exit="exit"
               onClick={() => setIsMobileSidebarOpen(false)}
-              className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs md:hidden"
+              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
             />
           )}
           {isMobileSidebarOpen && (
@@ -1340,7 +1340,7 @@ export default function AuditDashboard() {
               initial="initial"
               animate="animate"
               exit="exit"
-              className="fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] will-change-transform md:hidden shadow-2xl bg-white dark:bg-[#000000]"
+              className="fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] will-change-transform md:hidden shadow-2xl bg-white dark:bg-[#07080B]"
             >
               <Sidebar
                 activeTab={activeTab}
@@ -1377,13 +1377,13 @@ export default function AuditDashboard() {
             initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={tween(duration.panel, ease.outQuint)}
-            className="flex h-16 shrink-0 items-center justify-between gap-2.5 sm:gap-3.5 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 px-3 sm:px-6 shadow-xs backdrop-blur-md transition-colors"
+            className="flex h-16 shrink-0 items-center justify-between gap-2.5 sm:gap-3.5 border-b border-slate-200 dark:border-white/[0.08] bg-white/90 dark:bg-[#07080B]/90 px-3 sm:px-6 shadow-xs backdrop-blur-md transition-colors"
           >
             <motion.button
               onClick={() => setIsMobileSidebarOpen(true)}
               whileTap={tapPress}
               transition={spring.press}
-              className="flex items-center justify-center rounded-lg p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white md:hidden shrink-0"
+              className="flex items-center justify-center rounded-lg p-2 text-slate-600 dark:text-[#D6E5FC]/70 hover:bg-slate-100 dark:hover:bg-[#121620] hover:text-slate-900 dark:hover:text-white md:hidden shrink-0"
               aria-label="Open navigation"
             >
               <Menu size={20} />
@@ -1391,14 +1391,14 @@ export default function AuditDashboard() {
 
             <form
               onSubmit={startAudit}
-              className="group relative flex w-full max-w-2xl flex-1 items-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-1 pl-3 shadow-xs transition-all focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 sm:max-w-3xl"
+              className="group relative flex w-full max-w-2xl flex-1 items-center rounded-full border border-slate-300 dark:border-white/[0.1] bg-white dark:bg-[#0D0F15] p-1 pl-4 shadow-xs transition-all focus-within:border-[#CAE366] focus-within:ring-2 focus-within:ring-[#CAE366]/20 sm:max-w-3xl"
             >
-              <div className="pointer-events-none flex shrink-0 items-center text-slate-400 dark:text-slate-500 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors mr-2">
+              <div className="pointer-events-none flex shrink-0 items-center text-slate-400 dark:text-[#D6E5FC]/50 group-focus-within:text-[#CAE366] transition-colors mr-2">
                 <Globe size={16} />
               </div>
               <input
                 type="url"
-                className="w-full min-w-0 flex-1 bg-transparent py-1 font-mono text-xs font-medium text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none border-0 focus:outline-none focus:ring-0"
+                className="w-full min-w-0 flex-1 bg-transparent py-1 font-sans text-xs font-medium text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-[#D6E5FC]/40 outline-none border-0 focus:outline-none focus:ring-0"
                 placeholder="Enter seed URL to crawl (e.g. https://bloomxsolutions.com/)..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
@@ -1409,7 +1409,7 @@ export default function AuditDashboard() {
                 <button
                   type="button"
                   onClick={() => setUrl('')}
-                  className="p-1 mr-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                  className="p-1 mr-1 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors cursor-pointer"
                   title="Clear input"
                 >
                   <X size={14} />
@@ -1420,7 +1420,7 @@ export default function AuditDashboard() {
                 disabled={isAuditing}
                 whileTap={isAuditing ? undefined : tapPress}
                 transition={spring.press}
-                className="btn-primary ml-1 h-8 shrink-0 rounded-lg px-3.5 text-xs font-bold shadow-xs sm:px-4 cursor-pointer"
+                className="btn-primary ml-1 h-9 shrink-0 rounded-full px-4 text-xs font-bold tracking-wide shadow-md sm:px-5 cursor-pointer"
               >
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.span
@@ -1433,7 +1433,7 @@ export default function AuditDashboard() {
                   >
                     {isAuditing ? (
                       <>
-                        <Loader2 size={13} className="animate-spin text-emerald-400" />
+                        <Loader2 size={13} className="animate-spin text-[#CAE366]" />
                         <span className="hidden xs:inline">Crawling...</span>
                       </>
                     ) : (

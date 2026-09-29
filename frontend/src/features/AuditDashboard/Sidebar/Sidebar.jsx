@@ -57,23 +57,23 @@ export default function Sidebar({
       label: 'URL Data Grid',
       icon: ListTree,
       badge: pagesCount > 0 ? `${pagesCount} URLs` : null,
-      badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/60',
+      badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-[#CAE366]/10 dark:text-[#CAE366] dark:border-[#CAE366]/25',
     },
-    { id: 'performance', label: 'Speed & Vitals', icon: Zap, badge: 'Lighthouse' },
-    { id: 'integrations', label: 'API Integrations', icon: Layers, badge: 'SEO/AEO' },
+    { id: 'performance', label: 'Speed & Vitals', icon: Zap, badge: 'Lighthouse', badgeColor: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-[#4B88FF]/10 dark:text-[#4B88FF] dark:border-[#4B88FF]/25' },
+    { id: 'integrations', label: 'API Integrations', icon: Layers, badge: 'SEO/AEO', badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-[#4B88FF]/10 dark:text-[#4B88FF] dark:border-[#4B88FF]/25' },
     {
       id: 'naruto',
       label: 'Naruto Sample',
       icon: Sparkles,
       badge: 'Theme',
-      badgeColor: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900/60',
+      badgeColor: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-[#FFDE59]/10 dark:text-[#FFDE59] dark:border-[#FFDE59]/25',
     },
   ];
 
   const indicatorTransition = reduced ? { duration: 0 } : spring.snap;
 
   return (
-    <aside className="relative flex h-full w-full select-none flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/95 px-3.5 py-5 shadow-sm overflow-y-auto custom-scrollbar transition-colors duration-200">
+    <aside className="relative flex h-full w-full select-none flex-col border-r border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#07080B] px-3.5 py-5 shadow-sm overflow-y-auto custom-scrollbar transition-colors duration-200 font-sans">
       {/* ------------------------------------------------------------------ */}
       {/* Brand                                                              */}
       {/* ------------------------------------------------------------------ */}
@@ -94,7 +94,7 @@ export default function Sidebar({
         {isMobile && onCloseMobile && (
           <button
             onClick={onCloseMobile}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 md:hidden"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-[#121620] hover:text-slate-700 dark:hover:text-[#D6E5FC] md:hidden"
             aria-label="Close navigation"
           >
             <X size={18} />
@@ -113,10 +113,10 @@ export default function Sidebar({
       >
         <motion.div
           variants={staggerItem}
-          className="mb-1 flex items-center justify-between px-3 font-mono text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500"
+          className="mb-1 flex items-center justify-between px-3 font-sans text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-[#D6E5FC]/40"
         >
           <span>Navigation</span>
-          <span className="text-[9px] font-normal">v20.4</span>
+          <span className="text-[9px] font-normal text-[#CAE366]">v20.4</span>
         </motion.div>
 
         <LayoutGroup id="sidebar-nav">
@@ -137,7 +137,7 @@ export default function Sidebar({
                 className={`${NAV_ITEM_CLASS} ${
                   isActive
                     ? 'text-white font-bold'
-                    : 'text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-100/80 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
+                    : 'text-slate-700 dark:text-[#D6E5FC]/75 font-medium hover:bg-slate-100/80 dark:hover:bg-[#121620] hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 {/* Gliding filled pill indicator */}
@@ -145,23 +145,23 @@ export default function Sidebar({
                   <motion.span
                     layoutId="sidebar-active-pill"
                     transition={indicatorTransition}
-                    className="absolute inset-0 rounded-xl bg-slate-900 dark:bg-slate-800 shadow-md ring-1 ring-slate-900/10 dark:ring-white/10"
+                    className="absolute inset-0 rounded-xl bg-slate-900 dark:bg-[#121620] shadow-md ring-1 ring-slate-900/10 dark:ring-white/[0.08]"
                   />
                 )}
 
-                {/* Gliding emerald edge bar */}
+                {/* Gliding BloomX lime edge bar */}
                 {isActive && (
                   <motion.span
                     layoutId="sidebar-active-edge"
                     transition={indicatorTransition}
-                    className="absolute bottom-2 left-0 top-2 w-1.5 rounded-r-full bg-emerald-400 shadow-[0_0_12px_#10B981] z-10"
+                    className="absolute bottom-2 left-0 top-2 w-1.5 rounded-r-full bg-[#CAE366] shadow-[0_0_12px_#CAE366] z-10"
                   />
                 )}
 
                 <span className="relative z-10 flex items-center gap-3">
                   <span
                     className={`flex transition-colors ${
-                      isActive ? 'text-emerald-400' : 'text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400'
+                      isActive ? 'text-[#CAE366]' : 'text-slate-500 dark:text-[#D6E5FC]/50 group-hover:text-[#4B88FF]'
                     }`}
                   >
                     <Icon size={18} />
@@ -177,10 +177,10 @@ export default function Sidebar({
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.7 }}
                       transition={spring.soft}
-                      className={`relative z-10 rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold ${
+                      className={`relative z-10 rounded-md border px-2 py-0.5 font-sans text-[10px] font-semibold ${
                         isActive
-                          ? 'border-slate-700 bg-slate-800 dark:border-slate-600 dark:bg-slate-700 text-emerald-300'
-                          : tab.badgeColor || 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                          ? 'border-[#CAE366]/30 bg-[#CAE366]/10 text-[#CAE366]'
+                          : tab.badgeColor || 'border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-[#121620] text-slate-600 dark:text-[#D6E5FC]/70'
                       }`}
                     >
                       {tab.badge}

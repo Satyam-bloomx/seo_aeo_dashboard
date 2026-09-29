@@ -83,15 +83,15 @@ export default function UserMenu() {
       <button
         type="button"
         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 transition-all text-xs font-medium shadow-sm cursor-pointer"
+        className="flex items-center gap-2 px-2.5 py-1.5 rounded-full border border-slate-200 dark:border-white/[0.08] bg-white/80 dark:bg-[#0D0F15] hover:bg-slate-50 dark:hover:bg-[#151922] text-slate-800 dark:text-[#D6E5FC] transition-all text-xs font-medium shadow-xs cursor-pointer font-sans"
       >
-        <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-[10px] font-bold shadow-inner">
+        <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-[#183578] to-[#4B88FF] text-[#CAE366] flex items-center justify-center text-[10px] font-bold shadow-inner">
           {initial}
         </div>
-        <span className="hidden md:inline max-w-[120px] truncate text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+        <span className="hidden md:inline max-w-[120px] truncate text-[11px] font-semibold text-slate-700 dark:text-[#D6E5FC]">
           {displayName}
         </span>
-        <ChevronDown size={13} className="text-slate-400" />
+        <ChevronDown size={13} className="text-slate-400 dark:text-[#D6E5FC]/50" />
       </button>
 
       <AnimatePresence>
@@ -101,19 +101,19 @@ export default function UserMenu() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 6 }}
             transition={{ duration: 0.12 }}
-            className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl shadow-2xl p-2 z-50 overflow-hidden"
+            className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-200 dark:border-white/[0.1] bg-white/95 dark:bg-[#0D0F15]/95 backdrop-blur-xl shadow-2xl p-2 z-50 overflow-hidden font-sans"
           >
             {/* Header info */}
-            <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800/80 mb-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Signed In As</p>
-              <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate mt-0.5">
+            <div className="px-3 py-2 border-b border-slate-100 dark:border-white/[0.06] mb-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-[#D6E5FC]/40">Signed In As</p>
+              <p className="text-xs font-bold text-slate-800 dark:text-white truncate mt-0.5">
                 {displayName}
               </p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+              <p className="text-[11px] text-slate-500 dark:text-[#D6E5FC]/60 truncate">
                 {user.email}
               </p>
               <div className="flex items-center gap-1.5 mt-2">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-medium">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#CAE366]/10 text-[#CAE366] border border-[#CAE366]/20 text-[10px] font-semibold">
                   <Shield size={10} />
                   Private Workspace
                 </span>
@@ -122,8 +122,8 @@ export default function UserMenu() {
 
             {/* Menu Items */}
             <div className="space-y-0.5">
-              <div className="px-3 py-2 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                <Key size={13} className="text-blue-500" />
+              <div className="px-3 py-2 text-[11px] text-slate-500 dark:text-[#D6E5FC]/70 flex items-center gap-2">
+                <Key size={13} className="text-[#4B88FF]" />
                 <span>Isolated API Integrations</span>
               </div>
             </div>
