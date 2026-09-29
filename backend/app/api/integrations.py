@@ -178,6 +178,139 @@ async def get_integration_status(
         
     return response
 
+async def verify_credential_live(service: str, raw_key: str) -> tuple:
+    """
+    Zero-cost (or near-zero-cost) live verification of API credentials.
+    Returns (is_valid: bool, error_or_success_msg: str, latency_ms: float).
+    Invalid keys are rejected at zero cost by all providers.
+    """
+    import time as _time
+    start = _time.time()
+    clean_key = raw_key.strip()
+    if clean_key.lower().startswith("bearer "):
+        clean_key = clean_key[7:].strip()
+
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+
+            # ── PageSpeed Insights (100% free Google API) ──
+            if service == "pagespeed":
+                params = {"url": "https://example.com", "category": "performance"}
+                headers = {}
+                if clean_key.startswith("ya29."):
+                    headers["Authorization"] = f"Bearer {clean_key}"
+                else:
+                    params["key"] = clean_key
+                res = await client.get(
+                    "https://www.googleapis.com/pagespeedonline/v5/runPagespeed",
+                    params=params, headers=headers
+                )
+                latency = round((_time.time() - start) * 1000, 1)
+                if res.status_code == 200:
+                    return (True, f"PageSpeed Insights API key verified ({latency}ms)", latency)
+                err = res.json().get("error", {}).get("message", "API key not valid")
+                return (False, f"PageSpeed verification failed ({res.status_code}): {err}. Ensure the PageSpeed Insights API is enabled in your Google Cloud Console.", latency)
+
+            # ── OpenAI (100% free — /v1/models consumes 0 tokens) ──
+            elif service == "openai":
+                res = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {clean_key}"}
+                )
+                latency = round((_time.time() - start) * 1000, 1)
+                if res.status_code == 200:
+                    return (True, f"OpenAI API key verified ({latency}ms)", latency)
+                if res.status_code == 401:
+                    err = res.json().get("error", {}).get("message", "Incorrect API key provided.")
+                    return (False, f"OpenAI Authentication Failed (401): {err}", latency)
+                if res.status_code == 429:
+                    return (False, "OpenAI Quota Exceeded (429): You have run out of API credits or exceeded your rate limit.", latency)
+                return (False, f"OpenAI verification failed ({res.status_code}): {res.text[:100]}", latency)
+
+            # ── SerpAPI (100% free — /account.json consumes 0 search credits) ──
+            elif service == "serpapi":
+                res = await client.get(
+                    f"https://serpapi.com/account.json?api_key={clean_key}"
+                )
+                latency = round((_time.time() - start) * 1000, 1)
+                if res.status_code == 200:
+                    return (True, f"SerpAPI key verified ({latency}ms)", latency)
+                if res.status_code == 401 or "Invalid API key" in res.text:
+                    return (False, "SerpAPI authentication failed: Invalid API key. Find your key at https://serpapi.com/manage-api-key", latency)
+                return (False, f"SerpAPI verification failed ({res.status_code}): {res.text[:100]}", latency)
+
+            # ── Perplexity (invalid keys return 401 at zero cost) ──
+            elif service == "perplexity":
+                res = await client.post(
+                    "https://api.perplexity.ai/chat/completions",
+                    headers={"Authorization": f"Bearer {clean_key}", "Content-Type": "application/json"},
+                    json={"model": "sonar", "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1}
+                )
+                latency = round((_time.time() - start) * 1000, 1)
+                if res.status_code == 200:
+                    return (True, f"Perplexity AI key verified ({latency}ms)", latency)
+                if res.status_code in [401, 403]:
+                    err = res.json().get("error", {}).get("message", "Invalid or unauthorized API key.")
+                    return (False, f"Perplexity authentication failed ({res.status_code}): {err}", latency)
+                if res.status_code == 429:
+                    return (False, "Perplexity Quota Exceeded (429): Insufficient credit balance or rate limit exceeded.", latency)
+                return (False, f"Perplexity verification failed ({res.status_code}): {res.text[:100]}", latency)
+
+            # ── Google Business / Places (100% free) ──
+            elif service == "google_business":
+                res = await client.get(
+                    "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+                    params={"input": "Google", "inputtype": "textquery", "fields": "place_id", "key": clean_key}
+                )
+                latency = round((_time.time() - start) * 1000, 1)
+                data = res.json()
+                if data.get("status") in ["OK", "ZERO_RESULTS"]:
+                    return (True, f"Google Places API key verified ({latency}ms)", latency)
+                if data.get("status") == "REQUEST_DENIED":
+                    err_msg = data.get("error_message", "API key invalid or Places API not enabled")
+                    return (False, f"Google Places API Request Denied: {err_msg}. Ensure 'Places API' is enabled in your Google Cloud Project.", latency)
+                return (False, f"Google Places verification failed: {data.get('status')} — {data.get('error_message', '')}", latency)
+
+            # ── Google Search Console (100% free — /webmasters/v3/sites) ──
+            elif service == "search_console":
+                if clean_key.startswith("{"):
+                    # Service Account JSON — already validated upstream by SA credential refresh
+                    return (True, "Service Account JSON validated", round((_time.time() - start) * 1000, 1))
+                res = await client.get(
+                    "https://www.googleapis.com/webmasters/v3/sites",
+                    headers={"Authorization": f"Bearer {clean_key}"}
+                )
+                latency = round((_time.time() - start) * 1000, 1)
+                if res.status_code == 200:
+                    return (True, f"Google Search Console credentials verified ({latency}ms)", latency)
+                err = res.json().get("error", {}).get("message", "Invalid credentials")
+                return (False, f"Search Console authorization failed ({res.status_code}): {err}", latency)
+
+            # ── Google Analytics 4 (100% free — /v1beta/accountSummaries) ──
+            elif service == "google_analytics":
+                if clean_key.startswith("{"):
+                    return (True, "Service Account JSON validated", round((_time.time() - start) * 1000, 1))
+                res = await client.get(
+                    "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
+                    headers={"Authorization": f"Bearer {clean_key}"}
+                )
+                latency = round((_time.time() - start) * 1000, 1)
+                if res.status_code == 200:
+                    return (True, f"Google Analytics 4 credentials verified ({latency}ms)", latency)
+                err = res.json().get("error", {}).get("message", "Invalid credentials")
+                return (False, f"GA4 authorization failed ({res.status_code}): {err}", latency)
+
+            else:
+                # Unknown service — skip verification
+                return (True, "Service verification skipped", 0)
+
+    except httpx.TimeoutException:
+        latency = round((_time.time() - start) * 1000, 1)
+        return (False, f"Verification timed out after {latency}ms. Check your network connection.", latency)
+    except Exception as e:
+        latency = round((_time.time() - start) * 1000, 1)
+        return (False, f"Credential verification error: {str(e)}", latency)
+
 @router.post("/key")
 async def save_api_key(
     req: ApiKeyRequest, 
@@ -268,6 +401,15 @@ async def save_api_key(
                 status_code=400, 
                 detail=f"Invalid Google Service Account JSON: {str(sa_err)}. Please ensure client_email and private_key are valid."
             )
+
+    # ═══════════════════════════════════════════════════════════════════
+    # CRITICAL: Zero-cost live verification BEFORE any database write.
+    # If the credential is invalid, we raise HTTP 400 immediately.
+    # The key is NEVER saved to the database if verification fails.
+    # ═══════════════════════════════════════════════════════════════════
+    is_valid, verify_msg, verify_latency = await verify_credential_live(service, raw_key)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=verify_msg)
 
     try:
         proj_res = await db.execute(select(Project).where(Project.id == req.project_id))
@@ -486,7 +628,7 @@ async def test_connection(
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
                 res = await client.get(
-                    f"https://serpapi.com/search.json?engine=google&q=ping&api_key={api_key.strip()}"
+                    f"https://serpapi.com/account.json?api_key={api_key.strip()}"
                 )
                 latency = round((time.time() - start_time) * 1000, 1)
                 if res.status_code == 200:

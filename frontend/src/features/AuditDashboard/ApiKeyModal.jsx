@@ -379,6 +379,7 @@ export default function ApiKeyModal({
       if (onClose) onClose();
     } catch (err) {
       const errMsg = err.response?.data?.detail || 'Failed to save credentials.';
+      setError(errMsg);
       toast.error(errMsg);
     } finally {
       setIsLoading(false);
@@ -1186,7 +1187,7 @@ export default function ApiKeyModal({
                       >
                         {isLoading ? (
                           <>
-                            <Loader2 size={14} className="animate-spin" /> Saving...
+                            <Loader2 size={14} className="animate-spin" /> Verifying API Key...
                           </>
                         ) : (
                           <>
