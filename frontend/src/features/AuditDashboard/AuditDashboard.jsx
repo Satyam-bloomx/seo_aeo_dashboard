@@ -18,7 +18,7 @@ import NarutoSamplePanel from './NarutoSample/NarutoSamplePanel';
 import SpiderLiveProgressScreen from './SpiderLiveProgressScreen';
 import ThemeToggle from '@/components/ui/ThemeToggle';
 import Loading from '../../app/loading';
-import { API_BASE_URL } from '@/api/client';
+import { API_BASE_URL, authFetch } from '@/api/client';
 import { generateIssuesReport } from '@/utils/IssuesEngine';
 import { copyToClipboard } from '@/utils/clipboard';
 import { getDiagnosticDetail, getPriorityMeta } from '@/utils/diagnosticDetails';
@@ -201,14 +201,14 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
   useEffect(() => {
     const loadLatestCrawl = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/crawls/latest`);
+        const res = await authFetch(`${API_BASE_URL}/crawls/latest`);
         if (res.ok) {
           const latest = await res.json();
           if (latest?.id) {
             setCrawlId(latest.id);
             setUrl(latest.seed_url || '');
             setStatus(latest.status || 'completed');
-            const pRes = await fetch(`${API_BASE_URL}/crawls/${latest.id}/pages`);
+            const pRes = await authFetch(`${API_BASE_URL}/crawls/${latest.id}/pages`);
             if (pRes.ok) {
               const pagesData = await pRes.json();
               if (Array.isArray(pagesData) && pagesData.length > 0) {
@@ -274,7 +274,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
   useEffect(() => {
     if (selectedRow?.id) {
       setIsLoadingInlinks(true);
-      fetch(`${API_BASE_URL}/pages/${selectedRow.id}/inlinks`)
+      authFetch(`${API_BASE_URL}/pages/${selectedRow.id}/inlinks`)
         .then(res => res.json())
         .then(data => {
           setInlinks(Array.isArray(data) ? data : []);
@@ -333,7 +333,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
     });
 
     try {
-      const response = await fetch(`${API_BASE_URL}/crawls`, {
+      const response = await authFetch(`${API_BASE_URL}/crawls`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -392,7 +392,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
     setShowCompletionBanner(false);
 
     try {
-      await fetch(`${API_BASE_URL}/crawls`, { method: 'DELETE' });
+      await authFetch(`${API_BASE_URL}/crawls`, { method: 'DELETE' });
     } catch (err) {
       console.warn('Backend clear crawls error:', err);
     }
@@ -405,7 +405,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
   const fetchResults = useCallback(async () => {
     if (!crawlId) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/crawls/${crawlId}/pages`);
+      const response = await authFetch(`${API_BASE_URL}/crawls/${crawlId}/pages`);
       if (response.ok) {
         const pagesData = await response.json();
         setPages(Array.isArray(pagesData) ? pagesData : []);
@@ -422,7 +422,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
       if (!crawlId || status === 'completed' || status === 'failed') return;
 
       try {
-        const response = await fetch(`${API_BASE_URL}/crawls/${crawlId}/status`);
+        const response = await authFetch(`${API_BASE_URL}/crawls/${crawlId}/status`);
         if (!response.ok) return;
         const data = await response.json();
         if (!data || typeof data !== 'object') return;
@@ -436,7 +436,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
         if (data.status === 'completed') {
           setProgress(100);
           try {
-            const finalRes = await fetch(`${API_BASE_URL}/crawls/${crawlId}/pages`);
+            const finalRes = await authFetch(`${API_BASE_URL}/crawls/${crawlId}/pages`);
             if (finalRes.ok) {
               const finalPages = await finalRes.json();
               setPages(finalPages);

@@ -131,6 +131,10 @@ export const AuthProvider = ({ children }) => {
         provider: 'google',
         options: {
           redirectTo: redirectUri,
+          queryParams: {
+            prompt: 'consent select_account',
+            access_type: 'offline',
+          },
         },
       });
       if (error) throw error;

@@ -343,7 +343,14 @@ async def save_api_key(
         raise HTTPException(status_code=500, detail=f"Failed to save credentials: {str(e)}")
 
 @router.post("/test")
-async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends(get_db)):
+async def test_connection(
+    req: TestConnectionRequest, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    if user:
+        req.project_id = await get_or_create_user_project(db, user.id)
+
     service = req.service or req.service_name
     if not service:
         raise HTTPException(status_code=400, detail="Service identifier is required")
@@ -789,7 +796,14 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
     return {"success": True, "status": "ok", "message": f"{service} integration verified."}
 
 @router.post("/google/credentials")
-async def save_google_oauth_credentials(req: GoogleOAuthAppRequest, db: AsyncSession = Depends(get_db)):
+async def save_google_oauth_credentials(
+    req: GoogleOAuthAppRequest, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    if user:
+        req.project_id = await get_or_create_user_project(db, user.id)
+
     if not req.client_id or not req.client_id.strip():
         raise HTTPException(status_code=400, detail="Google Client ID is required")
     if not req.client_secret or not req.client_secret.strip():
@@ -824,6 +838,9 @@ async def save_google_oauth_credentials(req: GoogleOAuthAppRequest, db: AsyncSes
             )
             db.add(integration)
             
+        if user:
+            integration.user_id = user.id
+
         config = dict(integration.config_json) if (integration.config_json and isinstance(integration.config_json, dict)) else {}
         config["client_id"] = client_id
         config["client_secret"] = client_secret
@@ -843,9 +860,18 @@ async def save_google_oauth_credentials(req: GoogleOAuthAppRequest, db: AsyncSes
     }
 
 @router.get("/google/credentials/{project_id}/{service}")
-async def get_google_oauth_credentials(project_id: int, service: str, db: AsyncSession = Depends(get_db)):
+async def get_google_oauth_credentials(
+    project_id: int, 
+    service: str, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    target_project_id = project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
     result = await db.execute(select(Integration).where(
-        Integration.project_id == project_id,
+        Integration.project_id == target_project_id,
         Integration.integration_type == service
     ))
     integration = result.scalars().first()
@@ -860,7 +886,7 @@ async def get_google_oauth_credentials(project_id: int, service: str, db: AsyncS
     if not custom_client_id and service in ["search_console", "google_analytics"]:
         sibling = "search_console" if service == "google_analytics" else "google_analytics"
         sib_res = await db.execute(select(Integration).where(
-            Integration.project_id == project_id,
+            Integration.project_id == target_project_id,
             Integration.integration_type == sibling
         ))
         sib_row = sib_res.scalars().first()
@@ -886,11 +912,16 @@ async def google_auth_redirect(
     project_id: int, 
     service: str, 
     redirect_uri: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
 ):
+    target_project_id = project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
     # Dynamically determine the frontend host from request headers or redirect_uri
     result = await db.execute(select(Integration).where(
-        Integration.project_id == project_id, 
+        Integration.project_id == target_project_id, 
         Integration.integration_type == service
     ))
     integration = result.scalars().first()
@@ -903,7 +934,7 @@ async def google_auth_redirect(
     if not custom_client_id and service in ["search_console", "google_analytics"]:
         sibling = "search_console" if service == "google_analytics" else "google_analytics"
         sib_res = await db.execute(select(Integration).where(
-            Integration.project_id == project_id,
+            Integration.project_id == target_project_id,
             Integration.integration_type == sibling
         ))
         sib_row = sib_res.scalars().first()
@@ -940,8 +971,8 @@ async def google_auth_redirect(
             "response_type": "code",
             "scope": scope,
             "access_type": "offline",
-            "prompt": "select_account consent",
-            "state": f"{project_id}:{service}",
+            "prompt": "consent select_account",
+            "state": f"{target_project_id}:{service}",
             "include_granted_scopes": "true",
         }
         auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
@@ -960,29 +991,37 @@ async def google_auth_callback(
     service: str, 
     code: str, 
     redirect_uri: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
 ):
     if not code:
         raise HTTPException(status_code=400, detail="Missing auth code")
         
+    target_project_id = project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
     try:
         from app.models.domain import Project
-        proj_res = await db.execute(select(Project).where(Project.id == project_id))
+        proj_res = await db.execute(select(Project).where(Project.id == target_project_id))
         proj = proj_res.scalars().first()
         if not proj:
-            proj = Project(id=project_id, name="Default Project")
+            proj = Project(id=target_project_id, name="Default Project")
             db.add(proj)
             await db.flush()
 
-        result = await db.execute(select(Integration).where(Integration.project_id == project_id, Integration.integration_type == service))
+        result = await db.execute(select(Integration).where(Integration.project_id == target_project_id, Integration.integration_type == service))
         integration = result.scalars().first()
         
         if not integration:
             integration = Integration(
-                project_id=project_id,
+                project_id=target_project_id,
                 integration_type=service
             )
             db.add(integration)
+            
+        if user:
+            integration.user_id = user.id
             
         custom_client_id = None
         custom_client_secret = None
@@ -994,7 +1033,7 @@ async def google_auth_callback(
         if (not custom_client_id or not custom_client_secret) and service in ["search_console", "google_analytics"]:
             sibling = "search_console" if service == "google_analytics" else "google_analytics"
             sib_res = await db.execute(select(Integration).where(
-                Integration.project_id == project_id,
+                Integration.project_id == target_project_id,
                 Integration.integration_type == sibling
             ))
             sib_row = sib_res.scalars().first()
@@ -1161,7 +1200,7 @@ async def google_auth_callback(
         # Trigger immediate telemetry sync if property is selected
         if cfg.get("selected_property"):
             try:
-                await IntelligenceService.sync_service_data(db, project_id, service)
+                await IntelligenceService.sync_service_data(db, target_project_id, service)
             except Exception as sync_err:
                 print(f"Post-auth telemetry sync notice: {sync_err}")
 
@@ -1188,15 +1227,26 @@ class RecordOAuthErrorRequest(BaseModel):
     error_description: Optional[str] = None
 
 @router.post("/google/record-error")
-async def record_oauth_error(req: RecordOAuthErrorRequest, db: AsyncSession = Depends(get_db)):
+async def record_oauth_error(
+    req: RecordOAuthErrorRequest, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    target_project_id = req.project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
     result = await db.execute(select(Integration).where(
-        Integration.project_id == req.project_id,
+        Integration.project_id == target_project_id,
         Integration.integration_type == req.service
     ))
     integration = result.scalars().first()
     if not integration:
-        integration = Integration(project_id=req.project_id, integration_type=req.service, connected=False)
+        integration = Integration(project_id=target_project_id, integration_type=req.service, connected=False)
         db.add(integration)
+    
+    if user:
+        integration.user_id = user.id
     
     cfg = dict(integration.config_json or {})
     err_detail = req.error_description or req.error
@@ -1215,9 +1265,18 @@ async def record_oauth_error(req: RecordOAuthErrorRequest, db: AsyncSession = De
     return {"status": "recorded", "error": cfg["last_auth_error"]}
 
 @router.post("/clear-error/{project_id}/{service}")
-async def clear_integration_error(project_id: int, service: str, db: AsyncSession = Depends(get_db)):
+async def clear_integration_error(
+    project_id: int, 
+    service: str, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    target_project_id = project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
     result = await db.execute(select(Integration).where(
-        Integration.project_id == project_id,
+        Integration.project_id == target_project_id,
         Integration.integration_type == service
     ))
     integration = result.scalars().first()

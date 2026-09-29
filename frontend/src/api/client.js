@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { supabase } from '@/lib/supabase';
 
 const rawApiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api').trim().replace(/^["']|["']$/g, '');
 export const API_BASE_URL = rawApiUrl.replace(/\/+$/, '');
@@ -6,6 +7,39 @@ export const API_BASE_URL = rawApiUrl.replace(/\/+$/, '');
 const api = axios.create({
   baseURL: API_BASE_URL,
 });
+
+api.interceptors.request.use(async (config) => {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  } catch (err) {
+    console.warn('Could not attach auth token to api request:', err);
+  }
+  return config;
+});
+
+export const getAuthToken = async () => {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token || null;
+  } catch {
+    return null;
+  }
+};
+
+export const authFetch = async (url, options = {}) => {
+  const token = await getAuthToken();
+  const headers = {
+    ...(options.headers || {}),
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return fetch(url, { ...options, headers });
+};
 
 export const startCrawl = async (seedUrl, maxDepth = 100, maxPages = 500) => {
   const response = await api.post('/crawls', { seed_url: seedUrl, max_depth: maxDepth, max_pages: maxPages });

@@ -1,18 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func
+from sqlalchemy import func, delete
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
+import asyncio
 import re
 from urllib.parse import urlparse
 
 from app.core.database import get_db, AsyncSessionLocal
-from app.models.domain import Project, Crawl, Page, Link, Integration
+from app.models.domain import Project, Crawl, Page, Link, Image, Integration
 from app.models.schemas import CrawlRequest, CrawlResponse, PageSummary, LinkSummary
 from app.services.crawler import CrawlerService
+from app.core.auth import get_optional_user, get_or_create_user_project, UserSession
 
 router = APIRouter()
+
+# Active background crawler tasks tracked for graceful cancellation on wipe
+active_crawler_tasks: Dict[int, asyncio.Task] = {}
 
 def normalize_seed_url(url: str) -> str:
     url = url.strip()
@@ -32,87 +37,111 @@ def normalize_seed_url(url: str) -> str:
     query = f"?{parsed.query}" if parsed.query else ""
     return f"{scheme}://{netloc}{path}{query}"
 
-async def _cleanup_old_crawls(db: AsyncSession):
-    try:
-        # 1. Delete crawls older than 24 hours
-        twenty_four_hours_ago = datetime.utcnow() - timedelta(hours=24)
-        query_24h = select(Crawl).where(Crawl.started_at < twenty_four_hours_ago)
-        result_24h = await db.execute(query_24h)
-        old_crawls = result_24h.scalars().all()
-        for crawl in old_crawls:
-            await db.delete(crawl)
-        
-        # 2. Keep only the 10 most recent crawls
-        query_keep = select(Crawl.id).order_by(Crawl.started_at.desc()).limit(10)
-        result_keep = await db.execute(query_keep)
-        keep_ids = result_keep.scalars().all()
-        
-        if keep_ids:
-            query_delete = select(Crawl).where(Crawl.id.notin_(keep_ids))
-            result_delete = await db.execute(query_delete)
-            extra_crawls = result_delete.scalars().all()
-            for crawl in extra_crawls:
-                await db.delete(crawl)
-                
-        await db.commit()
-    except Exception as e:
-        print(f"Warning cleaning up old crawls: {e}")
-        await db.rollback()
+async def _wipe_all_crawl_data(db: AsyncSession, project_id: Optional[int] = None):
+    """
+    Enforces Single-Site Ephemeral Storage:
+    Cancels active running crawlers for this user's project (or all if not specified),
+    and wipes previous crawls, pages, links, and images so each user's workspace
+    strictly stores ONE active site audit at a time without affecting other users.
+    """
+    if project_id is not None:
+        try:
+            # 1. Fetch crawl IDs belonging to this user's project
+            c_res = await db.execute(select(Crawl.id).where(Crawl.project_id == project_id))
+            crawl_ids = list(c_res.scalars().all())
+
+            # Cancel active crawler background tasks for this user's crawls
+            for cid in crawl_ids:
+                task = active_crawler_tasks.pop(cid, None)
+                if task and not task.done():
+                    task.cancel()
+
+            # Bulk delete this user's crawl records
+            if crawl_ids:
+                await db.execute(delete(Image).where(Image.crawl_id.in_(crawl_ids)))
+                await db.execute(delete(Link).where(Link.crawl_id.in_(crawl_ids)))
+                await db.execute(delete(Page).where(Page.crawl_id.in_(crawl_ids)))
+                await db.execute(delete(Crawl).where(Crawl.id.in_(crawl_ids)))
+                await db.commit()
+                print(f"Successfully wiped previous crawl data for project {project_id}.")
+        except Exception as e:
+            print(f"Warning wiping previous crawl data for project {project_id}: {e}")
+            await db.rollback()
+    else:
+        # Fallback cancellation and global wipe
+        for cid, task in list(active_crawler_tasks.items()):
+            if not task.done():
+                task.cancel()
+        active_crawler_tasks.clear()
+
+        try:
+            await db.execute(delete(Image))
+            await db.execute(delete(Link))
+            await db.execute(delete(Page))
+            await db.execute(delete(Crawl))
+            await db.commit()
+            print("Successfully wiped all previous crawl, page, image, and link data.")
+        except Exception as e:
+            print(f"Warning wiping previous crawl data: {e}")
+            await db.rollback()
 
 async def _run_crawler_task(crawl_id: int, seed_url: str, request: CrawlRequest):
-    async with AsyncSessionLocal() as session:
-        try:
-            crawler = CrawlerService(
-                crawl_id=crawl_id,
-                seed_url=seed_url,
-                db_session=session,
-                max_depth=request.max_depth,
-                max_concurrent=request.max_concurrent,
-                max_pages=request.max_pages,
-                stealth_delay=request.stealth_delay,
-                ignore_url_params=request.ignore_url_params,
-                check_external_links=request.check_external_links,
-                exclude_paths=request.exclude_paths,
-                ignore_robots=request.ignore_robots,
-                js_rendering=request.js_rendering,
-                user_agent=request.user_agent,
-                crawl_author_archives=getattr(request, 'crawl_author_archives', False)
-            )
-            await crawler.run()
-        except Exception as e:
-            print(f"Fatal error running crawler task {crawl_id}: {e}")
+    try:
+        active_crawler_tasks[crawl_id] = asyncio.current_task()
+        async with AsyncSessionLocal() as session:
             try:
-                crawl = await session.get(Crawl, crawl_id)
-                if crawl and crawl.status == "running":
-                    crawl.status = "failed"
-                    crawl.completed_at = datetime.utcnow()
-                    await session.commit()
-            except Exception as db_err:
-                print(f"Failed to record crawl failure status for {crawl_id}: {db_err}")
-                await session.rollback()
+                crawler = CrawlerService(
+                    crawl_id=crawl_id,
+                    seed_url=seed_url,
+                    db_session=session,
+                    max_depth=request.max_depth,
+                    max_concurrent=request.max_concurrent,
+                    max_pages=request.max_pages,
+                    stealth_delay=request.stealth_delay,
+                    ignore_url_params=request.ignore_url_params,
+                    check_external_links=request.check_external_links,
+                    exclude_paths=request.exclude_paths,
+                    ignore_robots=request.ignore_robots,
+                    js_rendering=request.js_rendering,
+                    user_agent=request.user_agent,
+                    crawl_author_archives=getattr(request, 'crawl_author_archives', False)
+                )
+                await crawler.run()
+            except asyncio.CancelledError:
+                print(f"Crawler task {crawl_id} cancelled.")
+                raise
+            except Exception as e:
+                print(f"Fatal error running crawler task {crawl_id}: {e}")
+                try:
+                    crawl = await session.get(Crawl, crawl_id)
+                    if crawl and crawl.status == "running":
+                        crawl.status = "failed"
+                        crawl.completed_at = datetime.utcnow()
+                        await session.commit()
+                except Exception as db_err:
+                    print(f"Failed to record crawl failure status for {crawl_id}: {db_err}")
+                    await session.rollback()
+    finally:
+        active_crawler_tasks.pop(crawl_id, None)
 
 @router.post("/crawls", response_model=CrawlResponse)
-async def start_crawl(request: CrawlRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+async def start_crawl(
+    request: CrawlRequest, 
+    background_tasks: BackgroundTasks, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
     # Normalize seed URL to RFC 3986 format with root trailing slash
     request.seed_url = normalize_seed_url(request.seed_url)
 
-    # Clean up old data before starting a new crawl to save space
-    try:
-        await _cleanup_old_crawls(db)
-    except Exception as e:
-        print(f"Notice: cleanup old crawls error: {e}")
+    # Resolve user's isolated workspace project
+    user_project_id = await get_or_create_user_project(db, user.id if user else None)
+
+    # Ephemeral Single-Site Storage: Wipe previous audit data exclusively for this user's project
+    await _wipe_all_crawl_data(db, project_id=user_project_id)
 
     try:
-        # Create a default project for now
-        result = await db.execute(select(Project).filter_by(name="Default Project"))
-        project = result.scalars().first()
-        if not project:
-            project = Project(name="Default Project")
-            db.add(project)
-            await db.commit()
-            await db.refresh(project)
-            
-        crawl = Crawl(project_id=project.id, seed_url=request.seed_url, status="running")
+        crawl = Crawl(project_id=user_project_id, seed_url=request.seed_url, status="running")
         db.add(crawl)
         await db.commit()
         await db.refresh(crawl)
@@ -132,29 +161,46 @@ async def start_crawl(request: CrawlRequest, background_tasks: BackgroundTasks, 
 
 
 @router.delete("/crawls")
-async def clear_all_crawls(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Crawl))
-    crawls = result.scalars().all()
-    for crawl in crawls:
-        await db.delete(crawl)
-    await db.commit()
-    return {"message": "All audit crawl data cleared successfully", "cleared_count": len(crawls)}
+async def clear_all_crawls(
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    # User requirement: As soon as Clear is clicked, wipe this user's audit data
+    user_project_id = await get_or_create_user_project(db, user.id if user else None)
+    await _wipe_all_crawl_data(db, project_id=user_project_id)
+    return {"message": "Audit crawl data cleared and wiped successfully", "cleared": True}
 
 @router.get("/crawls")
-async def list_crawls(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Crawl).order_by(Crawl.id.asc()))
+async def list_crawls(
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    user_project_id = await get_or_create_user_project(db, user.id if user else None)
+    result = await db.execute(
+        select(Crawl).where(Crawl.project_id == user_project_id).order_by(Crawl.id.asc())
+    )
     return result.scalars().all()
 
 @router.get("/crawls/latest")
-async def get_latest_crawl(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Crawl).order_by(Crawl.id.desc()).limit(1))
+async def get_latest_crawl(
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    user_project_id = await get_or_create_user_project(db, user.id if user else None)
+    result = await db.execute(
+        select(Crawl).where(Crawl.project_id == user_project_id).order_by(Crawl.id.desc()).limit(1)
+    )
     crawl = result.scalars().first()
     if not crawl:
-        raise HTTPException(status_code=404, detail="No crawl found")
+        raise HTTPException(status_code=404, detail="No crawl found for current workspace")
     return crawl
 
 @router.get("/crawls/{crawl_id}/status")
-async def get_crawl_status(crawl_id: int, db: AsyncSession = Depends(get_db)):
+async def get_crawl_status(
+    crawl_id: int, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
     crawl = await db.get(Crawl, crawl_id)
     if not crawl:
         raise HTTPException(status_code=404, detail="Crawl not found")
@@ -250,7 +296,13 @@ class PerformanceAnalyzeRequest(BaseModel):
     project_id: int = 1
 
 @router.post("/performance/analyze")
-async def analyze_single_url_performance(req: PerformanceAnalyzeRequest, db: AsyncSession = Depends(get_db)):
+async def analyze_single_url_performance(
+    req: PerformanceAnalyzeRequest, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    if user:
+        req.project_id = await get_or_create_user_project(db, user.id)
     ps_key = None
     try:
         res_int = await db.execute(
@@ -289,7 +341,13 @@ import json
 from typing import Optional
 
 @router.post("/audits/ai-remediate")
-async def generate_ai_remediation(req: AiRemediateRequest, db: AsyncSession = Depends(get_db)):
+async def generate_ai_remediation(
+    req: AiRemediateRequest, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    if user:
+        req.project_id = await get_or_create_user_project(db, user.id)
     # 1. Fetch OpenAI key
     openai_key = None
     try:
@@ -417,7 +475,13 @@ class AiExecutiveSummaryRequest(BaseModel):
 
 
 @router.post("/audits/ai-executive-summary")
-async def generate_ai_executive_summary(req: AiExecutiveSummaryRequest, db: AsyncSession = Depends(get_db)):
+async def generate_ai_executive_summary(
+    req: AiExecutiveSummaryRequest, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    if user:
+        req.project_id = await get_or_create_user_project(db, user.id)
     # 1. Fetch OpenAI key
     openai_key = None
     try:
@@ -530,7 +594,13 @@ class AiDiagnoseIssueRequest(BaseModel):
 AI_ISSUE_DIAGNOSES_CACHE: Dict[str, Dict[str, Any]] = {}
 
 @router.post("/audits/ai-diagnose-issue")
-async def generate_ai_issue_diagnosis(req: AiDiagnoseIssueRequest, db: AsyncSession = Depends(get_db)):
+async def generate_ai_issue_diagnosis(
+    req: AiDiagnoseIssueRequest, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    if user:
+        req.project_id = await get_or_create_user_project(db, user.id)
     """
     Token-optimized AI issue diagnosis engine.
     Synthesizes custom human-friendly root cause, impact, fix guide, before/after examples,
