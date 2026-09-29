@@ -16,6 +16,7 @@ import IntegrationsPanel from './IntegrationsPanel';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import NarutoSamplePanel from './NarutoSample/NarutoSamplePanel';
 import SpiderLiveProgressScreen from './SpiderLiveProgressScreen';
+import UserMenu from '@/features/Auth/UserMenu';
 import ThemeToggle from '@/components/ui/ThemeToggle';
 import Loading from '../../app/loading';
 import { API_BASE_URL } from '@/api/client';
@@ -1443,7 +1444,8 @@ export default function AuditDashboard() {
               </motion.button>
             </form>
 
-            <div className="flex shrink-0 items-center">
+            <div className="flex shrink-0 items-center gap-2">
+              <UserMenu />
               <motion.button
                 onClick={handleClearAudit}
                 whileHover={{ scale: 1.02 }}

@@ -22,6 +22,7 @@ class Project(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
+    user_id = Column(String(128), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     crawls = relationship("Crawl", back_populates="project", cascade="all, delete-orphan")
@@ -142,6 +143,7 @@ class Integration(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(128), nullable=True, index=True)
     integration_type = Column(String(50), nullable=False) # e.g., "google_analytics", "search_console", "pagespeed", "openai", "perplexity", "serpapi"
     connected = Column(Boolean, default=False)
     api_key = Column(Text, nullable=True)

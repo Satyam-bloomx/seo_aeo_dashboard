@@ -12,6 +12,7 @@ import time
 from app.core.database import get_db
 from app.models.domain import Integration, Project
 from app.services.intelligence_service import IntelligenceService
+from app.core.auth import get_optional_user, get_current_user, get_or_create_user_project, UserSession
 
 router = APIRouter()
 
@@ -80,10 +81,18 @@ def _mask_key(key: Optional[str]) -> Optional[str]:
     return k[:4] + "...." + k[-4:]
 
 @router.get("/status/{project_id}", response_model=List[IntegrationStatusResponse])
-async def get_integration_status(project_id: int, db: AsyncSession = Depends(get_db)):
+async def get_integration_status(
+    project_id: int, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    target_project_id = project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
     integrations = {}
     try:
-        result = await db.execute(select(Integration).where(Integration.project_id == project_id))
+        result = await db.execute(select(Integration).where(Integration.project_id == target_project_id))
         integrations = {i.integration_type: i for i in result.scalars().all()}
     except Exception as e:
         print(f"Notice: failed to query integrations status from DB: {e}")
@@ -174,7 +183,14 @@ async def get_integration_status(project_id: int, db: AsyncSession = Depends(get
     return response
 
 @router.post("/key")
-async def save_api_key(req: ApiKeyRequest, db: AsyncSession = Depends(get_db)):
+async def save_api_key(
+    req: ApiKeyRequest, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    if user:
+        req.project_id = await get_or_create_user_project(db, user.id)
+
     service = req.service or req.service_name
     if not service:
         raise HTTPException(status_code=400, detail="Service identifier is required")
@@ -277,6 +293,9 @@ async def save_api_key(req: ApiKeyRequest, db: AsyncSession = Depends(get_db)):
                 integration_type=service
             )
             db.add(integration)
+
+        if user:
+            integration.user_id = user.id
 
         integration.api_key = raw_key
         integration.access_token = raw_key
@@ -1090,9 +1109,18 @@ async def clear_integration_error(project_id: int, service: str, db: AsyncSessio
     return {"status": "cleared"}
 
 @router.delete("/disconnect/{project_id}/{service}")
-async def disconnect_integration_delete(project_id: int, service: str, db: AsyncSession = Depends(get_db)):
+async def disconnect_integration_delete(
+    project_id: int, 
+    service: str, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    target_project_id = project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
     try:
-        result = await db.execute(select(Integration).where(Integration.project_id == project_id, Integration.integration_type == service))
+        result = await db.execute(select(Integration).where(Integration.project_id == target_project_id, Integration.integration_type == service))
         integration = result.scalars().first()
         
         if integration:
@@ -1108,12 +1136,21 @@ async def disconnect_integration_delete(project_id: int, service: str, db: Async
         raise HTTPException(status_code=500, detail=f"Failed to disconnect {service}: {str(e)}")
 
 @router.post("/disconnect")
-async def disconnect_integration(req: DisconnectRequest, db: AsyncSession = Depends(get_db)):
+async def disconnect_integration(
+    req: DisconnectRequest, 
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
     service = req.service or req.service_name
     if not service:
         raise HTTPException(status_code=400, detail="Service identifier is required")
+
+    target_project_id = req.project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
     try:
-        result = await db.execute(select(Integration).where(Integration.project_id == req.project_id, Integration.integration_type == service))
+        result = await db.execute(select(Integration).where(Integration.project_id == target_project_id, Integration.integration_type == service))
         integration = result.scalars().first()
         
         if integration:
@@ -1134,11 +1171,16 @@ async def get_integration_data(
     project_id: int, 
     service: str, 
     domain: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
 ):
     """Retrieves cached integration data (GSC, GA4, GBP, PageSpeed) stored in the database."""
+    target_project_id = project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
     try:
-        data = await IntelligenceService.get_service_data(db=db, project_id=project_id, service=service, domain=domain)
+        data = await IntelligenceService.get_service_data(db=db, project_id=target_project_id, service=service, domain=domain)
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch {service} data: {str(e)}")
@@ -1149,11 +1191,16 @@ async def sync_integration_data(
     project_id: int, 
     service: str, 
     domain: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
 ):
     """Forces an on-demand live fetch from the connected external API and updates database cache."""
+    target_project_id = project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
     try:
-        result = await IntelligenceService.sync_service_data(db=db, project_id=project_id, service=service, domain=domain)
+        result = await IntelligenceService.sync_service_data(db=db, project_id=target_project_id, service=service, domain=domain)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to sync {service} data: {str(e)}")
@@ -1176,10 +1223,15 @@ async def get_audit_synergy(
 async def get_google_properties(
     project_id: int,
     service: str = "search_console",
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
 ):
     """Fetches all verified Google Search Console or GA4 properties for the authenticated account."""
-    result = await db.execute(select(Integration).where(Integration.project_id == project_id, Integration.integration_type == service))
+    target_project_id = project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
+    result = await db.execute(select(Integration).where(Integration.project_id == target_project_id, Integration.integration_type == service))
     integration = result.scalars().first()
     
     if not integration or not integration.connected:
@@ -1303,14 +1355,21 @@ class SelectPropertyRequest(BaseModel):
 @router.post("/google/select-property")
 async def select_google_property(
     req: SelectPropertyRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
 ):
     """Saves user's chosen GSC property or GA4 property, connects integration, and triggers instant telemetry sync."""
+    if user:
+        req.project_id = await get_or_create_user_project(db, user.id)
+
     result = await db.execute(select(Integration).where(Integration.project_id == req.project_id, Integration.integration_type == req.service))
     integration = result.scalars().first()
     if not integration:
         integration = Integration(project_id=req.project_id, integration_type=req.service)
         db.add(integration)
+        
+    if user:
+        integration.user_id = user.id
         
     config = dict(integration.config_json or {})
     clean_prop = req.property_url.strip()

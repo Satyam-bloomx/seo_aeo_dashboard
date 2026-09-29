@@ -1,5 +1,6 @@
 import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
+import { AuthProvider } from "@/context/AuthContext";
 import "./globals.css";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -212,7 +213,9 @@ export default function RootLayout({ children }) {
         className="min-h-full flex flex-col font-sans bg-background text-foreground selection:bg-indigo-500/20 selection:text-indigo-400 antialiased transition-colors duration-200"
         suppressHydrationWarning
       >
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
 
         {/* Global Toast Alerts */}
         <Toaster
