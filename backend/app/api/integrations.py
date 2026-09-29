@@ -100,14 +100,6 @@ async def get_integration_status(
     except Exception as e:
         print(f"Notice: failed to query integrations status from DB: {e}")
     
-    # Check environment variables as well
-    env_keys = {
-        "pagespeed": os.getenv("PAGESPEED_API_KEY"),
-        "openai": os.getenv("OPENAI_API_KEY"),
-        "perplexity": os.getenv("PERPLEXITY_API_KEY"),
-        "serpapi": os.getenv("SERPAPI_API_KEY"),
-    }
-    
     response = []
     for svc in SUPPORTED_SERVICES:
         item = integrations.get(svc)
@@ -124,7 +116,7 @@ async def get_integration_status(
         no_properties_warning = None
         diagnostic_help = None
 
-        if item:
+        if item and item.connected:
             config = item.config_json if isinstance(item.config_json, dict) else {}
             auth_error = config.get("last_auth_error")
             selected_property = config.get("selected_property")
@@ -141,28 +133,15 @@ async def get_integration_status(
                 if not selected_property:
                     selected_property = data_obj.get("property") or data_obj.get("property_name")
 
-            if item.connected:
-                raw_key = item.api_key or item.access_token
-                is_invalid_aiza = bool(svc in ["search_console", "google_analytics"] and raw_key and raw_key.startswith("AIza"))
-                
-                if is_invalid_aiza:
-                    connected = False
-                else:
-                    connected = True
+            raw_key = item.api_key or item.access_token
+            is_invalid_aiza = bool(svc in ["search_console", "google_analytics"] and raw_key and raw_key.startswith("AIza"))
+            
+            if is_invalid_aiza:
+                connected = False
+                has_key = False
+            else:
+                connected = True
                 has_key = bool(raw_key or selected_property)
-            elif selected_property and svc in ["google_analytics", "search_console"]:
-                connected = True
-                has_key = True
-                if not raw_key:
-                    raw_key = selected_property
-            elif item.config_json and isinstance(item.config_json, dict) and item.config_json.get("data"):
-                connected = True
-                has_key = True
-
-        elif env_keys.get(svc):
-            connected = True
-            has_key = True
-            raw_key = env_keys[svc]
             
         has_configured_app = False
         if item and isinstance(item.config_json, dict):
@@ -175,9 +154,11 @@ async def get_integration_status(
             if not has_configured_app:
                 has_configured_app = bool(os.getenv("GOOGLE_CLIENT_ID"))
 
-        masked_key_str = _mask_key(raw_key)
-        if not masked_key_str and selected_property:
-            masked_key_str = f"GA4: {selected_property.replace('properties/', '')}" if svc == "google_analytics" else f"GSC: {selected_property}"
+        masked_key_str = None
+        if connected:
+            masked_key_str = _mask_key(raw_key)
+            if not masked_key_str and selected_property:
+                masked_key_str = f"GA4: {selected_property.replace('properties/', '')}" if svc == "google_analytics" else f"GSC: {selected_property}"
 
         response.append(IntegrationStatusResponse(
             id=svc,
@@ -1300,17 +1281,19 @@ async def disconnect_integration_delete(
         target_project_id = await get_or_create_user_project(db, user.id)
 
     try:
-        result = await db.execute(select(Integration).where(Integration.project_id == target_project_id, Integration.integration_type == service))
-        integration = result.scalars().first()
+        project_ids = list(set([target_project_id, project_id]))
+        result = await db.execute(select(Integration).where(
+            Integration.project_id.in_(project_ids), 
+            Integration.integration_type == service
+        ))
+        integrations = result.scalars().all()
         
-        if integration:
-            integration.connected = False
-            integration.api_key = None
-            integration.access_token = None
-            integration.refresh_token = None
-            await db.commit()
+        for integration in integrations:
+            await db.delete(integration)
             
-        return {"status": "success", "message": f"{service} disconnected."}
+        await db.commit()
+            
+        return {"status": "success", "message": f"{service} disconnected and removed."}
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to disconnect {service}: {str(e)}")
@@ -1330,17 +1313,19 @@ async def disconnect_integration(
         target_project_id = await get_or_create_user_project(db, user.id)
 
     try:
-        result = await db.execute(select(Integration).where(Integration.project_id == target_project_id, Integration.integration_type == service))
-        integration = result.scalars().first()
+        project_ids = list(set([target_project_id, req.project_id]))
+        result = await db.execute(select(Integration).where(
+            Integration.project_id.in_(project_ids), 
+            Integration.integration_type == service
+        ))
+        integrations = result.scalars().all()
         
-        if integration:
-            integration.connected = False
-            integration.api_key = None
-            integration.access_token = None
-            integration.refresh_token = None
-            await db.commit()
+        for integration in integrations:
+            await db.delete(integration)
             
-        return {"status": "success", "message": f"{service} disconnected."}
+        await db.commit()
+            
+        return {"status": "success", "message": f"{service} disconnected and removed."}
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to disconnect {service}: {str(e)}")

@@ -177,13 +177,18 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
         setServiceErrors(prev => ({ ...prev, ...errMap }));
       }
       
-      // Sync selected properties from DB status
-      if (map['search_console']?.selected_property) {
+      // Sync selected properties from DB status only if connected
+      if (map['search_console']?.connected && map['search_console']?.selected_property) {
         setSelectedGscProperty(map['search_console'].selected_property);
+      } else if (!map['search_console']?.connected) {
+        setSelectedGscProperty('');
       }
-      if (map['google_analytics']?.selected_property) {
+      if (map['google_analytics']?.connected && map['google_analytics']?.selected_property) {
         setSelectedGa4Property(map['google_analytics'].selected_property);
         setManualGa4PropertyId(map['google_analytics'].selected_property.replace(/^properties\//, ''));
+      } else if (!map['google_analytics']?.connected) {
+        setSelectedGa4Property('');
+        setManualGa4PropertyId('');
       }
     } catch (e) {
       console.warn("Could not fetch integrations status:", e);
@@ -436,9 +441,25 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       await axios.delete(`${API_BASE_URL}/integrations/disconnect/${projectId}/${integrationId}`);
       setIntegrations(prev => ({
         ...prev,
-        [integrationId]: { id: integrationId, connected: false, has_key: false, masked_key: null }
+        [integrationId]: { 
+          id: integrationId, 
+          connected: false, 
+          has_key: false, 
+          masked_key: null,
+          selected_property: null,
+          has_telemetry: false,
+          account_email: null
+        }
       }));
       setTestResults(prev => ({ ...prev, [integrationId]: null }));
+      if (integrationId === 'google_analytics') {
+        setSelectedGa4Property('');
+        setManualGa4PropertyId('');
+        setGa4Properties([]);
+      } else if (integrationId === 'search_console') {
+        setSelectedGscProperty('');
+        setGscProperties([]);
+      }
       toast.info(`Disconnected ${integrationId.replace(/_/g, ' ').toUpperCase()}`);
     } catch (e) {
       console.warn("Delete disconnect failed, trying post fallback:", e);
@@ -449,9 +470,25 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
         });
         setIntegrations(prev => ({
           ...prev,
-          [integrationId]: { id: integrationId, connected: false, has_key: false, masked_key: null }
+          [integrationId]: { 
+            id: integrationId, 
+            connected: false, 
+            has_key: false, 
+            masked_key: null,
+            selected_property: null,
+            has_telemetry: false,
+            account_email: null
+          }
         }));
         setTestResults(prev => ({ ...prev, [integrationId]: null }));
+        if (integrationId === 'google_analytics') {
+          setSelectedGa4Property('');
+          setManualGa4PropertyId('');
+          setGa4Properties([]);
+        } else if (integrationId === 'search_console') {
+          setSelectedGscProperty('');
+          setGscProperties([]);
+        }
         toast.info(`Disconnected ${integrationId.replace(/_/g, ' ').toUpperCase()}`);
       } catch (postErr) {
         console.error("Failed to disconnect integration:", postErr);
@@ -696,7 +733,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       >
         {filteredIntegrations.map((item) => {
           const integrationState = integrations[item.id];
-          const isConnected = Boolean(integrationState?.connected || integrationState?.selected_property || integrationState?.has_telemetry);
+          const isConnected = Boolean(integrationState?.connected);
           const hasConfiguredApp = Boolean(integrationState?.has_configured_app);
           const maskedKey = integrationState?.masked_key;
           const testRes = testResults[item.id];
