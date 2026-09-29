@@ -29,7 +29,8 @@ import {
   Sliders,
   Key,
   Lock,
-  ChevronDown
+  ChevronDown,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { spring, tapPress } from '@/lib/motion';
@@ -329,74 +330,138 @@ export default function IntegrationsWorkspace({
       <AnimatePresence>
         {showPropertyDrawer && (selectedService === 'search_console' || selectedService === 'google_analytics') && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xs"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={spring.soft}
+            className="w-full rounded-2xl bg-white dark:bg-slate-900 border border-indigo-200/90 dark:border-indigo-900/80 shadow-md p-5 space-y-4"
           >
-            <div className="flex-1 w-full space-y-2">
-              <div className="flex items-center gap-2">
-                <Globe size={16} className="text-indigo-600 dark:text-indigo-400" />
-                <h4 className="text-xs font-black uppercase tracking-wider font-mono text-indigo-900 dark:text-indigo-300">
-                  Target {selectedService === 'search_console' ? 'Google Search Console' : 'Google Analytics 4'} Property
-                </h4>
+            {/* Drawer Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center shrink-0">
+                  {selectedService === 'search_console' ? (
+                    <Globe size={18} className="text-blue-500" />
+                  ) : (
+                    <BarChart3 size={18} className="text-orange-500" />
+                  )}
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Target {selectedService === 'search_console' ? 'Google Search Console' : 'Google Analytics 4'} Property
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Active Property: <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{selectedPropertyUrl || data?.property || data?.property_name || 'None selected'}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPropertyDrawer(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Close drawer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Auto-Discovered Properties Section (if any found) */}
+            {availableProperties.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Auto-Discovered Properties ({availableProperties.length} found):
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => loadProperties(selectedService)}
+                    disabled={isLoadingProperties}
+                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw size={11} className={isLoadingProperties ? 'animate-spin' : ''} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+                <select
+                  value={selectedPropertyUrl}
+                  onChange={(e) => handleSelectProperty(e.target.value)}
+                  className="w-full text-xs font-mono bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs cursor-pointer"
+                >
+                  <option value="">-- Choose verified property --</option>
+                  {availableProperties.map((p, idx) => (
+                    <option key={idx} value={p.siteUrl || p.name || p.id}>
+                      {p.displayName || p.siteUrl || p.name} {p.account ? `(${p.account})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Manual Property ID Input Section */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  {availableProperties.length > 0 ? 'Or Enter Property Manually:' : 'Enter Property ID or URL:'}
+                </label>
+                {availableProperties.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => loadProperties(selectedService)}
+                    disabled={isLoadingProperties}
+                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw size={11} className={isLoadingProperties ? 'animate-spin' : ''} />
+                    <span>{isLoadingProperties ? 'Discovering...' : 'Retry Auto-Discovery'}</span>
+                  </button>
+                )}
               </div>
 
-              {availableProperties.length > 0 ? (
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                  <select
-                    value={selectedPropertyUrl}
-                    onChange={(e) => handleSelectProperty(e.target.value)}
-                    className="flex-1 text-xs font-mono bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-2xs"
-                  >
-                    <option value="">-- Choose verified property --</option>
-                    {availableProperties.map((p, idx) => (
-                      <option key={idx} value={p.siteUrl || p.id}>
-                        {p.displayName || p.siteUrl || p.name} {p.account ? `(${p.account})` : ''}
-                      </option>
-                    ))}
-                  </select>
+              {availableProperties.length === 0 && !isLoadingProperties && (
+                <div className="p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 text-xs text-amber-900 dark:text-amber-200">
+                  No properties were auto-discovered for this account. Enter your verified Property ID or Domain URL below to link and synchronize live telemetry.
                 </div>
-              ) : (
-                <p className="text-xs text-indigo-800 dark:text-indigo-300 font-sans">
-                  {isLoadingProperties ? 'Discovering properties from Google API...' : 'No properties auto-discovered. You can enter your Property ID directly below.'}
-                </p>
               )}
 
-              {/* Manual Property ID Input */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
                 <input
                   type="text"
-                  placeholder={selectedService === 'search_console' ? 'e.g. sc-domain:example.com or https://example.com/' : 'Enter GA4 Property ID (e.g. 123456789 or properties/123456789)'}
+                  placeholder={
+                    selectedService === 'search_console'
+                      ? 'e.g. sc-domain:bloomxsolutions.com or https://bloomxsolutions.com/'
+                      : 'e.g. 349182749 or properties/349182749'
+                  }
                   value={manualPropertyId}
                   onChange={(e) => setManualPropertyId(e.target.value)}
-                  className="flex-1 px-3 py-1.5 text-xs font-mono bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-700 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:border-indigo-500"
+                  className="flex-1 px-3.5 py-2.5 text-xs font-mono bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs placeholder:text-slate-400"
                 />
                 <button
+                  type="button"
                   onClick={() => handleSelectProperty(manualPropertyId)}
                   disabled={!manualPropertyId.trim() || isSavingProperty}
-                  className="btn-primary py-1.5 px-3 text-xs font-bold whitespace-nowrap shadow-xs cursor-pointer"
+                  className="btn-primary py-2.5 px-4 text-xs font-bold whitespace-nowrap shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  {isSavingProperty ? 'Saving...' : 'Set & Sync'}
+                  {isSavingProperty && <RefreshCw size={12} className="animate-spin text-white" />}
+                  <span>{isSavingProperty ? 'Saving...' : 'Set & Sync Property'}</span>
                 </button>
+
                 {selectedService === 'search_console' && selectedPropertyUrl && onAuditProperty && (
                   <button
+                    type="button"
                     onClick={() => onAuditProperty(selectedPropertyUrl)}
-                    className="px-3 py-1.5 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+                    className="px-3.5 py-2.5 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer shadow-xs transition-colors"
                   >
-                    <Zap size={12} />
+                    <Zap size={13} />
                     <span>Run Crawler Audit</span>
                   </button>
                 )}
               </div>
-            </div>
 
-            <button
-              onClick={() => setShowPropertyDrawer(false)}
-              className="text-xs text-indigo-700 dark:text-indigo-300 underline font-semibold cursor-pointer shrink-0 self-end md:self-center"
-            >
-              Close
-            </button>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                {selectedService === 'search_console'
+                  ? 'Tip: Supports Domain properties (sc-domain:example.com) and URL prefix (https://example.com/).'
+                  : 'Tip: Find your 9-digit numeric Property ID in Google Analytics → Admin (gear icon) → Property Settings.'}
+              </p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

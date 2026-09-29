@@ -139,6 +139,10 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
   const [loadingGa4Properties, setLoadingGa4Properties] = useState(false);
   const [isSavingGa4Property, setIsSavingGa4Property] = useState(false);
 
+  // GSC Manual Override State
+  const [manualGscProperty, setManualGscProperty] = useState('');
+  const [isSavingGscProperty, setIsSavingGscProperty] = useState(false);
+
   const handleDismissError = async (serviceId) => {
     setServiceErrors(prev => {
       const copy = { ...prev };
@@ -368,19 +372,25 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
   };
 
   const handleSelectProperty = async (propertyUrl) => {
-    setSelectedGscProperty(propertyUrl);
+    if (!propertyUrl || !propertyUrl.trim()) return;
+    const cleanUrl = propertyUrl.trim();
+    setSelectedGscProperty(cleanUrl);
+    setManualGscProperty(cleanUrl);
+    setIsSavingGscProperty(true);
     try {
       await axios.post(`${API_BASE_URL}/integrations/google/select-property`, {
         project_id: projectId,
         service: 'search_console',
-        property_url: propertyUrl
+        property_url: cleanUrl
       });
-      toast.success('GSC Property Saved', {
-        description: `Targeting property: ${propertyUrl}`
+      toast.success('GSC Property Saved & Synchronized', {
+        description: `Targeting property: ${cleanUrl}`
       });
       fetchStatus();
     } catch (e) {
       toast.error('Failed to save selected property');
+    } finally {
+      setIsSavingGscProperty(false);
     }
   };
 
@@ -1072,6 +1082,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         onChange={(e) => handleSelectProperty(e.target.value)}
                         className="w-full text-xs font-mono bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-2xs"
                       >
+                        <option value="">-- Choose verified property --</option>
                         {gscProperties.map((p) => (
                           <option key={p.siteUrl} value={p.siteUrl}>
                             {p.siteUrl} ({p.permissionLevel || 'Verified'})
@@ -1079,14 +1090,34 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         ))}
                       </select>
                     ) : (
-                      <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 font-mono">
-                        <span>{loadingProperties ? 'Querying verified web properties...' : hasNoProperties ? 'No verified sites found for this Google account.' : 'Using default seed URL domain.'}</span>
-                        <button
-                          onClick={fetchGscProperties}
-                          className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold underline cursor-pointer"
-                        >
-                          Refresh
-                        </button>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={manualGscProperty}
+                            onChange={(e) => setManualGscProperty(e.target.value)}
+                            placeholder="e.g. sc-domain:bloomxsolutions.com or https://bloomxsolutions.com/"
+                            className="flex-1 text-xs font-mono bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-2xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSelectProperty(manualGscProperty)}
+                            disabled={isSavingGscProperty || !manualGscProperty.trim()}
+                            className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors shadow-2xs whitespace-nowrap"
+                          >
+                            {isSavingGscProperty ? 'Saving...' : 'Set & Sync'}
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                          <span>{loadingProperties ? 'Querying verified web properties...' : hasNoProperties ? 'No verified sites found for this Google account.' : 'Enter domain or URL prefix above.'}</span>
+                          <button
+                            type="button"
+                            onClick={fetchGscProperties}
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-bold cursor-pointer"
+                          >
+                            Refresh
+                          </button>
+                        </div>
                       </div>
                     )}
                     {onAuditProperty && selectedGscProperty && (
