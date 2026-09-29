@@ -92,13 +92,62 @@ const QUICK_TARGETS = [
   'https://news.ycombinator.com/',
 ];
 
-export default function AuditDashboard() {
+const SLUG_TO_TAB = {
+  dashboard: 'overview',
+  overview: 'overview',
+  issues: 'issues',
+  explorer: 'explorer',
+  'url-grid': 'explorer',
+  grid: 'explorer',
+  performance: 'performance',
+  'speed-vitals': 'performance',
+  vitals: 'performance',
+  integrations: 'integrations',
+  naruto: 'naruto',
+};
+
+const TAB_TO_SLUG = {
+  overview: 'dashboard',
+  issues: 'issues',
+  explorer: 'explorer',
+  performance: 'performance',
+  integrations: 'integrations',
+  naruto: 'naruto',
+};
+
+export default function AuditDashboard({ initialTab, initialOpenSettings = false }) {
   const reduced = useReducedMotion();
 
   const [isAppInitializing, setIsAppInitializing] = useState(true);
   const [url, setUrl] = useState('');
   const [isAuditing, setIsAuditing] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+
+  // Initialize active tab from prop, pathname slug, or query param
+  const [activeTab, setActiveTab] = useState(() => {
+    if (initialTab && (SLUG_TO_TAB[initialTab] || initialTab)) {
+      return SLUG_TO_TAB[initialTab] || initialTab;
+    }
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+      if (SLUG_TO_TAB[path]) return SLUG_TO_TAB[path];
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab && SLUG_TO_TAB[tab]) return SLUG_TO_TAB[tab];
+    }
+    return 'overview';
+  });
+
+  // URL-synced tab changer: updates internal state AND changes browser URL slug
+  const handleTabChange = useCallback((tabId, options = { updateUrl: true }) => {
+    setActiveTab(tabId);
+    if (options.updateUrl && typeof window !== 'undefined') {
+      const slug = TAB_TO_SLUG[tabId] || tabId;
+      const targetPath = `/${slug}`;
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState({ tab: tabId }, '', targetPath);
+      }
+    }
+  }, []);
 
   // Failsafe timer: guarantee that the bootloader screen NEVER traps the user
   useEffect(() => {
@@ -108,15 +157,45 @@ export default function AuditDashboard() {
     return () => clearTimeout(failsafe);
   }, []);
 
+  // Sync with browser back/forward buttons (popstate)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    const handlePopState = (e) => {
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+        if (SLUG_TO_TAB[path]) {
+          setActiveTab(SLUG_TO_TAB[path]);
+        } else if (!path) {
+          setActiveTab('overview');
+        } else if (e.state?.tab && SLUG_TO_TAB[e.state.tab]) {
+          setActiveTab(e.state.tab);
+        }
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Initial URL check and auto-sync on mount
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(SLUG_TO_TAB[initialTab] || initialTab);
+    } else if (typeof window !== 'undefined') {
+      const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
       const params = new URLSearchParams(window.location.search);
-      const tab = params.get('tab');
-      if (tab) {
-        setActiveTab(tab);
+      const tabParam = params.get('tab');
+      if (path && SLUG_TO_TAB[path]) {
+        setActiveTab(SLUG_TO_TAB[path]);
+      } else if (tabParam && SLUG_TO_TAB[tabParam]) {
+        const targetTab = SLUG_TO_TAB[tabParam];
+        setActiveTab(targetTab);
+        const cleanSlug = TAB_TO_SLUG[targetTab] || targetTab;
+        window.history.replaceState({ tab: targetTab }, '', `/${cleanSlug}`);
       }
     }
-  }, []);
+    if (initialOpenSettings) {
+      setIsSettingsOpen(true);
+    }
+  }, [initialTab, initialOpenSettings]);
 
   // Auto-load latest crawl data on mount so dashboard is populated immediately
   useEffect(() => {
@@ -219,7 +298,7 @@ export default function AuditDashboard() {
   const handleNavigateToExplorer = (category, view = 'All') => {
     if (category) setExplorerCategory(category);
     if (view) setExplorerView(view);
-    setActiveTab('explorer');
+    handleTabChange('explorer');
   };
 
   const startAudit = async (e, targetOverrideUrl = null) => {
@@ -245,7 +324,7 @@ export default function AuditDashboard() {
     setProgress(0);
     setPagesCrawled(0);
     setPages([]);
-    setActiveTab('overview');
+    handleTabChange('overview');
     setSelectedRow(null);
     setShowCompletionBanner(false);
 
@@ -1148,7 +1227,7 @@ export default function AuditDashboard() {
         <div className="h-full w-full overflow-hidden">
           <ErrorBoundary
             title="Integrations Telemetry Encountered an Issue"
-            onFallback={() => setActiveTab('overview')}
+            onFallback={() => handleTabChange('overview')}
           >
             <Suspense fallback={
               <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center">
@@ -1177,7 +1256,7 @@ export default function AuditDashboard() {
 
     if (activeTab === 'naruto') {
       return (
-        <NarutoSamplePanel onExit={() => setActiveTab('overview')} />
+        <NarutoSamplePanel onExit={() => handleTabChange('overview')} />
       );
     }
 
@@ -1190,7 +1269,7 @@ export default function AuditDashboard() {
             pagesCrawled={pagesCrawled}
             pages={pages}
             crawlerSettings={crawlerSettings}
-            onSwitchTab={(tab) => setActiveTab(tab)}
+            onSwitchTab={(tab) => handleTabChange(tab)}
           />
         );
       }
@@ -1201,7 +1280,7 @@ export default function AuditDashboard() {
             key={`overview-${crawlId || 'ready'}-${pages.length}`}
             pages={pages}
             onNavigateToExplorer={handleNavigateToExplorer}
-            onNavigateToTab={(tab) => setActiveTab(tab)}
+            onNavigateToTab={(tab) => handleTabChange(tab)}
           />
         );
       }
@@ -1286,7 +1365,7 @@ export default function AuditDashboard() {
     }
 
     if (activeTab === 'naruto') {
-      return <NarutoSamplePanel onClose={() => setActiveTab('overview')} />;
+      return <NarutoSamplePanel onClose={() => handleTabChange('overview')} />;
     }
 
     return null;
@@ -1311,7 +1390,7 @@ export default function AuditDashboard() {
         <div className="z-20 hidden w-[260px] shrink-0 md:block">
           <Sidebar
             activeTab={activeTab}
-            setActiveTab={setActiveTab}
+            setActiveTab={handleTabChange}
             onOpenExport={() => setIsExportModalOpen(true)}
             onOpenExecutiveReport={() => setIsExecutiveReportOpen(true)}
             onOpenSettings={handleOpenSettings}
@@ -1344,7 +1423,7 @@ export default function AuditDashboard() {
               <Sidebar
                 activeTab={activeTab}
                 setActiveTab={(tab) => {
-                  setActiveTab(tab);
+                  handleTabChange(tab);
                   setIsMobileSidebarOpen(false);
                 }}
                 onOpenExport={() => {
