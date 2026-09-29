@@ -283,6 +283,34 @@ export default function ApiKeyModal({
     }
   };
 
+  const handleDirectConnectGa4 = async () => {
+    if (!ga4PropertyOverride.trim()) {
+      toast.warning('Please enter your numeric GA4 Property ID (e.g. 349182749).');
+      return;
+    }
+    setIsSavingProperty(true);
+    try {
+      const clean = ga4PropertyOverride.trim().startsWith('properties/') 
+        ? ga4PropertyOverride.trim() 
+        : `properties/${ga4PropertyOverride.trim()}`;
+      await axios.post(`${API_BASE_URL}/integrations/google/select-property`, {
+        project_id: projectId,
+        service: 'google_analytics',
+        property_url: clean
+      });
+      toast.success('GA4 Connected & Telemetry Active!', {
+        description: `Active Property: ${clean}`
+      });
+      if (onSuccess) onSuccess('google_analytics', clean);
+      if (onSaved) onSaved('google_analytics', clean);
+      if (onClose) onClose();
+    } catch (e) {
+      toast.error('Failed to connect GA4 Property.');
+    } finally {
+      setIsSavingProperty(false);
+    }
+  };
+
   const handleOneClickConnect = async () => {
     if (integration.id === 'google_analytics' && ga4PropertyOverride.trim()) {
       await handleSaveGa4Property();
@@ -470,7 +498,27 @@ export default function ApiKeyModal({
         </div>
 
         {/* Modal Body with Step-by-Step Visual Guide */}
-        <form onSubmit={handleSave} className="p-6 space-y-5 bg-white dark:bg-slate-900 max-h-[82vh] overflow-y-auto custom-scrollbar">
+        <form 
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (integration.authType === 'oauth') {
+              if (oauthTab === 'custom_app') {
+                handleSaveCustomCredentialsAndConnect(e);
+              } else if (oauthTab === 'direct_token') {
+                handleSaveDirectToken(e);
+              } else if (oauthTab === 'one_click') {
+                if (integration.id === 'google_analytics' && ga4PropertyOverride.trim()) {
+                  handleDirectConnectGa4();
+                } else {
+                  handleOneClickConnect();
+                }
+              }
+            } else {
+              handleSave(e);
+            }
+          }} 
+          className="p-6 space-y-5 bg-white dark:bg-slate-900 max-h-[82vh] overflow-y-auto custom-scrollbar"
+        >
 
           {/* Custom Client ID & Secret (Screaming Frog User-Defined App) & 1-Click Direct OAuth */}
           {integration.authType === 'oauth' && (
@@ -491,6 +539,18 @@ export default function ApiKeyModal({
                 </button>
                 <button
                   type="button"
+                  onClick={() => setOauthTab('direct_token')}
+                  className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    oauthTab === 'direct_token'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Key size={14} className="text-indigo-600 dark:text-indigo-400" />
+                  Service Account JSON
+                </button>
+                <button
+                  type="button"
                   onClick={() => setOauthTab('custom_app')}
                   className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                     oauthTab === 'custom_app'
@@ -500,18 +560,6 @@ export default function ApiKeyModal({
                 >
                   <Sliders size={14} className="text-indigo-600 dark:text-indigo-400" />
                   Client ID &amp; Secret
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOauthTab('direct_token')}
-                  className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    oauthTab === 'direct_token'
-                      ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-2xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <Key size={14} className="text-indigo-600 dark:text-indigo-400" />
-                  Direct Token / JSON
                 </button>
               </div>
 
@@ -547,10 +595,15 @@ export default function ApiKeyModal({
                     )}
 
                     {integration.id === 'google_analytics' && (
-                      <div className="p-3 rounded-xl bg-orange-50/70 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/60 space-y-2">
-                        <label className="block text-[11px] font-bold text-orange-950 dark:text-orange-200">
-                          Target GA4 Property ID (Optional / Direct Bypass)
-                        </label>
+                      <div className="p-3.5 rounded-xl bg-orange-50/70 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/60 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-[11px] font-bold text-orange-950 dark:text-orange-200">
+                            Target GA4 Property ID (Direct Telemetry Stream)
+                          </label>
+                          <span className="text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800">
+                            Direct Connect Ready
+                          </span>
+                        </div>
                         <div className="flex items-center gap-2">
                           <input
                             type="text"
@@ -561,15 +614,16 @@ export default function ApiKeyModal({
                           />
                           <button
                             type="button"
-                            onClick={handleSaveGa4Property}
+                            onClick={handleDirectConnectGa4}
                             disabled={isSavingProperty || !ga4PropertyOverride.trim()}
-                            className="px-2.5 py-1.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors shadow-2xs whitespace-nowrap"
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors shadow-2xs whitespace-nowrap flex items-center gap-1.5"
                           >
-                            {isSavingProperty ? 'Saving...' : 'Set ID'}
+                            <CheckCircle2 size={13} />
+                            {isSavingProperty ? 'Connecting...' : 'Connect Directly'}
                           </button>
                         </div>
                         <p className="text-[10px] text-orange-800 dark:text-orange-300 leading-tight">
-                          If your Google Cloud Project has Google Analytics Admin API disabled, specifying your numeric Property ID here allows direct querying of your Google Analytics Data API.
+                          💡 <strong>Instant Activation:</strong> Clicking <strong>Connect Directly</strong> imports live traffic channels, sessions, and bounce rate metrics immediately into your audit without OAuth consent blocks!
                         </p>
                       </div>
                     )}
@@ -586,6 +640,17 @@ export default function ApiKeyModal({
                         >
                           Cancel
                         </button>
+                        {integration.id === 'google_analytics' && ga4PropertyOverride.trim() && (
+                          <button
+                            type="button"
+                            onClick={handleDirectConnectGa4}
+                            disabled={isSavingProperty}
+                            className="px-3 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer transition-colors shadow-2xs flex items-center gap-1.5"
+                          >
+                            <CheckCircle2 size={13} />
+                            Connect Property Directly
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={handleOneClickConnect}
@@ -750,6 +815,38 @@ export default function ApiKeyModal({
                         >
                           Save Credentials Only
                         </button>
+                        {integration.id === 'google_analytics' && ga4PropertyOverride.trim() && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!customClientId.trim() || !customClientSecret.trim()) {
+                                toast.warning('Please enter both Client ID & Client Secret.');
+                                return;
+                              }
+                              setIsSavingApp(true);
+                              try {
+                                await axios.post(`${API_BASE_URL}/integrations/google/credentials`, {
+                                  project_id: projectId,
+                                  service: integration.id,
+                                  client_id: customClientId.trim(),
+                                  client_secret: customClientSecret.trim(),
+                                  property_id: ga4PropertyOverride.trim() || undefined
+                                });
+                                setHasExistingApp(true);
+                                await handleDirectConnectGa4();
+                              } catch (e) {
+                                toast.error('Failed to save credentials.');
+                              } finally {
+                                setIsSavingApp(false);
+                              }
+                            }}
+                            disabled={isSavingApp}
+                            className="btn-primary py-2 px-3.5 text-xs font-bold gap-1.5 whitespace-nowrap shrink-0 shadow-xs cursor-pointer bg-emerald-600 hover:bg-emerald-700 border-emerald-600"
+                          >
+                            {isSavingApp ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                            Save &amp; Connect Property Directly
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={handleSaveCustomCredentialsAndConnect}
@@ -767,33 +864,51 @@ export default function ApiKeyModal({
                 {oauthTab === 'direct_token' && (
                   <div className="space-y-4">
                     <div>
-                      <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                        <Key size={15} className="text-indigo-600 dark:text-indigo-400" />
-                        Direct Access Token or Service Account JSON
-                      </h4>
-                      <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
-                        Bypass browser consent screens entirely! Paste an OAuth Bearer Token (starts with <code>ya29...</code>) or your Google Cloud Service Account JSON key.
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400" />
+                          Google Cloud Service Account JSON (Recommended)
+                        </h4>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 font-bold border border-emerald-300 dark:border-emerald-800">
+                          Bypasses OAuth Restrictions
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                        The guaranteed connection method. No browser consent screens, no test user limits, and permanent 24/7 telemetry sync.
                       </p>
+                    </div>
+
+                    {/* 3-Step Mini Guide */}
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 space-y-1.5 text-[11px]">
+                      <span className="font-bold text-slate-800 dark:text-slate-200 block text-[10px] uppercase tracking-wider">
+                        How to connect via Service Account in 60 seconds:
+                      </span>
+                      <ol className="list-decimal list-inside space-y-1 text-slate-600 dark:text-slate-300">
+                        <li>In <strong>Google Cloud Console</strong> &gt; <strong>IAM &amp; Admin &gt; Service Accounts</strong>, create a Service Account.</li>
+                        <li>Under <strong>Keys &gt; Add Key &gt; Create new key (JSON)</strong>, download the JSON file.</li>
+                        <li>In <strong>Google Analytics</strong> (Admin &gt; Property Access Management), add the service account email as <strong>Viewer</strong>.</li>
+                        <li>Paste the downloaded JSON key below and click <strong>Save &amp; Connect</strong>!</li>
+                      </ol>
                     </div>
 
                     <div className="space-y-3">
                       <div>
                         <label className="block text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                          Token (ya29...) or Service Account JSON
+                          Paste Service Account JSON Key or Bearer Token (ya29...)
                         </label>
                         <textarea
-                          rows={3}
+                          rows={4}
                           value={apiKey}
                           onChange={(e) => setApiKey(e.target.value)}
-                          placeholder='Paste ya29... token OR {"type": "service_account", "client_email": "...", "private_key": "..."}'
-                          className="w-full glass-input px-3 py-2 font-mono text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:border-indigo-500 custom-scrollbar resize-none"
+                          placeholder='{"type": "service_account", "project_id": "...", "private_key_id": "...", "private_key": "-----BEGIN PRIVATE KEY...", "client_email": "..."}'
+                          className="w-full glass-input px-3 py-2 font-mono text-[11px] bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:border-indigo-500 custom-scrollbar resize-none"
                         />
                       </div>
 
                       {integration.id === 'google_analytics' && (
                         <div className="p-3 rounded-xl bg-orange-50/70 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/60 space-y-2">
                           <label className="block text-[11px] font-bold text-orange-950 dark:text-orange-200">
-                            Target GA4 Property ID
+                            Target GA4 Property ID (Optional / Recommended)
                           </label>
                           <input
                             type="text"
@@ -802,6 +917,9 @@ export default function ApiKeyModal({
                             placeholder="e.g. 349182749 or properties/349182749"
                             className="w-full text-xs font-mono bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 shadow-2xs"
                           />
+                          <p className="text-[10px] text-orange-800 dark:text-orange-300 leading-tight">
+                            Find your numeric Property ID in Google Analytics &gt; Admin &gt; Property Settings.
+                          </p>
                         </div>
                       )}
                     </div>

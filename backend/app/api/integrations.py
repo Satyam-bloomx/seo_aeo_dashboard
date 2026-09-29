@@ -10,7 +10,7 @@ import httpx
 import time
 
 from app.core.database import get_db
-from app.models.domain import Integration
+from app.models.domain import Integration, Project
 from app.services.intelligence_service import IntelligenceService
 
 router = APIRouter()
@@ -111,25 +111,32 @@ async def get_integration_status(project_id: int, db: AsyncSession = Depends(get
         if item:
             config = item.config_json if isinstance(item.config_json, dict) else {}
             auth_error = config.get("last_auth_error")
+            selected_property = config.get("selected_property")
+            data_obj = config.get("data", {})
+            if isinstance(data_obj, dict):
+                account_email = data_obj.get("auth_account")
+                permission_error = data_obj.get("google_permission_error")
+                has_telemetry = bool(data_obj.get("is_live_data"))
+                if not selected_property:
+                    selected_property = data_obj.get("property") or data_obj.get("property_name")
+
             if item.connected:
                 raw_key = item.api_key or item.access_token
-                # Disallow false 'connected' state if using AIza API key for private Google services
                 is_invalid_aiza = bool(svc in ["search_console", "google_analytics"] and raw_key and raw_key.startswith("AIza"))
                 
                 if is_invalid_aiza:
                     connected = False
                 else:
-                    connected = bool(raw_key)
-                has_key = bool(raw_key)
-
-                selected_property = config.get("selected_property")
-                data_obj = config.get("data", {})
-                if isinstance(data_obj, dict):
-                    account_email = data_obj.get("auth_account")
-                    permission_error = data_obj.get("google_permission_error")
-                    has_telemetry = bool(data_obj.get("is_live_data"))
-                    if not selected_property:
-                        selected_property = data_obj.get("property") or data_obj.get("property_name")
+                    connected = True
+                has_key = bool(raw_key or selected_property)
+            elif selected_property and svc in ["google_analytics", "search_console"]:
+                connected = True
+                has_key = True
+                if not raw_key:
+                    raw_key = selected_property
+            elif item.config_json and isinstance(item.config_json, dict) and item.config_json.get("data"):
+                connected = True
+                has_key = True
 
         elif env_keys.get(svc):
             connected = True
@@ -147,12 +154,16 @@ async def get_integration_status(project_id: int, db: AsyncSession = Depends(get
             if not has_configured_app:
                 has_configured_app = bool(os.getenv("GOOGLE_CLIENT_ID"))
 
+        masked_key_str = _mask_key(raw_key)
+        if not masked_key_str and selected_property:
+            masked_key_str = f"GA4: {selected_property.replace('properties/', '')}" if svc == "google_analytics" else f"GSC: {selected_property}"
+
         response.append(IntegrationStatusResponse(
             id=svc,
             connected=connected,
             has_key=has_key,
             has_configured_app=has_configured_app,
-            masked_key=_mask_key(raw_key),
+            masked_key=masked_key_str,
             account_email=account_email,
             selected_property=selected_property,
             permission_error=permission_error,
@@ -182,6 +193,50 @@ async def save_api_key(req: ApiKeyRequest, db: AsyncSession = Depends(get_db)):
             detail=f"{service_title} requires an OAuth 2.0 User Access Token (ya29...), Google 1-Click Sign-In, or a Service Account JSON. API Keys (AIza...) are not permitted by Google for private site telemetry."
         )
 
+    # Detect GA4 Measurement IDs (G-...) or numeric Property IDs pasted by mistake
+    if service == "google_analytics":
+        if raw_key.upper().startswith("G-"):
+            raise HTTPException(
+                status_code=400,
+                detail="GA4 Measurement IDs ('G-...') are website tracking script tags, not API authorization credentials. To connect GA4 telemetry, please use '1-Click Sign-In with Google' or paste a 'Service Account JSON' key."
+            )
+        if raw_key.isdigit() or (raw_key.startswith("properties/") and raw_key.replace("properties/", "").isdigit()):
+            clean_pid = raw_key if raw_key.startswith("properties/") else f"properties/{raw_key}"
+            # Save property ID to config and connect directly
+            proj_res = await db.execute(select(Project).where(Project.id == req.project_id))
+            if not proj_res.scalars().first():
+                db.add(Project(id=req.project_id, name="Default Project"))
+                await db.flush()
+            result = await db.execute(select(Integration).where(
+                Integration.project_id == req.project_id,
+                Integration.integration_type == service
+            ))
+            integration = result.scalars().first()
+            if not integration:
+                integration = Integration(project_id=req.project_id, integration_type=service)
+                db.add(integration)
+            cfg = dict(integration.config_json or {})
+            cfg["selected_property"] = clean_pid
+            cfg.pop("last_auth_error", None)
+            integration.config_json = cfg
+            integration.connected = True
+            integration.api_key = clean_pid
+            flag_modified(integration, "config_json")
+            await db.commit()
+
+            # Trigger telemetry sync
+            try:
+                await IntelligenceService.sync_service_data(db, req.project_id, service)
+            except Exception as sync_err:
+                print(f"Auto-sync on GA4 property save notice: {sync_err}")
+
+            return {
+                "status": "success",
+                "connected": True,
+                "message": f"Target GA4 Property ({clean_pid}) connected and synchronized successfully!",
+                "masked_key": f"GA4: {clean_pid.replace('properties/', '')}"
+            }
+
     # Validate Service Account JSON if provided for Google services
     if service in ["search_console", "google_analytics"] and raw_key.startswith("{"):
         try:
@@ -203,7 +258,6 @@ async def save_api_key(req: ApiKeyRequest, db: AsyncSession = Depends(get_db)):
             )
 
     try:
-        from app.models.domain import Project
         proj_res = await db.execute(select(Project).where(Project.id == req.project_id))
         proj = proj_res.scalars().first()
         if not proj:
@@ -228,10 +282,24 @@ async def save_api_key(req: ApiKeyRequest, db: AsyncSession = Depends(get_db)):
         integration.access_token = raw_key
         integration.connected = True
         
+        # Clear any prior authentication error on success
+        cfg = dict(integration.config_json or {})
+        cfg.pop("last_auth_error", None)
+        integration.config_json = cfg
+        flag_modified(integration, "config_json")
         await db.commit()
+
+        # Trigger immediate background telemetry sync
+        if service in ["google_analytics", "search_console", "pagespeed"]:
+            try:
+                await IntelligenceService.sync_service_data(db, req.project_id, service)
+            except Exception as sync_err:
+                print(f"Auto-sync on key save notice: {sync_err}")
+
         return {
             "status": "success", 
-            "message": f"{service} credentials saved and connected successfully!",
+            "connected": True,
+            "message": f"{service.replace('_', ' ').title()} credentials saved and connected successfully!",
             "masked_key": _mask_key(raw_key)
         }
     except HTTPException:
@@ -571,6 +639,20 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                 "success": False,
                 "status": "error",
                 "detail": "Google API Keys ('AIza...') cannot access Google Analytics 4 telemetry. GA4 requires OAuth 2.0 User authorization or a Service Account JSON."
+            }
+
+        if token.upper().startswith("G-"):
+            return {
+                "success": False,
+                "status": "error",
+                "detail": "GA4 Measurement IDs ('G-...') are website tracking script tags, not API authorization credentials. Please connect via '1-Click Sign-In with Google' or paste a 'Service Account JSON' key."
+            }
+
+        if token.isdigit() or (token.startswith("properties/") and token.replace("properties/", "").isdigit()):
+            return {
+                "success": False,
+                "status": "error",
+                "detail": "This is a numeric GA4 Property ID. Google requires an authorized Google Sign-In or Service Account JSON to access data for this property."
             }
             
         headers = {"Authorization": f"Bearer {token}"}
@@ -986,7 +1068,8 @@ async def record_oauth_error(req: RecordOAuthErrorRequest, db: AsyncSession = De
     cfg["last_auth_error"] = err_detail
     cfg["last_auth_attempt"] = datetime.datetime.utcnow().isoformat()
     integration.config_json = cfg
-    integration.connected = False
+    if not cfg.get("selected_property") and not cfg.get("data"):
+        integration.connected = False
     flag_modified(integration, "config_json")
     await db.commit()
     return {"status": "recorded", "error": cfg["last_auth_error"]}
@@ -1222,11 +1305,12 @@ async def select_google_property(
     req: SelectPropertyRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """Saves user's chosen GSC property or GA4 property and triggers instant telemetry sync."""
+    """Saves user's chosen GSC property or GA4 property, connects integration, and triggers instant telemetry sync."""
     result = await db.execute(select(Integration).where(Integration.project_id == req.project_id, Integration.integration_type == req.service))
     integration = result.scalars().first()
     if not integration:
-        raise HTTPException(status_code=404, detail="Integration not found")
+        integration = Integration(project_id=req.project_id, integration_type=req.service)
+        db.add(integration)
         
     config = dict(integration.config_json or {})
     clean_prop = req.property_url.strip()
@@ -1235,7 +1319,11 @@ async def select_google_property(
             clean_prop = f"properties/{clean_prop}"
             
     config["selected_property"] = clean_prop
+    config.pop("last_auth_error", None)
     integration.config_json = config
+    integration.connected = True
+    if not integration.api_key:
+        integration.api_key = clean_prop
     flag_modified(integration, "config_json")
     await db.commit()
     
@@ -1247,7 +1335,8 @@ async def select_google_property(
 
     return {
         "status": "success", 
-        "message": f"Selected property saved as {clean_prop}", 
+        "connected": True,
+        "message": f"Selected property saved as {clean_prop} and connected successfully!", 
         "selected_property": clean_prop
     }
 

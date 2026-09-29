@@ -24,6 +24,11 @@ elif db_url.startswith("postgres://"):
 elif db_url.startswith("sqlite://") and not db_url.startswith("sqlite+aiosqlite://"):
     db_url = db_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
 
+if db_url.startswith("sqlite") and ("./seo_audit.db" in db_url or db_url.endswith("seo_audit.db")):
+    backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    db_file_path = os.path.join(backend_dir, "seo_audit.db").replace("\\", "/")
+    db_url = f"sqlite+aiosqlite:///{db_file_path}"
+
 # Configure engine
 if "postgresql" in db_url or "asyncpg" in db_url:
     connect_args = {}

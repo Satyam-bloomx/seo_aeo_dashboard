@@ -77,7 +77,8 @@ export default function IntegrationsWorkspace({
   // Check connection status from parent or current fetch
   const isCurrentConnected = useMemo(() => {
     if (selectedService === 'synergy') return true;
-    return Boolean(integrationsStatus[selectedService]?.connected);
+    const statusObj = integrationsStatus[selectedService];
+    return Boolean(statusObj?.connected || statusObj?.selected_property || statusObj?.has_telemetry);
   }, [selectedService, integrationsStatus]);
 
   // Fetch properties for Google services

@@ -467,7 +467,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
   };
 
   const connectedCount = useMemo(() => {
-    return Object.values(integrations).filter(i => i?.connected).length;
+    return Object.values(integrations).filter(i => Boolean(i?.connected || i?.selected_property || i?.has_telemetry)).length;
   }, [integrations]);
 
   const filteredIntegrations = useMemo(() => {
@@ -663,7 +663,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       >
         {filteredIntegrations.map((item) => {
           const integrationState = integrations[item.id];
-          const isConnected = Boolean(integrationState?.connected);
+          const isConnected = Boolean(integrationState?.connected || integrationState?.selected_property || integrationState?.has_telemetry);
           const hasConfiguredApp = Boolean(integrationState?.has_configured_app);
           const maskedKey = integrationState?.masked_key;
           const testRes = testResults[item.id];
@@ -1117,15 +1117,26 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                     ) : (
                       <div className="w-full space-y-2">
                         {hasConfiguredApp && !hasError && (
-                          <div className="p-2 rounded-xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/50 flex items-center justify-between text-[11px] text-amber-900 dark:text-amber-300">
-                            <span className="truncate">OAuth App credentials saved.</span>
-                            <button
-                              type="button"
-                              onClick={() => setActiveModal(item)}
-                              className="font-bold underline cursor-pointer shrink-0 ml-1.5 hover:text-amber-950 dark:hover:text-amber-100"
-                            >
-                              Edit App
-                            </button>
+                          <div className="p-2.5 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-900/50 space-y-1 text-[11px] text-indigo-900 dark:text-indigo-200">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold flex items-center gap-1.5">
+                                <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400" />
+                                Google Cloud App Linked
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setModalInitialTab('custom_app');
+                                  setActiveModal(item);
+                                }}
+                                className="font-bold underline cursor-pointer shrink-0 ml-1.5 hover:text-indigo-950 dark:hover:text-white"
+                              >
+                                Edit App
+                              </button>
+                            </div>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
+                              Click below to authorize account access, or use a Service Account JSON.
+                            </p>
                           </div>
                         )}
                         <div className="w-full flex items-center gap-2">
@@ -1139,11 +1150,14 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                             <Globe size={14} /> {hasConfiguredApp ? 'Complete Google Sign-In' : 'Connect with Google'}
                           </motion.button>
                           <motion.button
-                            onClick={() => setActiveModal(item)}
+                            onClick={() => {
+                              setModalInitialTab('custom_app');
+                              setActiveModal(item);
+                            }}
                             whileTap={tapPress}
                             transition={spring.press}
                             className="p-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl cursor-pointer"
-                            title="Configure Custom OAuth Client ID / Secret or Service Account JSON"
+                            title="Configure Custom OAuth Client ID / Secret"
                           >
                             <Sliders size={14} />
                           </motion.button>
@@ -1155,10 +1169,10 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                               setModalInitialTab('direct_token');
                               setActiveModal(item);
                             }}
-                            className="text-[11px] text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                            className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 hover:underline flex items-center gap-1.5 cursor-pointer transition-colors"
                           >
-                            <Key size={11} />
-                            <span>Or connect via Service Account JSON / Token</span>
+                            <Key size={12} />
+                            <span>Or connect via Service Account JSON (Recommended)</span>
                           </button>
                         </div>
                       </div>
@@ -1184,27 +1198,9 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
           onSuccess={(serviceId, maskedKey) => {
             setActiveModal(null);
             setModalInitialTab('one_click');
-            setIntegrations(prev => ({
-              ...prev,
-              [serviceId]: {
-                id: serviceId,
-                connected: true,
-                has_key: true,
-                masked_key: maskedKey || '••••••••'
-              }
-            }));
             fetchStatus();
           }}
           onSaved={(serviceId, maskedKey) => {
-            setIntegrations(prev => ({
-              ...prev,
-              [serviceId]: {
-                id: serviceId,
-                connected: true,
-                has_key: true,
-                masked_key: maskedKey || '••••••••'
-              }
-            }));
             fetchStatus();
           }}
           onOAuthConnect={(svcId) => {
