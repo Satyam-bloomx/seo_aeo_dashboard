@@ -75,20 +75,21 @@ export default function UserMenu() {
     );
   }
 
-  const initial = (user.email || 'U')[0].toUpperCase();
+  const displayName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
+  const initial = (user.user_metadata?.full_name || user.email || 'U')[0].toUpperCase();
 
   return (
     <div className="relative" ref={menuRef}>
       <button
         type="button"
         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 transition-all text-xs font-medium shadow-sm"
+        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 transition-all text-xs font-medium shadow-sm cursor-pointer"
       >
         <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-[10px] font-bold shadow-inner">
           {initial}
         </div>
         <span className="hidden md:inline max-w-[120px] truncate text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-          {user.email?.split('@')[0]}
+          {displayName}
         </span>
         <ChevronDown size={13} className="text-slate-400" />
       </button>
@@ -100,12 +101,15 @@ export default function UserMenu() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 6 }}
             transition={{ duration: 0.12 }}
-            className="absolute right-0 mt-2 w-60 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl shadow-2xl p-2 z-50 overflow-hidden"
+            className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl shadow-2xl p-2 z-50 overflow-hidden"
           >
             {/* Header info */}
             <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800/80 mb-1">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Signed In As</p>
-              <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate mt-0.5">
+              <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate mt-0.5">
+                {displayName}
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                 {user.email}
               </p>
               <div className="flex items-center gap-1.5 mt-2">

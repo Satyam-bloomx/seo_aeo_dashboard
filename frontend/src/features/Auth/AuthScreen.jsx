@@ -16,13 +16,15 @@ import {
   Globe,
   Sparkles,
   Layers,
-  LockKeyhole
+  LockKeyhole,
+  User
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { spring, tapPress } from '@/lib/motion';
 
 export default function AuthScreen() {
   const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -34,12 +36,13 @@ export default function AuthScreen() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email || !password) return;
+    if (mode === 'signup' && !fullName.trim()) return;
     setIsSubmitting(true);
     try {
       if (mode === 'signin') {
         await signIn(email, password);
       } else {
-        await signUp(email, password);
+        await signUp(email, password, fullName);
       }
     } finally {
       setIsSubmitting(false);
@@ -223,6 +226,28 @@ export default function AuthScreen() {
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
+              {mode === 'signup' && (
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                    Full Name
+                  </label>
+                  <div className="relative">
+                    <User
+                      size={16}
+                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
+                    />
+                    <input
+                      type="text"
+                      required={mode === 'signup'}
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Alex Rivera"
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950/70 text-white placeholder-slate-500 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
                   Email Address

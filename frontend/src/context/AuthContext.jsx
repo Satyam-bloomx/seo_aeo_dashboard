@@ -89,20 +89,25 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  const signUp = useCallback(async (email, password) => {
+  const signUp = useCallback(async (email, password, fullName = '') => {
     try {
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
+          data: {
+            full_name: fullName ? fullName.trim() : '',
+            name: fullName ? fullName.trim() : '',
+          },
           emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
         }
       });
       if (error) throw error;
       
+      const displayName = fullName ? fullName.trim() : (data.user?.email || 'User');
       if (data.session) {
         toast.success('Account created & signed in!', {
-          description: `Welcome, ${data.user?.email || 'User'}`,
+          description: `Welcome, ${displayName}!`,
         });
       } else {
         toast.success('Registration successful!', {
