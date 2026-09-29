@@ -170,17 +170,39 @@ function CallbackContent() {
         const endpoint = `${API_BASE_URL}/integrations/google/callback?project_id=${encodeURIComponent(projectId)}&service=${encodeURIComponent(service)}&code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(callbackUri)}`;
 
         const res = await axios.post(endpoint);
-        setStatus('success');
-        setMessage(res.data?.message || `Successfully connected to ${serviceDisplayName}!`);
         
-        // Clear any stored errors on success
-        if (typeof window !== 'undefined') {
-          sessionStorage.removeItem('last_integration_error');
-        }
+        if (res.data?.status === 'warning' || res.data?.has_no_properties) {
+          setStatus('warning');
+          setMessage(res.data?.message || `Authenticated as ${res.data?.account_email || 'Google User'}, but no verified properties were found in ${serviceDisplayName}.`);
+          if (res.data?.diagnostic_help) {
+            setErrorDetails({
+              title: `No Active ${serviceDisplayName} Properties Found`,
+              summary: res.data.message,
+              steps: [
+                res.data.diagnostic_help,
+                'You can switch Google accounts using the "Switch Google Account" button on the dashboard card.',
+                service === 'google_analytics' ? 'Or enter your numeric GA4 Property ID directly in the dashboard.' : 'Verify domain ownership in Google Search Console.'
+              ],
+              link: service === 'google_analytics' ? 'https://analytics.google.com/' : 'https://search.google.com/search-console',
+              linkLabel: `Open ${serviceDisplayName}`
+            });
+          }
+          setTimeout(() => {
+            router.push(`/?tab=integrations&service=${service}&warning=no_properties&account=${encodeURIComponent(res.data?.account_email || '')}`);
+          }, 3500);
+        } else {
+          setStatus('success');
+          setMessage(res.data?.message || `Successfully connected to ${serviceDisplayName}!`);
+          
+          // Clear any stored errors on success
+          if (typeof window !== 'undefined') {
+            sessionStorage.removeItem('last_integration_error');
+          }
 
-        setTimeout(() => {
-          router.push(`/?tab=integrations&service=${service}&connected=true`);
-        }, 1500);
+          setTimeout(() => {
+            router.push(`/?tab=integrations&service=${service}&connected=true&account=${encodeURIComponent(res.data?.account_email || '')}`);
+          }, 1500);
+        }
       } catch (err) {
         console.error("OAuth token exchange error:", err);
         const detail = err.response?.data?.detail || err.message || 'Token exchange failed.';
@@ -250,6 +272,12 @@ function CallbackContent() {
         </div>
       )}
       
+      {status === 'warning' && (
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 flex items-center justify-center text-amber-600 dark:text-amber-400 mb-4 shadow-sm">
+          <AlertTriangle size={36} />
+        </div>
+      )}
+
       {status === 'error' && (
         <div className="w-16 h-16 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 flex items-center justify-center text-rose-600 dark:text-rose-400 mb-4 shadow-sm">
           <XCircle size={36} />
@@ -260,7 +288,7 @@ function CallbackContent() {
         <ShieldCheck size={13} /> {serviceDisplayName} OAuth Verification
       </div>
       <h2 className="text-xl font-extrabold text-slate-900 dark:text-white mb-2 tracking-tight">
-        {status === 'success' ? 'Connected Successfully!' : status === 'error' ? 'Connection Failed' : 'Connecting to Google...'}
+        {status === 'success' ? 'Connected Successfully!' : status === 'warning' ? 'Connected — No Active Properties Found' : status === 'error' ? 'Connection Failed' : 'Connecting to Google...'}
       </h2>
       <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-mono max-w-md mb-4">{message}</p>
       

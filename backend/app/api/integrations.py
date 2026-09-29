@@ -27,6 +27,9 @@ class IntegrationStatusResponse(BaseModel):
     permission_error: Optional[str] = None
     auth_error: Optional[str] = None
     has_telemetry: bool = False
+    has_no_properties: bool = False
+    no_properties_warning: Optional[str] = None
+    diagnostic_help: Optional[str] = None
 
 class ApiKeyRequest(BaseModel):
     project_id: int = 1
@@ -117,13 +120,22 @@ async def get_integration_status(
         has_telemetry = False
         
         auth_error = None
+        has_no_properties = False
+        no_properties_warning = None
+        diagnostic_help = None
+
         if item:
             config = item.config_json if isinstance(item.config_json, dict) else {}
             auth_error = config.get("last_auth_error")
             selected_property = config.get("selected_property")
+            has_no_properties = bool(config.get("has_no_properties"))
+            no_properties_warning = config.get("no_properties_warning")
+            diagnostic_help = config.get("diagnostic_help")
+            account_email = config.get("account_email")
             data_obj = config.get("data", {})
             if isinstance(data_obj, dict):
-                account_email = data_obj.get("auth_account")
+                if not account_email:
+                    account_email = data_obj.get("auth_account")
                 permission_error = data_obj.get("google_permission_error")
                 has_telemetry = bool(data_obj.get("is_live_data"))
                 if not selected_property:
@@ -177,7 +189,10 @@ async def get_integration_status(
             selected_property=selected_property,
             permission_error=permission_error,
             auth_error=auth_error,
-            has_telemetry=has_telemetry
+            has_telemetry=has_telemetry,
+            has_no_properties=has_no_properties,
+            no_properties_warning=no_properties_warning,
+            diagnostic_help=diagnostic_help
         ))
         
     return response
@@ -375,23 +390,31 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                 latency = round((time.time() - start_time) * 1000, 1)
                 if res.status_code == 200:
                     return {
-                        "success": True,
-                        "status": "ok",
-                        "message": f"Google PageSpeed Insights connection verified with live Google Lighthouse service! ({latency}ms)",
+                        "success": True, 
+                        "status": "ok", 
+                        "message": f"Google PageSpeed Insights connection verified! ({latency}ms)",
                         "latency_ms": latency
                     }
                 elif res.status_code in [400, 403]:
-                    err_msg = res.json().get("error", {}).get("message", "API Key or OAuth token rejected by Google")
-                    return {"success": False, "status": "error", "detail": f"PageSpeed verification failed: {err_msg}"}
+                    err_json = res.json().get("error", {})
+                    err_msg = err_json.get("message", "API Key or OAuth token rejected by Google.")
+                    return {
+                        "success": False, 
+                        "status": "error", 
+                        "detail": f"PageSpeed verification failed ({res.status_code}): {err_msg}. Ensure the PageSpeed Insights API is enabled in your Google Cloud Console."
+                    }
+                else:
+                    return {
+                        "success": False, 
+                        "status": "error", 
+                        "detail": f"PageSpeed API returned HTTP {res.status_code}: {res.text[:120]}"
+                    }
         except Exception as e:
-            pass
-        latency = round((time.time() - start_time) * 1000 + 35, 1)
-        return {
-            "success": True, 
-            "status": "ok", 
-            "message": f"Google PageSpeed Insights verified & ready for Core Web Vitals ({latency}ms).",
-            "latency_ms": latency
-        }
+            return {
+                "success": False, 
+                "status": "error", 
+                "detail": f"PageSpeed network connection failed: {str(e)}"
+            }
 
     # 2. OpenAI test
     elif service == "openai":
@@ -401,22 +424,24 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
             async with httpx.AsyncClient(timeout=8.0) as client:
                 res = await client.get(
                     "https://api.openai.com/v1/models",
-                    headers={"Authorization": f"Bearer {api_key}"}
+                    headers={"Authorization": f"Bearer {api_key.strip()}"}
                 )
                 latency = round((time.time() - start_time) * 1000, 1)
                 if res.status_code == 200:
                     return {
                         "success": True, 
-                        "status": "ok",
+                        "status": "ok", 
                         "message": f"OpenAI GPT-4o API connection verified! ({latency}ms)",
                         "latency_ms": latency
                     }
-                elif "test" in api_key.lower() or "sk-proj" in api_key.lower():
-                    return {"success": True, "status": "ok", "message": "OpenAI API Key format valid and saved for AEO synthesis.", "latency_ms": latency}
+                elif res.status_code == 401:
+                    return {"success": False, "status": "error", "detail": "OpenAI Authentication Failed (401): Incorrect API key provided."}
+                elif res.status_code == 429:
+                    return {"success": False, "status": "error", "detail": "OpenAI Quota Exceeded (429): You have run out of API credits or exceeded your rate limit."}
                 else:
-                    return {"success": False, "status": "error", "detail": f"OpenAI authentication failed ({res.status_code}): {res.text[:80]}"}
-        except Exception:
-            return {"success": True, "status": "ok", "message": "OpenAI key configured and saved for crawler AEO enrichments.", "latency_ms": 28.5}
+                    return {"success": False, "status": "error", "detail": f"OpenAI verification failed ({res.status_code}): {res.text[:100]}"}
+        except Exception as e:
+            return {"success": False, "status": "error", "detail": f"OpenAI connection error: {str(e)}"}
 
     # 3. Perplexity test
     elif service == "perplexity":
@@ -426,7 +451,7 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
             async with httpx.AsyncClient(timeout=8.0) as client:
                 res = await client.post(
                     "https://api.perplexity.ai/chat/completions",
-                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    headers={"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"},
                     json={
                         "model": "sonar",
                         "messages": [{"role": "user", "content": "ping"}],
@@ -438,7 +463,7 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                     return {
                         "success": True, 
                         "status": "ok", 
-                        "message": f"Perplexity AI (Sonar) live citation connection verified! ({latency}ms)", 
+                        "message": f"Perplexity AI live citation connection verified! ({latency}ms)", 
                         "latency_ms": latency
                     }
                 elif res.status_code in [401, 403]:
@@ -447,20 +472,23 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                         "status": "error", 
                         "detail": f"Perplexity authentication failed ({res.status_code}): Invalid or unauthorized API key."
                     }
+                elif res.status_code == 429:
+                    return {
+                        "success": False,
+                        "status": "error",
+                        "detail": "Perplexity Quota Exceeded (429): Insufficient credit balance or rate limit exceeded."
+                    }
                 else:
                     return {
-                        "success": True,
-                        "status": "ok",
-                        "message": f"Perplexity key registered (Status {res.status_code}). Ready for AEO citation audits.",
-                        "latency_ms": latency
+                        "success": False, 
+                        "status": "error", 
+                        "detail": f"Perplexity API returned HTTP {res.status_code}: {res.text[:100]}"
                     }
-        except Exception:
-            latency = round((time.time() - start_time) * 1000, 1)
+        except Exception as e:
             return {
-                "success": True, 
-                "status": "ok", 
-                "message": f"Perplexity key configured and saved for crawler AEO enrichments ({latency}ms).", 
-                "latency_ms": latency
+                "success": False, 
+                "status": "error", 
+                "detail": f"Perplexity connection error: {str(e)}"
             }
 
     # 4. SerpAPI test
@@ -470,7 +498,7 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
                 res = await client.get(
-                    f"https://serpapi.com/search.json?engine=google&q=ping&api_key={api_key}"
+                    f"https://serpapi.com/search.json?engine=google&q=ping&api_key={api_key.strip()}"
                 )
                 latency = round((time.time() - start_time) * 1000, 1)
                 if res.status_code == 200:
@@ -484,22 +512,25 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                     return {
                         "success": False, 
                         "status": "error", 
-                        "detail": "SerpAPI authentication failed: Invalid API key."
+                        "detail": "SerpAPI authentication failed (401): Invalid API key."
+                    }
+                elif res.status_code == 429:
+                    return {
+                        "success": False,
+                        "status": "error",
+                        "detail": "SerpAPI search quota exceeded: You have exhausted your monthly searches."
                     }
                 else:
                     return {
-                        "success": True, 
-                        "status": "ok", 
-                        "message": f"SerpAPI key registered for SERP & Local 3-Pack rank tracking.",
-                        "latency_ms": latency
+                        "success": False, 
+                        "status": "error", 
+                        "detail": f"SerpAPI returned HTTP {res.status_code}: {res.text[:100]}"
                     }
-        except Exception:
-            latency = round((time.time() - start_time) * 1000, 1)
+        except Exception as e:
             return {
-                "success": True, 
-                "status": "ok", 
-                "message": f"SerpAPI Local & Geo SERP crawler verified! ({latency}ms)", 
-                "latency_ms": latency
+                "success": False, 
+                "status": "error", 
+                "detail": f"SerpAPI connection error: {str(e)}"
             }
 
     # 5. Google Business Profile / Places test
@@ -518,16 +549,20 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                     return {
                         "success": True, 
                         "status": "ok", 
-                        "message": f"Google Places & Business API verified! Live NAP & Maps geocoding active ({latency}ms).", 
+                        "message": f"Google Places & Business API verified! ({latency}ms).", 
                         "latency_ms": latency
                     }
                 elif data.get("status") == "REQUEST_DENIED":
                     err_msg = data.get("error_message", "Google Places API request denied")
-                    return {"success": False, "status": "error", "detail": f"Google Places API error: {err_msg}"}
+                    return {
+                        "success": False, 
+                        "status": "error", 
+                        "detail": f"Google Places API Request Denied: {err_msg}. Ensure 'Places API' is enabled in your Google Cloud Project."
+                    }
                 else:
-                    return {"success": False, "status": "error", "detail": f"Google Places API returned status {data.get('status')}"}
+                    return {"success": False, "status": "error", "detail": f"Google Places API returned status {data.get('status')}: {data.get('error_message', '')}"}
         except Exception as e:
-            return {"success": False, "status": "error", "detail": f"Failed to connect to Google Places API: {str(e)}"}
+            return {"success": False, "status": "error", "detail": f"Google Places connection error: {str(e)}"}
 
     # 6. Google Search Console test (CRITICAL)
     elif service == "search_console":
@@ -563,7 +598,7 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
             return {
                 "success": False,
                 "status": "error",
-                "detail": "Google API Keys ('AIza...') cannot access private Google Search Console telemetry. Google requires OAuth 2.0 User authorization or a Service Account. Please add your email to Test Users in Google Cloud Console or upload a Service Account JSON."
+                "detail": "Google API Keys ('AIza...') cannot access private Google Search Console telemetry. Google requires OAuth 2.0 User authorization or a Service Account."
             }
 
         # 2. Reject simulated or mock tokens
@@ -584,25 +619,46 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                 res = await client.get("https://www.googleapis.com/webmasters/v3/sites", headers=headers, params=params)
                 latency = round((time.time() - start_time) * 1000, 1)
                 
+                # Fetch account email for transparency
+                acc_email = None
+                try:
+                    u_res = await client.get("https://www.googleapis.com/oauth2/v2/userinfo", headers=headers)
+                    if u_res.status_code == 200:
+                        acc_email = u_res.json().get("email")
+                except Exception:
+                    pass
+
                 if res.status_code == 200:
                     data = res.json()
                     sites = data.get("siteEntry", [])
                     site_count = len(sites)
                     site_examples = [s.get("siteUrl", "") for s in sites[:2]]
                     example_txt = f" (e.g. {', '.join(site_examples)})" if site_examples else ""
+                    
+                    if site_count == 0:
+                        email_str = f" for '{acc_email}'" if acc_email else ""
+                        return {
+                            "success": False,
+                            "status": "warning",
+                            "detail": f"Authenticated successfully{email_str}, but NO verified properties were found in Google Search Console. Ensure this account has Owner or Full user access in Search Console, or switch to the Google account that manages your website.",
+                            "account_email": acc_email
+                        }
+
                     return {
                         "success": True, 
                         "status": "ok", 
-                        "message": f"Google Search Console OAuth API authenticated! {site_count} verified web properties accessible{example_txt} ({latency}ms).",
+                        "message": f"Google Search Console authenticated ({acc_email or 'User'})! {site_count} verified properties accessible{example_txt} ({latency}ms).",
                         "latency_ms": latency
                     }
                 elif res.status_code in [401, 403]:
                     err_json = res.json().get("error", {})
                     err_msg = err_json.get("message", "Invalid or expired Google Search Console credentials.")
+                    if "disabled" in err_msg.lower() or "not been used in project" in err_msg.lower():
+                        err_msg += " (Please enable the 'Google Search Console API' in your Google Cloud Project)."
                     return {
                         "success": False,
                         "status": "error",
-                        "detail": f"Search Console authentication failed ({res.status_code}): {err_msg}"
+                        "detail": f"Search Console authorization failed ({res.status_code}): {err_msg}"
                     }
                 else:
                     return {
@@ -612,8 +668,8 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                     }
         except Exception as e:
             return {
-                "success": False,
-                "status": "error",
+                "success": False, 
+                "status": "error", 
                 "detail": f"Failed to connect to Google Search Console API: {str(e)}"
             }
 
@@ -645,12 +701,11 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
                     "detail": f"Invalid Google Service Account JSON: {str(sa_err)}. Please ensure client_email and private_key are valid."
                 }
         
-        # Reject simulated or mock tokens
-        if token.startswith("oauth_token_") or token.startswith("mock_"):
+        if token.startswith("mock_") or token.startswith("oauth_token_"):
             return {
                 "success": False,
                 "status": "error",
-                "detail": "Mock or development tokens are disabled. Please connect your Google account using a genuine OAuth Client ID & Secret."
+                "detail": "Mock or development tokens are disabled. Please connect using genuine OAuth credentials."
             }
         
         if token.startswith("AIza"):
@@ -679,32 +734,55 @@ async def test_connection(req: TestConnectionRequest, db: AsyncSession = Depends
             async with httpx.AsyncClient(timeout=10.0) as client:
                 res = await client.get("https://analyticsadmin.googleapis.com/v1beta/accountSummaries", headers=headers)
                 latency = round((time.time() - start_time) * 1000, 1)
+
+                # Fetch account email for transparency
+                acc_email = None
+                try:
+                    u_res = await client.get("https://www.googleapis.com/oauth2/v2/userinfo", headers=headers)
+                    if u_res.status_code == 200:
+                        acc_email = u_res.json().get("email")
+                except Exception:
+                    pass
+
                 if res.status_code == 200:
                     summaries = res.json().get("accountSummaries", [])
                     prop_count = sum(len(a.get("propertySummaries", [])) for a in summaries)
+
+                    if prop_count == 0:
+                        email_str = f" for '{acc_email}'" if acc_email else ""
+                        return {
+                            "success": False,
+                            "status": "warning",
+                            "detail": f"Authenticated successfully{email_str}, but NO GA4 properties were found. Ensure this account has Viewer or Editor permissions on your GA4 property, or enter your numeric Property ID directly below.",
+                            "account_email": acc_email
+                        }
+
                     return {
                         "success": True, 
                         "status": "ok", 
-                        "message": f"Google Analytics 4 API authenticated! {prop_count} GA4 properties accessible ({latency}ms).", 
+                        "message": f"Google Analytics 4 API authenticated ({acc_email or 'User'})! {prop_count} GA4 properties accessible ({latency}ms).", 
                         "latency_ms": latency
                     }
                 elif res.status_code in [401, 403]:
-                    err_msg = res.json().get("error", {}).get("message", "Invalid or expired OAuth token.")
+                    err_json = res.json().get("error", {})
+                    err_msg = err_json.get("message", "Invalid or expired OAuth token.")
+                    if "disabled" in err_msg.lower() or "not been used in project" in err_msg.lower():
+                        err_msg = "Google Analytics Admin API is disabled in your Google Cloud Project. Please enable it in Google Cloud Console, or enter your numeric GA4 Property ID directly."
                     return {
                         "success": False, 
                         "status": "error", 
-                        "detail": f"GA4 authentication failed ({res.status_code}): {err_msg}"
+                        "detail": f"GA4 authorization failed ({res.status_code}): {err_msg}"
                     }
                 else:
                     return {
-                        "success": False,
-                        "status": "error",
+                        "success": False, 
+                        "status": "error", 
                         "detail": f"GA4 API request returned HTTP status {res.status_code}"
                     }
         except Exception as e:
             return {
-                "success": False,
-                "status": "error",
+                "success": False, 
+                "status": "error", 
                 "detail": f"Failed to connect to Google Analytics 4 API: {str(e)}"
             }
 
@@ -862,7 +940,7 @@ async def google_auth_redirect(
             "response_type": "code",
             "scope": scope,
             "access_type": "offline",
-            "prompt": "consent",
+            "prompt": "select_account consent",
             "state": f"{project_id}:{service}",
             "include_granted_scopes": "true",
         }
@@ -995,64 +1073,107 @@ async def google_auth_callback(
             integration.refresh_token = refresh_token
         integration.expires_at = expires_at
 
+        # Fetch authenticated Google Account user info
+        user_email = None
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as u_client:
+                u_res = await u_client.get(
+                    "https://www.googleapis.com/oauth2/v2/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"}
+                )
+                if u_res.status_code == 200:
+                    user_email = u_res.json().get("email")
+        except Exception:
+            pass
+
         # Clear any previous auth error on successful authentication
         cfg = dict(integration.config_json or {})
         cfg.pop("last_auth_error", None)
-        integration.config_json = cfg
-        flag_modified(integration, "config_json")
-        await db.commit()
+        if user_email:
+            cfg["account_email"] = user_email
 
-        # Auto-discover property if none selected yet
-        if not cfg.get("selected_property"):
-            try:
-                if service == "google_analytics":
-                    async with httpx.AsyncClient(timeout=8.0) as admin_client:
-                        adm_res = await admin_client.get(
-                            "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
-                            headers={"Authorization": f"Bearer {access_token}"}
-                        )
-                        if adm_res.status_code == 200:
-                            summaries = adm_res.json().get("accountSummaries", [])
+        has_no_properties = False
+        no_properties_warning = None
+        diagnostic_help = None
+        callback_status = "success"
+
+        # Auto-discover properties and verify access
+        try:
+            if service == "google_analytics":
+                async with httpx.AsyncClient(timeout=8.0) as admin_client:
+                    adm_res = await admin_client.get(
+                        "https://analyticsadmin.googleapis.com/v1beta/accountSummaries",
+                        headers={"Authorization": f"Bearer {access_token}"}
+                    )
+                    if adm_res.status_code == 200:
+                        summaries = adm_res.json().get("accountSummaries", [])
+                        total_props = sum(len(acc.get("propertySummaries", [])) for acc in summaries)
+                        if total_props == 0 and not cfg.get("selected_property"):
+                            has_no_properties = True
+                            callback_status = "warning"
+                            no_properties_warning = f"Signed in as '{user_email}', but NO GA4 properties were found."
+                            diagnostic_help = f"This Google account ({user_email}) has no permissions on any GA4 property. Ensure this account has Viewer or Editor access in Google Analytics (Admin > Property Access Management), or enter your numeric GA4 Property ID manually below."
+                        elif not cfg.get("selected_property"):
                             for acc in summaries:
                                 prop_summaries = acc.get("propertySummaries", [])
                                 if prop_summaries:
                                     first_prop = prop_summaries[0].get("property")
                                     if first_prop:
                                         cfg["selected_property"] = first_prop
-                                        integration.config_json = cfg
-                                        flag_modified(integration, "config_json")
-                                        await db.commit()
                                         break
-                        elif adm_res.status_code in [401, 403]:
-                            err_j = adm_res.json().get("error", {})
-                            cfg["google_permission_error"] = err_j.get("message", "GA4 Admin API disabled in Google Cloud. Enter your GA4 Property ID directly.")
-                            integration.config_json = cfg
-                            flag_modified(integration, "config_json")
-                            await db.commit()
-                elif service == "search_console":
-                    async with httpx.AsyncClient(timeout=8.0) as gsc_client:
-                        gsc_res = await gsc_client.get(
-                            "https://www.googleapis.com/webmasters/v3/sites",
-                            headers={"Authorization": f"Bearer {access_token}"}
-                        )
-                        if gsc_res.status_code == 200:
-                            entries = gsc_res.json().get("siteEntry", [])
-                            if entries and entries[0].get("siteUrl"):
-                                cfg["selected_property"] = entries[0]["siteUrl"]
-                                integration.config_json = cfg
-                                flag_modified(integration, "config_json")
-                                await db.commit()
-            except Exception as auto_disc_err:
-                print(f"Post-auth auto-discovery notice: {auto_disc_err}")
+                    elif adm_res.status_code in [401, 403]:
+                        err_j = adm_res.json().get("error", {})
+                        err_msg = err_j.get("message", "GA4 Admin API disabled in Google Cloud.")
+                        if "disabled" in err_msg.lower() or "not been used in project" in err_msg.lower():
+                            err_msg = "Google Analytics Admin API is disabled in your Google Cloud Project. Please enable it in Google Cloud Console, or enter your GA4 Property ID directly."
+                        cfg["google_permission_error"] = err_msg
+            elif service == "search_console":
+                async with httpx.AsyncClient(timeout=8.0) as gsc_client:
+                    gsc_res = await gsc_client.get(
+                        "https://www.googleapis.com/webmasters/v3/sites",
+                        headers={"Authorization": f"Bearer {access_token}"}
+                    )
+                    if gsc_res.status_code == 200:
+                        entries = gsc_res.json().get("siteEntry", [])
+                        if len(entries) == 0 and not cfg.get("selected_property"):
+                            has_no_properties = True
+                            callback_status = "warning"
+                            no_properties_warning = f"Signed in as '{user_email}', but NO verified properties were found in Google Search Console."
+                            diagnostic_help = f"This Google account ({user_email}) is not an Owner or Full User in Google Search Console for your website. Please add {user_email} in Google Search Console Settings > Users & Permissions, or switch to the Google account that manages your website."
+                        elif entries and entries[0].get("siteUrl") and not cfg.get("selected_property"):
+                            cfg["selected_property"] = entries[0]["siteUrl"]
+                    elif gsc_res.status_code in [401, 403]:
+                        err_j = gsc_res.json().get("error", {})
+                        err_msg = err_j.get("message", "Permission denied.")
+                        if "disabled" in err_msg.lower() or "not been used in project" in err_msg.lower():
+                            err_msg += " (Google Search Console API is disabled in your Google Cloud Project)."
+                        cfg["google_permission_error"] = err_msg
+        except Exception as auto_disc_err:
+            print(f"Post-auth auto-discovery notice: {auto_disc_err}")
+
+        cfg["has_no_properties"] = has_no_properties
+        cfg["no_properties_warning"] = no_properties_warning
+        cfg["diagnostic_help"] = diagnostic_help
+        integration.config_json = cfg
+        flag_modified(integration, "config_json")
+        await db.commit()
 
         # Trigger immediate telemetry sync if property is selected
-        if integration.config_json and isinstance(integration.config_json, dict) and integration.config_json.get("selected_property"):
+        if cfg.get("selected_property"):
             try:
                 await IntelligenceService.sync_service_data(db, project_id, service)
             except Exception as sync_err:
                 print(f"Post-auth telemetry sync notice: {sync_err}")
 
-        return {"status": "success", "message": f"{service} connected and authenticated successfully!"}
+        return {
+            "status": callback_status,
+            "code": "no_properties" if has_no_properties else "ok",
+            "account_email": user_email,
+            "has_no_properties": has_no_properties,
+            "no_properties_warning": no_properties_warning,
+            "diagnostic_help": diagnostic_help,
+            "message": no_properties_warning if has_no_properties else f"{service} connected and authenticated successfully!"
+        }
     except HTTPException:
         # Note: We committed last_auth_error before raising, so rollback here won't discard the error message
         raise
@@ -1296,21 +1417,57 @@ async def get_google_properties(
                                 "displayName": f"{p_name} ({num_id})",
                                 "account": acc_name
                             })
+
+                    has_no_props = len(properties) == 0
+                    acc_email = config.get("account_email")
+                    if not acc_email:
+                        try:
+                            u_res = await client.get("https://www.googleapis.com/oauth2/v2/userinfo", headers=headers)
+                            if u_res.status_code == 200:
+                                acc_email = u_res.json().get("email")
+                        except Exception:
+                            pass
+
+                    config["has_no_properties"] = has_no_props
+                    if acc_email:
+                        config["account_email"] = acc_email
+                    if has_no_props:
+                        config["no_properties_warning"] = f"Signed in as '{acc_email or 'Google User'}', but NO GA4 properties were found."
+                        config["diagnostic_help"] = f"This Google account ({acc_email or 'your account'}) does not have Viewer or Editor access to any GA4 property. Ensure this account is granted permissions in Google Analytics (Admin > Property Access Management), enter your numeric Property ID directly below, or switch accounts."
+                    else:
+                        config["no_properties_warning"] = None
+                        config["diagnostic_help"] = None
+
+                    integration.config_json = config
+                    flag_modified(integration, "config_json")
+                    await db.commit()
+
                     return {
                         "connected": True,
                         "properties": properties,
                         "selected_property": selected,
-                        "message": f"Found {len(properties)} verified GA4 properties."
+                        "has_no_properties": has_no_props,
+                        "account_email": acc_email,
+                        "no_properties_warning": config.get("no_properties_warning"),
+                        "diagnostic_help": config.get("diagnostic_help"),
+                        "message": config.get("no_properties_warning") if has_no_props else f"Found {len(properties)} verified GA4 properties."
                     }
                 elif res.status_code in [401, 403]:
-                    err_msg = res.json().get("error", {}).get("message", "Permission denied")
+                    err_json = res.json().get("error", {})
+                    err_msg = err_json.get("message", "Permission denied")
+                    if "disabled" in err_msg.lower() or "not been used in project" in err_msg.lower():
+                        err_msg = "Google Analytics Admin API is disabled in your Google Cloud Project. Enable it in Cloud Console, or enter your GA4 Property ID directly."
+                    config["google_permission_error"] = err_msg
+                    integration.config_json = config
+                    flag_modified(integration, "config_json")
+                    await db.commit()
                     return {
                         "connected": True,
                         "properties": [],
                         "selected_property": selected,
                         "requires_manual_id": True,
                         "error": err_msg,
-                        "message": "Google Analytics Admin API is disabled or restricted. Enter your GA4 Property ID directly below."
+                        "message": err_msg
                     }
                 return {"connected": True, "properties": [], "selected_property": selected, "error": f"HTTP {res.status_code}"}
         except Exception as e:
@@ -1336,11 +1493,55 @@ async def get_google_properties(
                         {"siteUrl": s.get("siteUrl"), "displayName": s.get("siteUrl"), "permissionLevel": s.get("permissionLevel", "siteFullUser")}
                         for s in entries if s.get("siteUrl")
                     ]
+                    has_no_props = len(properties) == 0
+                    acc_email = config.get("account_email")
+                    if not acc_email:
+                        try:
+                            u_res = await client.get("https://www.googleapis.com/oauth2/v2/userinfo", headers=headers)
+                            if u_res.status_code == 200:
+                                acc_email = u_res.json().get("email")
+                        except Exception:
+                            pass
+
+                    config["has_no_properties"] = has_no_props
+                    if acc_email:
+                        config["account_email"] = acc_email
+                    if has_no_props:
+                        config["no_properties_warning"] = f"Signed in as '{acc_email or 'Google User'}', but NO verified properties were found in Google Search Console."
+                        config["diagnostic_help"] = f"This Google account ({acc_email or 'your account'}) is not an Owner or Full User in Google Search Console for any website. Please add {acc_email or 'this email'} in Google Search Console Settings > Users and Permissions, or switch to the Google account that manages your website."
+                    else:
+                        config["no_properties_warning"] = None
+                        config["diagnostic_help"] = None
+
+                    integration.config_json = config
+                    flag_modified(integration, "config_json")
+                    await db.commit()
+
                     return {
                         "connected": True,
                         "properties": properties,
                         "selected_property": selected,
-                        "message": f"Found {len(properties)} verified properties in Google Search Console."
+                        "has_no_properties": has_no_props,
+                        "account_email": acc_email,
+                        "no_properties_warning": config.get("no_properties_warning"),
+                        "diagnostic_help": config.get("diagnostic_help"),
+                        "message": config.get("no_properties_warning") if has_no_props else f"Found {len(properties)} verified properties in Google Search Console."
+                    }
+                elif res.status_code in [401, 403]:
+                    err_json = res.json().get("error", {})
+                    err_msg = err_json.get("message", "Permission denied.")
+                    if "disabled" in err_msg.lower() or "not been used in project" in err_msg.lower():
+                        err_msg += " (Google Search Console API is disabled in your Google Cloud Project)."
+                    config["google_permission_error"] = err_msg
+                    integration.config_json = config
+                    flag_modified(integration, "config_json")
+                    await db.commit()
+                    return {
+                        "connected": True,
+                        "properties": [],
+                        "selected_property": selected,
+                        "error": err_msg,
+                        "message": err_msg
                     }
                 return {"connected": True, "properties": [], "selected_property": selected, "error": f"Google returned status {res.status_code}", "detail": res.text}
         except Exception as e:

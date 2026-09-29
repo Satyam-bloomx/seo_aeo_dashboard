@@ -249,9 +249,11 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
     }
   }, [isGa4Connected, fetchGa4Properties]);
 
-  // Listen for OAuth error or success in URL search params or sessionStorage
+  // Listen for OAuth error, warning, or success in URL search params or sessionStorage
   useEffect(() => {
     let urlOauthError = null;
+    let urlWarning = null;
+    let urlAccount = null;
     let urlService = null;
     let urlOpenModal = null;
     let urlTabType = null;
@@ -260,13 +262,32 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
     if (typeof window !== 'undefined') {
       const searchParams = new URLSearchParams(window.location.search);
       urlOauthError = searchParams.get('oauth_error');
+      urlWarning = searchParams.get('warning');
+      urlAccount = searchParams.get('account');
       urlService = searchParams.get('service');
       urlOpenModal = searchParams.get('open_modal');
       urlTabType = searchParams.get('tab_type');
       urlConnected = searchParams.get('connected');
     }
 
-    if (urlConnected === 'true') {
+    if (urlWarning === 'no_properties') {
+      fetchStatus();
+      if (urlService === 'search_console') fetchGscProperties();
+      if (urlService === 'google_analytics') fetchGa4Properties();
+      const serviceName = urlService === 'google_analytics'
+        ? 'Google Analytics 4'
+        : urlService === 'search_console'
+        ? 'Google Search Console'
+        : 'Google Service';
+      toast.warning(`Signed in as ${urlAccount || 'Google User'}, but NO active ${serviceName} properties were found.`, {
+        description: 'This account lacks property permissions. See the diagnostic instructions on the card below.',
+        duration: 9000
+      });
+      try {
+        const cleanUrl = window.location.pathname + (urlService ? `?tab=integrations&service=${urlService}` : '?tab=integrations');
+        window.history.replaceState({}, document.title, cleanUrl);
+      } catch {}
+    } else if (urlConnected === 'true') {
       fetchStatus();
       const serviceName = urlService === 'google_analytics' 
         ? 'Google Analytics 4' 
@@ -313,7 +334,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
         }
       }
     } catch {}
-  }, [fetchStatus]);
+  }, [fetchStatus, fetchGscProperties, fetchGa4Properties]);
 
   const handleSelectGa4Property = async (propId) => {
     if (!propId || !propId.trim()) {
@@ -352,6 +373,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       toast.success('GSC Property Saved', {
         description: `Targeting property: ${propertyUrl}`
       });
+      fetchStatus();
     } catch (e) {
       toast.error('Failed to save selected property');
     }
@@ -367,11 +389,15 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
         project_id: projectId
       });
       const isSuccess = res.data.success || res.data.status === 'ok';
+      const isWarning = res.data.status === 'warning';
+      const displayMessage = res.data.message || res.data.detail || (isSuccess ? 'Connection verified successfully.' : 'Verification failed.');
       setTestResults(prev => ({
         ...prev,
         [integrationId]: {
-          status: isSuccess ? 'success' : 'error',
-          message: res.data.message || (isSuccess ? 'Connection verified successfully.' : res.data.detail || 'Test failed.'),
+          status: isSuccess ? 'success' : isWarning ? 'warning' : 'error',
+          message: displayMessage,
+          detail: res.data.detail,
+          account_email: res.data.account_email,
           latency_ms: res.data.latency_ms
         }
       }));
@@ -379,8 +405,15 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
         toast.success(`Verified ${integrationId.replace(/_/g, ' ').toUpperCase()}!`, {
           description: `Live latency: ${res.data.latency_ms || 24}ms`
         });
+      } else if (isWarning) {
+        toast.warning(displayMessage, {
+          description: 'Account lacks permissions. See instructions on the card below.',
+          duration: 9000
+        });
       } else {
-        toast.error(res.data.detail || 'Connection test failed.');
+        toast.error(displayMessage, {
+          duration: 8000
+        });
       }
     } catch (e) {
       const errMsg = e.response?.data?.detail || e.message || 'Verification test failed.';
@@ -388,7 +421,8 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
         ...prev,
         [integrationId]: {
           status: 'error',
-          message: errMsg
+          message: errMsg,
+          detail: errMsg
         }
       }));
       toast.error(errMsg);
@@ -669,6 +703,14 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
           const isTesting = testingId === item.id;
           const activeError = serviceErrors[item.id] || integrationState?.auth_error;
           const hasError = Boolean(activeError);
+          const hasNoProperties = Boolean(
+            integrationState?.has_no_properties ||
+            (isConnected && !integrationState?.selected_property && item.id === 'search_console' && gscProperties.length === 0 && !loadingProperties) ||
+            (isConnected && !integrationState?.selected_property && item.id === 'google_analytics' && ga4Properties.length === 0 && !loadingGa4Properties && !manualGa4PropertyId)
+          );
+          const accountEmail = integrationState?.account_email;
+          const noPropertiesWarning = integrationState?.no_properties_warning || (hasNoProperties ? `Signed in as '${accountEmail || 'Google User'}', but no active properties were found.` : null);
+          const diagnosticHelp = integrationState?.diagnostic_help;
 
           return (
             <motion.div
@@ -679,6 +721,8 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
               className={`p-5 rounded-2xl transition-all border flex flex-col justify-between ${
                 hasError && !isConnected
                   ? 'bg-white dark:bg-slate-900/90 border-rose-400 dark:border-rose-600/80 shadow-xs ring-2 ring-rose-500/20'
+                  : hasNoProperties
+                  ? 'bg-white dark:bg-slate-900/90 border-amber-400 dark:border-amber-600/80 shadow-xs ring-1 ring-amber-400/25'
                   : isConnected
                   ? 'bg-white dark:bg-slate-900/90 border-emerald-400/80 dark:border-emerald-500/60 shadow-xs ring-1 ring-emerald-400/20'
                   : hasConfiguredApp
@@ -691,10 +735,12 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-xs shrink-0 border ${
-                      isConnected 
-                        ? 'bg-emerald-50/60 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60' 
-                        : hasError 
+                      hasError && !isConnected
                         ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60' 
+                        : hasNoProperties
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60'
+                        : isConnected 
+                        ? 'bg-emerald-50/60 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60' 
                         : hasConfiguredApp
                         ? 'bg-amber-50/60 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60'
                         : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60'
@@ -716,6 +762,18 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                             >
                               <AlertTriangle size={11} className="text-rose-600 dark:text-rose-400" />
                               OAuth Failed
+                            </motion.span>
+                          ) : hasNoProperties ? (
+                            <motion.span
+                              key="no-properties"
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.8 }}
+                              transition={spring.soft}
+                              className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-700/60 px-2.5 py-0.5 rounded-full shadow-2xs"
+                            >
+                              <AlertTriangle size={11} className="text-amber-600 dark:text-amber-400" />
+                              No Active Properties
                             </motion.span>
                           ) : isConnected ? (
                             <motion.span
@@ -868,14 +926,73 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                 </AnimatePresence>
 
                 {/* Account Email Badge */}
-                {item.account_email && isConnected && (
-                  <div className="mb-3 flex items-center justify-between text-[11px] font-mono bg-blue-50/60 dark:bg-blue-950/30 px-3 py-1.5 rounded-xl border border-blue-200 dark:border-blue-900/50 text-blue-950 dark:text-blue-200">
+                {accountEmail && isConnected && (
+                  <div className={`mb-3 flex items-center justify-between text-[11px] font-mono px-3 py-1.5 rounded-xl border ${
+                    hasNoProperties
+                      ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-950 dark:text-amber-200'
+                      : 'bg-blue-50/60 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/50 text-blue-950 dark:text-blue-200'
+                  }`}>
                     <div className="flex items-center gap-1.5 truncate">
-                      <Globe size={12} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                      <Globe size={12} className={hasNoProperties ? "text-amber-600 dark:text-amber-400 shrink-0" : "text-blue-600 dark:text-blue-400 shrink-0"} />
                       <span className="text-slate-500 dark:text-slate-400">Account:</span>
-                      <span className="font-bold truncate">{item.account_email}</span>
+                      <span className="font-bold truncate">{accountEmail}</span>
                     </div>
-                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold shrink-0">Authorized</span>
+                    <span className={`text-[10px] font-bold shrink-0 ${hasNoProperties ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                      {hasNoProperties ? "0 Properties Found" : "Authorized"}
+                    </span>
+                  </div>
+                )}
+
+                {/* Diagnostic Warning Callout for Accounts with 0 Properties */}
+                {hasNoProperties && isConnected && (
+                  <div className="mb-4 p-3.5 rounded-xl bg-amber-50/90 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700/80 text-amber-900 dark:text-amber-200 text-xs space-y-2.5">
+                    <div className="flex items-center gap-2 font-bold text-amber-950 dark:text-amber-100">
+                      <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span>{accountEmail ? `Signed in as ${accountEmail}` : 'Google Account Connected'} — No Active Properties</span>
+                    </div>
+
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed font-mono bg-black/30 p-2.5 rounded-lg border border-amber-600/30">
+                      {noPropertiesWarning || (item.id === 'search_console' 
+                        ? `This Google account is authenticated, but has NO verified site properties in Google Search Console.` 
+                        : `This Google account is authenticated, but has NO accessible Google Analytics 4 properties.`
+                      )}
+                    </p>
+
+                    <div className="text-[11px] text-amber-900 dark:text-amber-200/90 space-y-1">
+                      <p className="font-semibold">How to resolve this:</p>
+                      <ul className="list-disc pl-4 space-y-1 text-[10.5px]">
+                        <li>
+                          {item.id === 'search_console' ? (
+                            <span>Add <strong>{accountEmail || 'your email'}</strong> in <a href="https://search.google.com/search-console/users" target="_blank" rel="noreferrer" className="underline font-bold text-amber-700 dark:text-amber-300 inline-flex items-center gap-0.5">Search Console &gt; Settings &gt; Users &amp; Permissions <ExternalLink size={10} /></a> as an Owner or Full User.</span>
+                          ) : (
+                            <span>Add <strong>{accountEmail || 'your email'}</strong> in <a href="https://analytics.google.com/" target="_blank" rel="noreferrer" className="underline font-bold text-amber-700 dark:text-amber-300 inline-flex items-center gap-0.5">GA4 Admin &gt; Property Access Management <ExternalLink size={10} /></a> with Viewer or Editor access.</span>
+                          )}
+                        </li>
+                        <li>
+                          Or click <strong>"Switch Google Account"</strong> below to select the Google account that actually manages your website.
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => handleOAuthConnect(item.id)}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
+                      >
+                        <RefreshCw size={12} />
+                        <span>Switch Google Account</span>
+                      </button>
+                      <a
+                        href={item.id === 'search_console' ? 'https://search.google.com/search-console' : 'https://analytics.google.com/'}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-white dark:bg-slate-800 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-slate-700 flex items-center gap-1 transition-colors"
+                      >
+                        <ExternalLink size={12} />
+                        <span>Open {item.name}</span>
+                      </a>
+                    </div>
                   </div>
                 )}
 
@@ -926,7 +1043,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                       </select>
                     ) : (
                       <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 font-mono">
-                        <span>{loadingProperties ? 'Querying verified web properties...' : 'Using default seed URL domain.'}</span>
+                        <span>{loadingProperties ? 'Querying verified web properties...' : hasNoProperties ? 'No verified sites found for this Google account.' : 'Using default seed URL domain.'}</span>
                         <button
                           onClick={fetchGscProperties}
                           className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold underline cursor-pointer"
@@ -1032,19 +1149,33 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                       className={`mb-4 p-3 rounded-xl text-xs font-mono border flex items-center justify-between gap-2 ${
                         testRes.status === 'success'
                           ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                          : testRes.status === 'warning'
+                          ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
                           : testRes.status === 'error'
                           ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
                           : 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300'
                       }`}
                     >
-                      <div className="flex items-center gap-2 truncate">
-                        {testRes.status === 'success' && <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />}
-                        {testRes.status === 'error' && <AlertCircle size={15} className="text-rose-600 dark:text-rose-400 shrink-0" />}
-                        {testRes.status === 'testing' && <RefreshCw size={14} className="animate-spin text-indigo-600 dark:text-indigo-400 shrink-0" />}
-                        <span className="truncate">{testRes.status === 'testing' ? 'Verifying live credentials...' : testRes.message}</span>
+                      <div className="flex items-start gap-2 max-w-[85%]">
+                        {testRes.status === 'success' && <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />}
+                        {testRes.status === 'warning' && <AlertTriangle size={15} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />}
+                        {testRes.status === 'error' && <AlertCircle size={15} className="text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />}
+                        {testRes.status === 'testing' && <RefreshCw size={14} className="animate-spin text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />}
+                        <div className="leading-snug break-words">
+                          <span>{testRes.status === 'testing' ? 'Verifying live credentials...' : (testRes.detail || testRes.message)}</span>
+                          {testRes.status === 'warning' && (
+                            <button
+                              type="button"
+                              onClick={() => handleOAuthConnect(item.id)}
+                              className="ml-2 font-bold underline text-amber-700 dark:text-amber-300 hover:text-amber-900 cursor-pointer"
+                            >
+                              Switch Account ↗
+                            </button>
+                          )}
+                        </div>
                       </div>
                       {testRes.latency_ms && (
-                        <span className="text-[10px] text-emerald-700 dark:text-emerald-300 bg-white/80 dark:bg-slate-900/80 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md font-bold shrink-0">
+                        <span className="text-[10px] text-emerald-700 dark:text-emerald-300 bg-white/80 dark:bg-slate-900/80 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-md font-bold shrink-0 self-start">
                           {testRes.latency_ms}ms
                         </span>
                       )}
@@ -1071,6 +1202,19 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         <BarChart3 size={12} />
                         View Reports ↗
                       </motion.button>
+
+                      {hasNoProperties && (
+                        <motion.button
+                          onClick={() => handleOAuthConnect(item.id)}
+                          whileTap={tapPress}
+                          transition={spring.press}
+                          className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-black flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                          title="Switch to another Google Account"
+                        >
+                          <RefreshCw size={12} />
+                          Switch Account
+                        </motion.button>
+                      )}
 
                       <motion.button
                         onClick={() => handleTestConnection(item.id)}
