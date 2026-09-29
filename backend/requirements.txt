@@ -32,3 +32,4 @@ pyrdfa3
 jinja2
 python-dotenv
 numpy
+pyjwt[crypto]

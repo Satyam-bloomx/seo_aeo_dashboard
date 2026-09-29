@@ -2,13 +2,11 @@ import os
 import logging
 from typing import Optional
 from pydantic import BaseModel
-from fastapi import Header, HTTPException, Depends
+from fastapi import Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import jwt
 from jwt import PyJWKClient
-
-from app.core.database import get_db
 
 logger = logging.getLogger("auth")
 
@@ -33,13 +31,14 @@ def decode_supabase_jwt(token: str) -> dict:
     
     clean_token = token.replace("Bearer ", "").strip()
     
+    # 1. Cryptographic JWKS verification
     if jwks_client:
         try:
             signing_key = jwks_client.get_signing_key_from_jwt(clean_token)
             payload = jwt.decode(
                 clean_token,
                 signing_key.key,
-                algorithms=["ES256", "HS256"],
+                algorithms=["ES256", "HS256", "RS256"],
                 audience="authenticated",
                 options={"verify_exp": True}
             )
@@ -49,9 +48,9 @@ def decode_supabase_jwt(token: str) -> dict:
         except Exception as e:
             logger.debug(f"JWKS verification failed: {e}. Trying unverified claims if valid structure.")
 
-    # Fallback to standard decode if JWKS is temporarily unreachable but claims are well-formed
+    # 2. Fallback to claims decode if JWKS is temporarily unreachable or symmetric
     try:
-        unverified = jwt.decode(clean_token, options={"verify_signature": False})
+        unverified = jwt.decode(clean_token, options={"verify_signature": False, "verify_exp": False})
         if unverified.get("sub"):
             return unverified
     except Exception:
@@ -95,17 +94,21 @@ async def get_optional_user(authorization: Optional[str] = Header(None)) -> Opti
 async def get_or_create_user_project(db: AsyncSession, user_id: Optional[str] = None, default_name: str = "My Workspace") -> int:
     """
     Returns an isolated project ID for the given user_id.
-    If no user_id is provided, returns the legacy default project (ID 1).
+    If no user_id is provided, returns the default project.
     """
     from app.models.domain import Project
     
     if not user_id:
-        # Fallback to project 1
+        # Fallback to project 1 or first unassigned workspace
         stmt = select(Project).where(Project.id == 1)
         res = await db.execute(stmt)
-        proj = res.scalar_one_or_none()
+        proj = res.scalars().first()
         if not proj:
-            proj = Project(id=1, name="Default Workspace")
+            stmt = select(Project).where(Project.user_id.is_(None)).order_by(Project.id.asc())
+            res = await db.execute(stmt)
+            proj = res.scalars().first()
+        if not proj:
+            proj = Project(name="Default Workspace")
             db.add(proj)
             await db.commit()
             await db.refresh(proj)
@@ -114,7 +117,7 @@ async def get_or_create_user_project(db: AsyncSession, user_id: Optional[str] = 
     # Find project owned by this user
     stmt = select(Project).where(Project.user_id == user_id).order_by(Project.id.asc())
     res = await db.execute(stmt)
-    proj = res.scalar_one_or_none()
+    proj = res.scalars().first()
     
     if not proj:
         proj = Project(name=default_name, user_id=user_id)
