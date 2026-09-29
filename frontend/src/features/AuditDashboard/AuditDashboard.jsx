@@ -13,6 +13,7 @@ import ExecutiveReportModal from './ExecutiveReportModal';
 import ExportAuditModal from './ExportAuditModal';
 import SettingsModal from './SettingsModal/SettingsModal';
 import IntegrationsPanel from './IntegrationsPanel';
+import ErrorBoundary from '@/components/common/ErrorBoundary';
 import NarutoSamplePanel from './NarutoSample/NarutoSamplePanel';
 import SpiderLiveProgressScreen from './SpiderLiveProgressScreen';
 import ThemeToggle from '@/components/ui/ThemeToggle';
@@ -1145,26 +1146,31 @@ export default function AuditDashboard() {
     if (activeTab === 'integrations') {
       return (
         <div className="h-full w-full overflow-hidden">
-          <Suspense fallback={
-            <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center">
-              <Loader2 className="animate-spin text-indigo-500 mb-3" size={32} />
-              <p className="text-xs font-mono text-slate-400">Loading integrations telemetry...</p>
-            </div>
-          }>
-            <IntegrationsPanel 
-              projectId={1} 
-              crawlId={crawlId} 
-              seedUrl={url} 
-              onAuditProperty={(propUrl) => {
-                if (!propUrl) return;
-                let clean = propUrl.replace(/^sc-domain:/i, '').trim();
-                if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
-                  clean = `https://${clean}`;
-                }
-                startAudit(null, clean);
-              }}
-            />
-          </Suspense>
+          <ErrorBoundary
+            title="Integrations Telemetry Encountered an Issue"
+            onFallback={() => setActiveTab('overview')}
+          >
+            <Suspense fallback={
+              <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center">
+                <Loader2 className="animate-spin text-indigo-500 mb-3" size={32} />
+                <p className="text-xs font-mono text-slate-400">Loading integrations telemetry...</p>
+              </div>
+            }>
+              <IntegrationsPanel 
+                projectId={1} 
+                crawlId={crawlId} 
+                seedUrl={url} 
+                onAuditProperty={(propUrl) => {
+                  if (!propUrl) return;
+                  let clean = propUrl.replace(/^sc-domain:/i, '').trim();
+                  if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+                    clean = `https://${clean}`;
+                  }
+                  startAudit(null, clean);
+                }}
+              />
+            </Suspense>
+          </ErrorBoundary>
         </div>
       );
     }

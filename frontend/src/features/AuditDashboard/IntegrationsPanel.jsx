@@ -139,6 +139,116 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
   const [loadingGa4Properties, setLoadingGa4Properties] = useState(false);
   const [isSavingGa4Property, setIsSavingGa4Property] = useState(false);
 
+  const handleDismissError = async (serviceId) => {
+    setServiceErrors(prev => {
+      const copy = { ...prev };
+      delete copy[serviceId];
+      return copy;
+    });
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('last_integration_error');
+      }
+      await axios.post(`${API_BASE_URL}/integrations/clear-error/${projectId}/${serviceId}`);
+    } catch {}
+  };
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      setLoadingStatus(true);
+      const res = await axios.get(`${API_BASE_URL}/integrations/status/${projectId}`);
+      const data = res.data;
+      const map = {};
+      const errMap = {};
+      if (Array.isArray(data)) {
+        data.forEach(item => {
+          if (item && item.id) {
+            map[item.id] = item;
+            if (item.auth_error) {
+              errMap[item.id] = item.auth_error;
+            }
+          }
+        });
+      } else if (data && typeof data === 'object') {
+        Object.assign(map, data);
+      }
+      setIntegrations(map);
+      if (Object.keys(errMap).length > 0) {
+        setServiceErrors(prev => ({ ...prev, ...errMap }));
+      }
+      
+      // Sync selected properties from DB status
+      if (map['search_console']?.selected_property) {
+        setSelectedGscProperty(map['search_console'].selected_property);
+      }
+      if (map['google_analytics']?.selected_property) {
+        setSelectedGa4Property(map['google_analytics'].selected_property);
+        setManualGa4PropertyId(map['google_analytics'].selected_property.replace(/^properties\//, ''));
+      }
+    } catch (e) {
+      console.warn("Could not fetch integrations status:", e);
+    } finally {
+      setLoadingStatus(false);
+    }
+  }, [projectId]);
+
+  const fetchGscProperties = useCallback(async () => {
+    try {
+      setLoadingProperties(true);
+      const res = await axios.get(`${API_BASE_URL}/integrations/google/properties/${projectId}`);
+      if (res.data?.properties) {
+        setGscProperties(res.data.properties);
+        if (res.data.selected_property) {
+          setSelectedGscProperty(res.data.selected_property);
+        } else if (res.data.properties.length > 0) {
+          setSelectedGscProperty(res.data.properties[0].siteUrl);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch GSC properties:', err);
+    } finally {
+      setLoadingProperties(false);
+    }
+  }, [projectId]);
+
+  const fetchGa4Properties = useCallback(async () => {
+    try {
+      setLoadingGa4Properties(true);
+      const res = await axios.get(`${API_BASE_URL}/integrations/google/properties/${projectId}?service=google_analytics`);
+      if (res.data?.properties) {
+        setGa4Properties(res.data.properties);
+      }
+      if (res.data?.selected_property) {
+        setSelectedGa4Property(res.data.selected_property);
+        setManualGa4PropertyId(res.data.selected_property.replace(/^properties\//, ''));
+      }
+    } catch (err) {
+      console.warn('Failed to fetch GA4 properties:', err);
+    } finally {
+      setLoadingGa4Properties(false);
+    }
+  }, [projectId]);
+
+  // Initial status fetch on mount or projectId change
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
+
+  // Fetch properties when services are connected
+  const isGscConnected = Boolean(integrations['search_console']?.connected);
+  useEffect(() => {
+    if (isGscConnected) {
+      fetchGscProperties();
+    }
+  }, [isGscConnected, fetchGscProperties]);
+
+  const isGa4Connected = Boolean(integrations['google_analytics']?.connected);
+  useEffect(() => {
+    if (isGa4Connected) {
+      fetchGa4Properties();
+    }
+  }, [isGa4Connected, fetchGa4Properties]);
+
   // Listen for OAuth error or success in URL search params or sessionStorage
   useEffect(() => {
     let urlOauthError = null;
@@ -204,117 +314,6 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       }
     } catch {}
   }, [fetchStatus]);
-
-  const handleDismissError = async (serviceId) => {
-    setServiceErrors(prev => {
-      const copy = { ...prev };
-      delete copy[serviceId];
-      return copy;
-    });
-    try {
-      if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('last_integration_error');
-      }
-      await axios.post(`${API_BASE_URL}/integrations/clear-error/${projectId}/${serviceId}`);
-    } catch {}
-  };
-
-  const fetchStatus = useCallback(async () => {
-    try {
-      setLoadingStatus(true);
-      const res = await axios.get(`${API_BASE_URL}/integrations/status/${projectId}`);
-      const data = res.data;
-      const map = {};
-      const errMap = {};
-      if (Array.isArray(data)) {
-        data.forEach(item => {
-          if (item && item.id) {
-            map[item.id] = item;
-            if (item.auth_error) {
-              errMap[item.id] = item.auth_error;
-            }
-          }
-        });
-      } else if (data && typeof data === 'object') {
-        Object.assign(map, data);
-      }
-      setIntegrations(map);
-      if (Object.keys(errMap).length > 0) {
-        setServiceErrors(prev => ({ ...prev, ...errMap }));
-      }
-      
-      // Sync selected properties from DB status
-      if (map['search_console']?.selected_property) {
-        setSelectedGscProperty(map['search_console'].selected_property);
-      }
-      if (map['google_analytics']?.selected_property) {
-        setSelectedGa4Property(map['google_analytics'].selected_property);
-        setManualGa4PropertyId(map['google_analytics'].selected_property.replace(/^properties\//, ''));
-      }
-    } catch (e) {
-      console.warn("Could not fetch integrations status:", e);
-    } finally {
-      setLoadingStatus(false);
-    }
-  }, [projectId]);
-
-  const fetchGscProperties = useCallback(async () => {
-    if (!integrations['search_console']?.connected) return;
-    try {
-      setLoadingProperties(true);
-      const res = await axios.get(`${API_BASE_URL}/integrations/google/properties/${projectId}`);
-      if (res.data?.properties) {
-        setGscProperties(res.data.properties);
-        if (res.data.selected_property) {
-          setSelectedGscProperty(res.data.selected_property);
-        } else if (res.data.properties.length > 0) {
-          setSelectedGscProperty(res.data.properties[0].siteUrl);
-        }
-      }
-    } catch (err) {
-      console.warn('Failed to fetch GSC properties:', err);
-    } finally {
-      setLoadingProperties(false);
-    }
-  }, [projectId, integrations]);
-
-  const fetchGa4Properties = useCallback(async () => {
-    if (!integrations['google_analytics']?.connected) return;
-    try {
-      setLoadingGa4Properties(true);
-      const res = await axios.get(`${API_BASE_URL}/integrations/google/properties/${projectId}?service=google_analytics`);
-      if (res.data?.properties) {
-        setGa4Properties(res.data.properties);
-      }
-      if (res.data?.selected_property) {
-        setSelectedGa4Property(res.data.selected_property);
-        setManualGa4PropertyId(res.data.selected_property.replace(/^properties\//, ''));
-      } else if (integrations['google_analytics']?.selected_property) {
-        setSelectedGa4Property(integrations['google_analytics'].selected_property);
-        setManualGa4PropertyId(integrations['google_analytics'].selected_property.replace(/^properties\//, ''));
-      }
-    } catch (err) {
-      console.warn('Failed to fetch GA4 properties:', err);
-    } finally {
-      setLoadingGa4Properties(false);
-    }
-  }, [projectId, integrations]);
-
-  useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
-
-  useEffect(() => {
-    if (integrations['search_console']?.connected) {
-      fetchGscProperties();
-    }
-  }, [integrations, fetchGscProperties]);
-
-  useEffect(() => {
-    if (integrations['google_analytics']?.connected) {
-      fetchGa4Properties();
-    }
-  }, [integrations, fetchGa4Properties]);
 
   const handleSelectGa4Property = async (propId) => {
     if (!propId || !propId.trim()) {
