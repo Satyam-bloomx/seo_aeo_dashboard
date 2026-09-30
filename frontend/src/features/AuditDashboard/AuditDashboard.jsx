@@ -507,15 +507,15 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
           initial="initial"
           animate="animate"
           exit="exit"
-          className="fixed inset-y-0 right-0 z-50 flex h-full w-full flex-col border-l border-slate-200 bg-white text-slate-900 shadow-[0_0_60px_-12px_rgba(15,23,42,0.25)] will-change-transform sm:w-[420px] md:relative md:w-[440px] xl:w-[480px]"
+          className="fixed inset-y-0 right-0 z-50 flex h-full w-full flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-[#07090E] text-slate-900 dark:text-slate-100 shadow-[0_0_60px_-12px_rgba(15,23,42,0.25)] will-change-transform sm:w-[420px] md:relative md:w-[440px] xl:w-[480px]"
         >
-          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 p-3.5 sm:p-4 shrink-0">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0B0F19] p-3.5 sm:p-4 shrink-0">
             <div className="min-w-0 flex-1 pr-2">
-              <span className="mb-0.5 block font-mono text-[10px] font-bold uppercase tracking-widest text-indigo-600">
+              <span className="mb-0.5 block font-mono text-[10px] font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
                 URL Specs Inspector
               </span>
               <div className="flex items-center gap-2">
-                <h3 className="truncate text-xs font-bold text-slate-900" title={selectedRow.url}>
+                <h3 className="truncate text-xs font-bold text-slate-900 dark:text-slate-100" title={selectedRow.url}>
                   {selectedRow.url}
                 </h3>
                 <motion.button
@@ -982,14 +982,14 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                     </div>
 
                     {/* Filter Pills - 3-Tier Priority Categorization */}
-                    <div className="grid grid-cols-5 gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs">
+                    <div className="grid grid-cols-5 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
                       <button
                         type="button"
                         onClick={() => setInspectorFilter('all')}
                         className={`py-1 px-1.5 rounded-lg font-medium text-[10.5px] text-center transition-all ${
                           inspectorFilter === 'all'
-                            ? 'bg-white text-slate-900 font-bold shadow-xs'
-                            : 'text-slate-500 hover:text-slate-800'
+                            ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold shadow-xs'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                         }`}
                       >
                         All ({allDiagnostics.length})
@@ -1000,7 +1000,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                         className={`py-1 px-1.5 rounded-lg font-medium text-[10.5px] flex items-center justify-center gap-1 transition-all ${
                           inspectorFilter === 'high'
                             ? 'bg-rose-600 text-white font-bold shadow-xs'
-                            : 'text-rose-700 hover:bg-rose-50'
+                            : 'text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
                         }`}
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
@@ -1012,7 +1012,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                         className={`py-1 px-1.5 rounded-lg font-medium text-[10.5px] flex items-center justify-center gap-1 transition-all ${
                           inspectorFilter === 'medium'
                             ? 'bg-amber-600 text-white font-bold shadow-xs'
-                            : 'text-amber-700 hover:bg-amber-50'
+                            : 'text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40'
                         }`}
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
@@ -1024,7 +1024,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                         className={`py-1 px-1.5 rounded-lg font-medium text-[10.5px] flex items-center justify-center gap-1 transition-all ${
                           inspectorFilter === 'low'
                             ? 'bg-blue-600 text-white font-bold shadow-xs'
-                            : 'text-blue-700 hover:bg-blue-50'
+                            : 'text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40'
                         }`}
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
@@ -1036,7 +1036,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                         className={`py-1 px-1.5 rounded-lg font-medium text-[10.5px] flex items-center justify-center gap-1 transition-all ${
                           inspectorFilter === 'passed'
                             ? 'bg-emerald-600 text-white font-bold shadow-xs'
-                            : 'text-emerald-700 hover:bg-emerald-50'
+                            : 'text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
                         }`}
                       >
                         <CheckCircle size={10} className="shrink-0" />
@@ -1053,16 +1053,16 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                   ) : (
                     Object.entries(grouped).map(([category, items]) => (
                       <motion.div key={category} variants={staggerItem} className="space-y-2">
-                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 px-1">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 dark:text-slate-300 px-1">
                           <span>{category.replace(/_/g, ' ')}</span>
-                          <span className="font-mono text-[10px] text-slate-400">
+                          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
                             {items.filter(i => i.priority === 'High').length > 0 && (
-                              <span className="text-rose-600 font-bold mr-1.5">
+                              <span className="text-rose-600 dark:text-rose-400 font-bold mr-1.5">
                                 {items.filter(i => i.priority === 'High').length} High
                               </span>
                             )}
                             {items.filter(i => i.priority === 'Medium').length > 0 && (
-                              <span className="text-amber-600 font-bold mr-1.5">
+                              <span className="text-amber-600 dark:text-amber-400 font-bold mr-1.5">
                                 {items.filter(i => i.priority === 'Medium').length} Med
                               </span>
                             )}
@@ -1083,22 +1083,22 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                                 key={item.id}
                                 className={`rounded-xl border transition-all ${
                                   item.priority === 'High'
-                                    ? 'border-rose-200/90 bg-rose-50/20'
+                                    ? 'border-rose-200/90 bg-rose-50/20 dark:border-rose-900/50 dark:bg-rose-950/20'
                                     : item.priority === 'Medium'
-                                    ? 'border-amber-200/90 bg-amber-50/20'
+                                    ? 'border-amber-200/90 bg-amber-50/20 dark:border-amber-900/50 dark:bg-amber-950/20'
                                     : item.priority === 'Low'
-                                    ? 'border-blue-200/90 bg-blue-50/20'
-                                    : 'border-slate-200 bg-white'
+                                    ? 'border-blue-200/90 bg-blue-50/20 dark:border-blue-900/50 dark:bg-blue-950/20'
+                                    : 'border-slate-200 bg-white dark:border-slate-800/80 dark:bg-slate-900/40'
                                 }`}
                               >
                                 {/* Header / Summary Row */}
                                 <div
                                   onClick={() => toggleDiagnosticExpanded(item.id)}
-                                  className="p-3 flex items-start justify-between gap-2 cursor-pointer hover:bg-slate-50/80 transition-colors select-none"
+                                  className="p-3 flex items-start justify-between gap-2 cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors select-none"
                                 >
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="text-xs font-bold text-slate-900 leading-tight">
+                                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">
                                         {item.label}
                                       </span>
                                       <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${pMeta.color}`}>
@@ -1106,14 +1106,14 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                                         {pMeta.badge}
                                       </span>
                                     </div>
-                                    <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
-                                      {item.what}
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                                      {item.why || item.what}
                                     </p>
                                   </div>
 
                                   <button
                                     type="button"
-                                    className="p-1 text-slate-400 hover:text-slate-700 shrink-0 mt-0.5"
+                                    className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 shrink-0 mt-0.5"
                                   >
                                     <ChevronDown
                                       size={14}
@@ -1124,13 +1124,13 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
 
                                 {/* Expanded Diagnostic Detail */}
                                 {isExpanded && (
-                                  <div className="px-3 pb-3 pt-1 border-t border-slate-100 text-xs space-y-2.5">
+                                  <div className="px-3 pb-3 pt-1 border-t border-slate-100 dark:border-slate-800/80 text-xs space-y-2.5">
                                     {/* 1. What is it */}
-                                    <div className="p-2.5 rounded-lg bg-slate-50/80 border border-slate-200/60">
-                                      <span className="font-mono text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                                    <div className="p-2.5 rounded-lg bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                                      <span className="font-mono text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1">
                                         Condition & What It Evaluates:
                                       </span>
-                                      <p className="text-slate-700 leading-relaxed text-[11px]">
+                                      <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-[11px]">
                                         {item.what}
                                       </p>
                                     </div>
@@ -1138,14 +1138,14 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                                     {/* 2. Why True/False & Root Cause for this specific URL */}
                                     <div className={`p-2.5 rounded-lg border ${
                                       item.isIssue 
-                                        ? 'bg-rose-50/60 border-rose-200 text-rose-950' 
-                                        : 'bg-emerald-50/40 border-emerald-200 text-emerald-950'
+                                        ? 'bg-rose-50/60 border-rose-200 text-rose-950 dark:bg-rose-950/30 dark:border-rose-900/60 dark:text-rose-200' 
+                                        : 'bg-emerald-50/40 border-emerald-200 text-emerald-950 dark:bg-emerald-950/30 dark:border-emerald-900/60 dark:text-emerald-200'
                                     }`}>
                                       <span className={`font-mono text-[10px] font-bold uppercase tracking-wider block mb-1 flex items-center gap-1 ${
-                                        item.isIssue ? 'text-rose-700' : 'text-emerald-700'
+                                        item.isIssue ? 'text-rose-700 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'
                                       }`}>
                                         <Info size={11} />
-                                        Why {String(item.val)} on this URL (Root Cause):
+                                        {item.isIssue ? 'Why Triggered on this URL (Root Cause):' : 'Evaluation Result:'}
                                       </span>
                                       <p className="leading-relaxed text-[11px] font-medium">
                                         {item.why}
@@ -1154,8 +1154,8 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
 
                                     {/* 3. Search Engine / Business Impact */}
                                     {item.searchImpact && (
-                                      <div className="p-2.5 rounded-lg bg-amber-50/40 border border-amber-200/80 text-amber-950">
-                                        <span className="font-mono text-[10px] font-bold text-amber-800 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                                      <div className="p-2.5 rounded-lg bg-amber-50/40 border border-amber-200/80 text-amber-950 dark:bg-amber-950/30 dark:border-amber-900/60 dark:text-amber-200">
+                                        <span className="font-mono text-[10px] font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider block mb-1 flex items-center gap-1">
                                           <AlertTriangle size={11} />
                                           Search Engine & Indexing Impact:
                                         </span>
@@ -1167,9 +1167,9 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
 
                                     {/* 4. Actionable How to Resolve */}
                                     {item.howToResolve && (
-                                      <div className="p-2.5 rounded-lg bg-indigo-50/50 border border-indigo-200 text-indigo-950 space-y-1.5">
+                                      <div className="p-2.5 rounded-lg bg-indigo-50/50 border border-indigo-200 text-indigo-950 dark:bg-blue-950/30 dark:border-blue-900/60 dark:text-blue-200 space-y-1.5">
                                         <div className="flex items-center justify-between">
-                                          <span className="font-mono text-[10px] font-bold text-indigo-800 uppercase tracking-wider flex items-center gap-1">
+                                          <span className="font-mono text-[10px] font-bold text-indigo-800 dark:text-blue-300 uppercase tracking-wider flex items-center gap-1">
                                             <Wrench size={11} />
                                             How to Resolve (Action Plan):
                                           </span>
@@ -1179,12 +1179,12 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                                               e.stopPropagation();
                                               handleCopyText(item.howToResolve, `fix-${item.id}`, 'Fix Guide');
                                             }}
-                                            className="font-mono text-[10px] font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-indigo-200 transition-colors"
+                                            className="font-mono text-[10px] font-bold text-indigo-700 dark:text-blue-300 hover:text-indigo-900 dark:hover:text-blue-100 flex items-center gap-1 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-blue-800 transition-colors"
                                             title="Copy fix instructions"
                                           >
                                             {copiedKeyId === `fix-${item.id}` ? (
                                               <>
-                                                <Check size={10} className="text-emerald-600" />
+                                                <Check size={10} className="text-emerald-600 dark:text-emerald-400" />
                                                 <span>Copied</span>
                                               </>
                                             ) : (
@@ -1195,7 +1195,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                                             )}
                                           </button>
                                         </div>
-                                        <p className="leading-relaxed text-[11px] text-slate-800 font-sans">
+                                        <p className="leading-relaxed text-[11px] text-slate-800 dark:text-slate-200 font-sans">
                                           {item.howToResolve}
                                         </p>
                                       </div>

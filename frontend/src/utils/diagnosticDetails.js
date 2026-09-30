@@ -592,33 +592,41 @@ export function getPriorityMeta(priority) {
     case 'High':
       return {
         label: 'High Priority',
-        badge: 'bg-rose-50 text-rose-700 border-rose-200',
+        badge: 'High Priority',
+        color: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/60',
         dot: 'bg-rose-500',
-        iconColor: 'text-rose-600',
+        pulse: true,
+        iconColor: 'text-rose-600 dark:text-rose-400',
         description: 'Critical issue directly impairing indexing, crawling, or rankability'
       };
     case 'Medium':
       return {
         label: 'Medium Priority',
-        badge: 'bg-amber-50 text-amber-700 border-amber-200',
+        badge: 'Warning',
+        color: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/60',
         dot: 'bg-amber-500',
-        iconColor: 'text-amber-600',
+        pulse: false,
+        iconColor: 'text-amber-600 dark:text-amber-400',
         description: 'Warning or technical debt degrading search performance or speed'
       };
     case 'Low':
       return {
         label: 'Low Priority',
-        badge: 'bg-blue-50 text-blue-700 border-blue-200',
+        badge: 'Notice',
+        color: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800/60',
         dot: 'bg-blue-500',
-        iconColor: 'text-blue-600',
+        pulse: false,
+        iconColor: 'text-blue-600 dark:text-blue-400',
         description: 'Optimization opportunity or minor cosmetic/readability notice'
       };
     default:
       return {
         label: 'Passed',
-        badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        badge: 'Passed',
+        color: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60',
         dot: 'bg-emerald-500',
-        iconColor: 'text-emerald-600',
+        pulse: false,
+        iconColor: 'text-emerald-600 dark:text-emerald-400',
         description: 'Fully compliant with search engine quality guidelines'
       };
   }
