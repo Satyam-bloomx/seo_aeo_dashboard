@@ -29,6 +29,8 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@postgres:5432/seo_audit}
       - REDIS_URL=redis://redis:6379/0
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://frontend:3000}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_KEY=${SUPABASE_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - PAGESPEED_API_KEY=${PAGESPEED_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
