@@ -1,8 +1,8 @@
-FROM mcr.microsoft.com/playwright/python:v1.50.0-noble
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies and compiler tools for C-extensions
+# Install system dependencies and compiler tools for C-extensions & Playwright
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gcc \
@@ -15,6 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
+
+# Install only Chromium (lightweight, ~300MB instead of 3.8GB full suite)
+RUN playwright install --with-deps chromium
 
 COPY . .
 

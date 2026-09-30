@@ -54,17 +54,28 @@ else:
 
 from sqlalchemy import text
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": "SEO Audit API"}
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
+
 @app.on_event("startup")
 async def startup_event():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # If running on PostgreSQL, ensure temporary high-write tables are UNLOGGED for maximum performance
-        if engine.dialect.name == "postgresql":
-            for table_name in ["pages", "links", "images"]:
-                try:
-                    await conn.execute(text(f"ALTER TABLE {table_name} SET UNLOGGED;"))
-                except Exception as e:
-                    print(f"PostgreSQL UNLOGGED notice for {table_name}: {e}")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            # If running on PostgreSQL, ensure temporary high-write tables are UNLOGGED for maximum performance
+            if engine.dialect.name == "postgresql":
+                for table_name in ["pages", "links", "images"]:
+                    try:
+                        await conn.execute(text(f"ALTER TABLE {table_name} SET UNLOGGED;"))
+                    except Exception as e:
+                        print(f"PostgreSQL UNLOGGED notice for {table_name}: {e}")
+    except Exception as e:
+        print(f"CRITICAL: Database initialization failed during startup: {e}")
     await init_redis()
 
 @app.on_event("shutdown")
