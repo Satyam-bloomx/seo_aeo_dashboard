@@ -4,6 +4,7 @@ import React from 'react';
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import {
   LayoutDashboard,
+  Globe,
   AlertTriangle,
   ListTree,
   Zap,

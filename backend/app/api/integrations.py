@@ -30,6 +30,13 @@ class IntegrationStatusResponse(BaseModel):
     has_no_properties: bool = False
     no_properties_warning: Optional[str] = None
     diagnostic_help: Optional[str] = None
+    selected_model: Optional[str] = None
+    available_models: Optional[List[Dict[str, Any]]] = None
+
+class SelectModelRequest(BaseModel):
+    project_id: int = 1
+    service: str
+    model_id: str
 
 class ApiKeyRequest(BaseModel):
     project_id: int = 1
@@ -57,13 +64,161 @@ class GoogleOAuthAppRequest(BaseModel):
 
 SUPPORTED_SERVICES = [
     "pagespeed",
+    "gemini",
     "openai",
+    "claude",
     "perplexity",
     "serpapi",
     "google_business",
     "google_analytics",
     "search_console"
 ]
+
+DEFAULT_PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
+    "gemini": [
+        {"id": "gemini-3.5-flash", "name": "Gemini 3.5 Flash", "description": "Smart, fast & cost-effective flagship reasoning engine", "recommended": True},
+        {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash-Lite", "description": "Ultra low-latency token-efficient model", "recommended": False},
+        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "description": "Previous generation multimodal flash model", "recommended": False},
+        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "description": "Deep reasoning for complex architectural audits", "recommended": False},
+        {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "description": "Stable previous generation model", "recommended": False},
+        {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "description": "Large-window analysis model", "recommended": False}
+    ],
+    "openai": [
+        {"id": "gpt-4o", "name": "GPT-4o", "description": "Flagship omni model with high reasoning capacity", "recommended": True},
+        {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "description": "Fast and affordable for structured SEO fixes", "recommended": True},
+        {"id": "o3-mini", "name": "o3-mini", "description": "High-efficiency STEM and logical reasoning model", "recommended": False},
+        {"id": "o1-mini", "name": "o1-mini", "description": "Fast reasoning without code overhead", "recommended": False},
+        {"id": "o1", "name": "o1", "description": "Deep multi-step reasoning flagship", "recommended": False},
+        {"id": "gpt-4-turbo", "name": "GPT-4 Turbo", "description": "High accuracy legacy model", "recommended": False}
+    ],
+    "claude": [
+        {"id": "claude-3-7-sonnet-20250219", "name": "Claude 3.7 Sonnet", "description": "Hybrid standard & extended reasoning model", "recommended": True},
+        {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet", "description": "Industry-leading coding and content analysis", "recommended": True},
+        {"id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "description": "Ultra-fast execution model", "recommended": False},
+        {"id": "claude-3-opus-20240229", "name": "Claude 3 Opus", "description": "Maximum intelligence for deeply nuanced tasks", "recommended": False}
+    ],
+    "perplexity": [
+        {"id": "sonar", "name": "Sonar", "description": "Live real-time search & citation engine", "recommended": True},
+        {"id": "sonar-pro", "name": "Sonar Pro", "description": "Advanced multi-query search & synthesis", "recommended": True},
+        {"id": "sonar-reasoning", "name": "Sonar Reasoning", "description": "Chain-of-thought search citations", "recommended": False},
+        {"id": "sonar-reasoning-pro", "name": "Sonar Reasoning Pro", "description": "Deep research intelligence engine", "recommended": False}
+    ]
+}
+
+async def fetch_live_models_from_provider(service: str, api_key: Optional[str]) -> List[Dict[str, Any]]:
+    """
+    Dynamically queries provider API to discover which models are currently live
+    and available for this specific account, automatically pruning deprecated/retired models.
+    """
+    clean_key = (api_key or "").strip()
+    if clean_key.lower().startswith("bearer "):
+        clean_key = clean_key[7:].strip()
+    if not clean_key:
+        return DEFAULT_PROVIDER_MODELS.get(service, [])
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            if service == "gemini":
+                res = await client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}")
+                if res.status_code == 200:
+                    raw_models = res.json().get("models", [])
+                    live = []
+                    has_35_flash = any(m.get("name", "").endswith("gemini-3.5-flash") for m in raw_models)
+                    for m in raw_models:
+                        methods = m.get("supportedGenerationMethods", [])
+                        if "generateContent" in methods:
+                            mid = m.get("name", "").replace("models/", "")
+                            if "tts" in mid or "embedding" in mid or "transcribe" in mid:
+                                continue
+                            display = m.get("displayName") or mid
+                            if mid == "gemini-3.5-flash":
+                                rec = True
+                                desc = "Smart, fast & cost-effective flagship (Recommended)"
+                            elif not has_35_flash and mid == "gemini-3.5-flash-lite":
+                                rec = True
+                                desc = "Ultra-fast token-efficient model (Recommended)"
+                            elif not has_35_flash and mid == "gemini-2.5-flash":
+                                rec = True
+                                desc = "Multimodal flash reasoning model"
+                            else:
+                                rec = False
+                                desc = (m.get("description") or "")[:120]
+                            live.append({
+                                "id": mid,
+                                "name": display,
+                                "description": desc,
+                                "recommended": rec,
+                                "is_live": True
+                            })
+                    priority_order = [
+                        "gemini-3.5-flash",
+                        "gemini-3.5-flash-lite",
+                        "gemini-2.5-flash",
+                        "gemini-2.5-pro",
+                        "gemini-1.5-flash",
+                        "gemini-1.5-pro"
+                    ]
+                    def sort_gemini(x):
+                        xid = x["id"].lower()
+                        if xid in priority_order:
+                            return (0, priority_order.index(xid))
+                        if x.get("recommended"):
+                            return (1, xid)
+                        return (2, xid)
+
+                    live.sort(key=sort_gemini)
+                    if live:
+                        return live
+
+            elif service == "openai":
+                res = await client.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {clean_key}"})
+                if res.status_code == 200:
+                    raw = res.json().get("data", [])
+                    live = []
+                    for m in raw:
+                        mid = m.get("id", "")
+                        if mid.startswith(("gpt-4", "gpt-3.5", "o1", "o3", "chatgpt-")):
+                            if any(sub in mid for sub in ["realtime", "audio", "transcribe", "instruct"]):
+                                continue
+                            rec = mid in ["gpt-4o", "gpt-4o-mini", "o3-mini"]
+                            live.append({
+                                "id": mid,
+                                "name": mid,
+                                "description": "Active OpenAI model" if not rec else "Flagship recommended",
+                                "recommended": rec,
+                                "is_live": True
+                            })
+                    priority = ["gpt-4o", "gpt-4o-mini", "o3-mini", "o1-mini", "o1", "gpt-4-turbo"]
+                    live.sort(key=lambda x: priority.index(x["id"]) if x["id"] in priority else 99)
+                    if live:
+                        return live
+
+            elif service == "claude":
+                res = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={"x-api-key": clean_key, "anthropic-version": "2023-06-01"}
+                )
+                if res.status_code == 200:
+                    raw = res.json().get("data", [])
+                    live = []
+                    for m in raw:
+                        mid = m.get("id", "")
+                        dname = m.get("display_name") or mid
+                        rec = "sonnet" in mid.lower()
+                        live.append({
+                            "id": mid,
+                            "name": dname,
+                            "description": "Active Anthropic model",
+                            "recommended": rec,
+                            "is_live": True
+                        })
+                    if live:
+                        return live
+
+    except Exception as e:
+        print(f"Notice: Live model discovery error for {service}: {e}")
+
+    return DEFAULT_PROVIDER_MODELS.get(service, [])
 
 def _mask_key(key: Optional[str]) -> Optional[str]:
     if not key:
@@ -160,6 +315,18 @@ async def get_integration_status(
             if not masked_key_str and selected_property:
                 masked_key_str = f"GA4: {selected_property.replace('properties/', '')}" if svc == "google_analytics" else f"GSC: {selected_property}"
 
+        selected_model = None
+        available_models = None
+        if svc in ["gemini", "openai", "claude", "perplexity"]:
+            if item and isinstance(item.config_json, dict):
+                selected_model = item.config_json.get("selected_model")
+                available_models = item.config_json.get("available_models")
+            if not available_models:
+                available_models = DEFAULT_PROVIDER_MODELS.get(svc, [])
+            if not selected_model and available_models:
+                recs = [m["id"] for m in available_models if m.get("recommended")]
+                selected_model = recs[0] if recs else available_models[0]["id"]
+
         response.append(IntegrationStatusResponse(
             id=svc,
             connected=connected,
@@ -173,7 +340,9 @@ async def get_integration_status(
             has_telemetry=has_telemetry,
             has_no_properties=has_no_properties,
             no_properties_warning=no_properties_warning,
-            diagnostic_help=diagnostic_help
+            diagnostic_help=diagnostic_help,
+            selected_model=selected_model,
+            available_models=available_models
         ))
         
     return response
@@ -211,6 +380,21 @@ async def verify_credential_live(service: str, raw_key: str) -> tuple:
                 err = res.json().get("error", {}).get("message", "API key not valid")
                 return (False, f"PageSpeed verification failed ({res.status_code}): {err}. Ensure the PageSpeed Insights API is enabled in your Google Cloud Console.", latency)
 
+            # ── Google Gemini (100% free test — /v1beta/models consumes 0 tokens) ──
+            elif service == "gemini":
+                res = await client.get(
+                    f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}"
+                )
+                latency = round((_time.time() - start) * 1000, 1)
+                if res.status_code == 200:
+                    return (True, f"Google Gemini API key verified ({latency}ms)", latency)
+                if res.status_code in [400, 403]:
+                    err = res.json().get("error", {}).get("message", "Invalid API key or Gemini API not enabled")
+                    return (False, f"Gemini Authentication Failed ({res.status_code}): {err}", latency)
+                if res.status_code == 429:
+                    return (False, "Gemini Quota Exceeded (429): Rate limit exceeded or quota exhausted.", latency)
+                return (False, f"Gemini verification failed ({res.status_code}): {res.text[:100]}", latency)
+
             # ── OpenAI (100% free — /v1/models consumes 0 tokens) ──
             elif service == "openai":
                 res = await client.get(
@@ -226,6 +410,21 @@ async def verify_credential_live(service: str, raw_key: str) -> tuple:
                 if res.status_code == 429:
                     return (False, "OpenAI Quota Exceeded (429): You have run out of API credits or exceeded your rate limit.", latency)
                 return (False, f"OpenAI verification failed ({res.status_code}): {res.text[:100]}", latency)
+
+            # ── Anthropic Claude (100% free /v1/models check) ──
+            elif service == "claude":
+                res = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={"x-api-key": clean_key, "anthropic-version": "2023-06-01"}
+                )
+                latency = round((_time.time() - start) * 1000, 1)
+                if res.status_code == 200:
+                    return (True, f"Anthropic Claude API key verified ({latency}ms)", latency)
+                if res.status_code == 401:
+                    return (False, "Claude Authentication Failed (401): Invalid x-api-key provided.", latency)
+                if res.status_code == 429:
+                    return (False, "Claude Quota Exceeded (429): Rate limit exceeded or credit balance exhausted.", latency)
+                return (False, f"Claude verification failed ({res.status_code}): {res.text[:100]}", latency)
 
             # ── SerpAPI (100% free — /account.json consumes 0 search credits) ──
             elif service == "serpapi":
@@ -438,9 +637,22 @@ async def save_api_key(
         integration.api_key = raw_key
         integration.access_token = raw_key
         integration.connected = True
-        
-        # Clear any prior authentication error on success
+
         cfg = dict(integration.config_json or {})
+
+        # For LLM providers, dynamically discover live models immediately on key save
+        if service in ["gemini", "openai", "claude", "perplexity"]:
+            try:
+                live_models = await fetch_live_models_from_provider(service, raw_key)
+                if live_models:
+                    cfg["available_models"] = live_models
+                    if not cfg.get("selected_model") or cfg.get("selected_model") not in [m["id"] for m in live_models]:
+                        recs = [m["id"] for m in live_models if m.get("recommended")]
+                        cfg["selected_model"] = recs[0] if recs else live_models[0]["id"]
+            except Exception as model_err:
+                print(f"Notice: Failed to fetch live models on key save for {service}: {model_err}")
+
+        # Clear any prior authentication error on success
         cfg.pop("last_auth_error", None)
         integration.config_json = cfg
         flag_modified(integration, "config_json")
@@ -455,15 +667,129 @@ async def save_api_key(
 
         return {
             "status": "success", 
-            "connected": True,
+            "connected": True, 
             "message": f"{service.replace('_', ' ').title()} credentials saved and connected successfully!",
-            "masked_key": _mask_key(raw_key)
+            "masked_key": _mask_key(raw_key),
+            "selected_model": cfg.get("selected_model"),
+            "available_models": cfg.get("available_models")
         }
     except HTTPException:
         raise
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to save credentials: {str(e)}")
+
+@router.get("/models/{project_id}/{service}")
+async def get_provider_models(
+    project_id: int,
+    service: str,
+    api_key: Optional[str] = None,
+    refresh: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    target_project_id = project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
+    key_to_use = api_key
+    selected_model = None
+    item = None
+
+    try:
+        result = await db.execute(select(Integration).where(
+            Integration.project_id == target_project_id,
+            Integration.integration_type == service
+        ))
+        item = result.scalars().first()
+    except Exception:
+        pass
+
+    if not key_to_use and item:
+        key_to_use = item.api_key or item.access_token
+        if item.config_json and isinstance(item.config_json, dict):
+            selected_model = item.config_json.get("selected_model")
+
+    if not key_to_use:
+        if service == "gemini":
+            key_to_use = os.getenv("GEMINI_API_KEY")
+        elif service == "openai":
+            key_to_use = os.getenv("OPENAI_API_KEY")
+        elif service == "claude":
+            key_to_use = os.getenv("ANTHROPIC_API_KEY")
+
+    # If already cached in DB and not explicitly refreshing, return cached models
+    if not refresh and item and item.config_json and isinstance(item.config_json, dict) and item.config_json.get("available_models"):
+        return {
+            "service": service,
+            "available_models": item.config_json["available_models"],
+            "selected_model": selected_model or item.config_json.get("selected_model"),
+            "live_fetched": False
+        }
+
+    # Fetch live models from provider
+    live_models = await fetch_live_models_from_provider(service, key_to_use)
+
+    # If we have an integration item, cache the live models in DB
+    if item and live_models:
+        cfg = dict(item.config_json or {})
+        cfg["available_models"] = live_models
+        if not selected_model or selected_model not in [m["id"] for m in live_models]:
+            recs = [m["id"] for m in live_models if m.get("recommended")]
+            cfg["selected_model"] = recs[0] if recs else live_models[0]["id"]
+            selected_model = cfg["selected_model"]
+        item.config_json = cfg
+        flag_modified(item, "config_json")
+        await db.commit()
+
+    if not selected_model and live_models:
+        recs = [m["id"] for m in live_models if m.get("recommended")]
+        selected_model = recs[0] if recs else live_models[0]["id"]
+
+    return {
+        "service": service,
+        "available_models": live_models,
+        "selected_model": selected_model,
+        "live_fetched": True
+    }
+
+@router.post("/select-model")
+async def select_model(
+    req: SelectModelRequest,
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    target_project_id = req.project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
+    result = await db.execute(select(Integration).where(
+        Integration.project_id == target_project_id,
+        Integration.integration_type == req.service
+    ))
+    item = result.scalars().first()
+    if not item:
+        item = Integration(
+            project_id=target_project_id,
+            integration_type=req.service,
+            connected=True
+        )
+        if user:
+            item.user_id = user.id
+        db.add(item)
+
+    cfg = dict(item.config_json or {})
+    cfg["selected_model"] = req.model_id
+    item.config_json = cfg
+    flag_modified(item, "config_json")
+    await db.commit()
+
+    return {
+        "status": "success",
+        "service": req.service,
+        "selected_model": req.model_id,
+        "message": f"Active {req.service.replace('_', ' ').title()} model set to '{req.model_id}'"
+    }
 
 @router.post("/test")
 async def test_connection(
@@ -489,6 +815,8 @@ async def test_connection(
             api_key = integration.api_key or integration.access_token
         elif service == "pagespeed" and os.getenv("PAGESPEED_API_KEY"):
             api_key = os.getenv("PAGESPEED_API_KEY")
+        elif service == "gemini" and os.getenv("GEMINI_API_KEY"):
+            api_key = os.getenv("GEMINI_API_KEY")
         elif service == "search_console" and (os.getenv("SEARCH_CONSOLE_KEY") or os.getenv("SEARCH_CONSOLE_TOKEN")):
             api_key = os.getenv("SEARCH_CONSOLE_KEY") or os.getenv("SEARCH_CONSOLE_TOKEN")
             
@@ -546,7 +874,48 @@ async def test_connection(
                 "detail": f"PageSpeed network connection failed: {str(e)}"
             }
 
-    # 2. OpenAI test
+    # 2. Google Gemini test
+    elif service == "gemini":
+        if not api_key:
+            return {"success": False, "status": "error", "detail": "Missing Google Gemini API key"}
+        clean_key = api_key.strip()
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                res = await client.get(
+                    f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}"
+                )
+                latency = round((time.time() - start_time) * 1000, 1)
+                if res.status_code == 200:
+                    return {
+                        "success": True, 
+                        "status": "ok", 
+                        "message": f"Google Gemini API connection verified! ({latency}ms)", 
+                        "latency_ms": latency
+                    }
+                elif res.status_code in [400, 403]:
+                    err_json = res.json().get("error", {})
+                    err_msg = err_json.get("message", "Invalid API key or Gemini API not enabled.")
+                    return {
+                        "success": False, 
+                        "status": "error", 
+                        "detail": f"Gemini Authentication Failed ({res.status_code}): {err_msg}"
+                    }
+                elif res.status_code == 429:
+                    return {
+                        "success": False, 
+                        "status": "error", 
+                        "detail": "Gemini Quota Exceeded (429): Rate limit or quota exhausted."
+                    }
+                else:
+                    return {
+                        "success": False, 
+                        "status": "error", 
+                        "detail": f"Gemini API returned HTTP {res.status_code}: {res.text[:100]}"
+                    }
+        except Exception as e:
+            return {"success": False, "status": "error", "detail": f"Gemini connection error: {str(e)}"}
+
+    # 3. OpenAI test
     elif service == "openai":
         if not api_key:
             return {"success": False, "status": "error", "detail": "Missing OpenAI API key"}
@@ -561,7 +930,7 @@ async def test_connection(
                     return {
                         "success": True, 
                         "status": "ok", 
-                        "message": f"OpenAI GPT-4o API connection verified! ({latency}ms)",
+                        "message": f"OpenAI API connection verified! ({latency}ms)",
                         "latency_ms": latency
                     }
                 elif res.status_code == 401:
@@ -572,6 +941,46 @@ async def test_connection(
                     return {"success": False, "status": "error", "detail": f"OpenAI verification failed ({res.status_code}): {res.text[:100]}"}
         except Exception as e:
             return {"success": False, "status": "error", "detail": f"OpenAI connection error: {str(e)}"}
+
+    # 4. Anthropic Claude test
+    elif service == "claude":
+        if not api_key:
+            return {"success": False, "status": "error", "detail": "Missing Anthropic Claude API key"}
+        clean_key = api_key.strip()
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                res = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={"x-api-key": clean_key, "anthropic-version": "2023-06-01"}
+                )
+                latency = round((time.time() - start_time) * 1000, 1)
+                if res.status_code == 200:
+                    return {
+                        "success": True, 
+                        "status": "ok", 
+                        "message": f"Anthropic Claude API connection verified! ({latency}ms)", 
+                        "latency_ms": latency
+                    }
+                elif res.status_code == 401:
+                    return {
+                        "success": False, 
+                        "status": "error", 
+                        "detail": "Claude Authentication Failed (401): Invalid Anthropic API key."
+                    }
+                elif res.status_code == 429:
+                    return {
+                        "success": False, 
+                        "status": "error", 
+                        "detail": "Claude Quota Exceeded (429): Rate limit or credit balance exhausted."
+                    }
+                else:
+                    return {
+                        "success": False, 
+                        "status": "error", 
+                        "detail": f"Claude API returned HTTP {res.status_code}: {res.text[:100]}"
+                    }
+        except Exception as e:
+            return {"success": False, "status": "error", "detail": f"Claude connection error: {str(e)}"}
 
     # 3. Perplexity test
     elif service == "perplexity":

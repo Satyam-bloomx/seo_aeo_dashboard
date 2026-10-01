@@ -624,8 +624,31 @@ async def generate_ai_issue_diagnosis(
         elif req.api_key.startswith("sk-") or req.ai_provider == "openai":
             openai_key = req.api_key
 
+    gemini_model = "gemini-3.5-flash"
+    openai_model = "gpt-4o-mini"
+    claude_key = None
+    claude_model = "claude-3-7-sonnet-20250219"
+    pplx_key = None
+    pplx_model = "sonar"
+
     if not gemini_key:
-        gemini_key = os.getenv("GEMINI_API_KEY")
+        try:
+            res_gem = await db.execute(
+                select(Integration).where(
+                    Integration.project_id == req.project_id,
+                    Integration.integration_type == "gemini",
+                    Integration.connected == True
+                )
+            )
+            item_gem = res_gem.scalars().first()
+            if item_gem:
+                gemini_key = item_gem.api_key
+                if item_gem.config_json and isinstance(item_gem.config_json, dict):
+                    gemini_model = item_gem.config_json.get("selected_model") or gemini_model
+            else:
+                gemini_key = os.getenv("GEMINI_API_KEY")
+        except Exception:
+            gemini_key = os.getenv("GEMINI_API_KEY")
 
     if not openai_key:
         try:
@@ -637,9 +660,50 @@ async def generate_ai_issue_diagnosis(
                 )
             )
             item = res_int.scalars().first()
-            openai_key = item.api_key if item else os.getenv("OPENAI_API_KEY")
+            if item:
+                openai_key = item.api_key
+                if item.config_json and isinstance(item.config_json, dict):
+                    openai_model = item.config_json.get("selected_model") or openai_model
+            else:
+                openai_key = os.getenv("OPENAI_API_KEY")
         except Exception:
             openai_key = os.getenv("OPENAI_API_KEY")
+
+    try:
+        res_c = await db.execute(
+            select(Integration).where(
+                Integration.project_id == req.project_id,
+                Integration.integration_type == "claude",
+                Integration.connected == True
+            )
+        )
+        item_c = res_c.scalars().first()
+        if item_c:
+            claude_key = item_c.api_key
+            if item_c.config_json and isinstance(item_c.config_json, dict):
+                claude_model = item_c.config_json.get("selected_model") or claude_model
+        else:
+            claude_key = os.getenv("ANTHROPIC_API_KEY")
+    except Exception:
+        claude_key = os.getenv("ANTHROPIC_API_KEY")
+
+    try:
+        res_p = await db.execute(
+            select(Integration).where(
+                Integration.project_id == req.project_id,
+                Integration.integration_type == "perplexity",
+                Integration.connected == True
+            )
+        )
+        item_p = res_p.scalars().first()
+        if item_p:
+            pplx_key = item_p.api_key
+            if item_p.config_json and isinstance(item_p.config_json, dict):
+                pplx_model = item_p.config_json.get("selected_model") or pplx_model
+        else:
+            pplx_key = os.getenv("PERPLEXITY_API_KEY")
+    except Exception:
+        pplx_key = os.getenv("PERPLEXITY_API_KEY")
 
     # 2. Build strictly bounded, token-efficient prompt (under 250 input tokens)
     samples = []
@@ -673,10 +737,10 @@ async def generate_ai_issue_diagnosis(
         "Provide an executive, human-friendly, highly tailored technical diagnosis and solution for this specific website."
     )
 
-    # 3. Try Gemini 2.5 Flash first (blazing fast, high reasoning, budget-controlled)
+    # 3. Try Gemini with selected live model
     if gemini_key:
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={gemini_key}"
             payload = {
                 "contents": [
                     {"role": "user", "parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}
@@ -695,16 +759,16 @@ async def generate_ai_issue_diagnosis(
                     parsed = json.loads(content_str)
                     result = {
                         "success": True,
-                        "powered_by": "Google Gemini 2.5 Flash",
+                        "powered_by": f"Google Gemini ({gemini_model})",
                         "is_live_ai": True,
                         "data": parsed
                     }
                     AI_ISSUE_DIAGNOSES_CACHE[cache_key] = result
                     return result
         except Exception as e:
-            print(f"Gemini live diagnosis error: {e}")
+            print(f"Gemini live diagnosis error ({gemini_model}): {e}")
 
-    # 4. Try OpenAI (GPT-4o-mini)
+    # 4. Try OpenAI with selected live model
     if openai_key and ("sk-" in openai_key or "proj" in openai_key):
         try:
             async with httpx.AsyncClient(timeout=14.0) as client:
@@ -712,7 +776,7 @@ async def generate_ai_issue_diagnosis(
                     "https://api.openai.com/v1/chat/completions",
                     headers={"Authorization": f"Bearer {openai_key}"},
                     json={
-                        "model": "gpt-4o-mini",
+                        "model": openai_model,
                         "messages": [
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt}
@@ -726,14 +790,88 @@ async def generate_ai_issue_diagnosis(
                     ai_content = json.loads(payload["choices"][0]["message"]["content"])
                     result = {
                         "success": True,
-                        "powered_by": "OpenAI GPT-4o-mini",
+                        "powered_by": f"OpenAI ({openai_model})",
                         "is_live_ai": True,
                         "data": ai_content
                     }
                     AI_ISSUE_DIAGNOSES_CACHE[cache_key] = result
                     return result
         except Exception as e:
-            print(f"OpenAI live diagnosis error: {e}")
+            print(f"OpenAI live diagnosis error ({openai_model}): {e}")
+
+    # 5. Try Anthropic Claude with selected live model
+    if claude_key:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": claude_key,
+                        "anthropic-version": "2023-06-01",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": claude_model,
+                        "system": system_prompt,
+                        "messages": [{"role": "user", "content": user_prompt}],
+                        "max_tokens": 600
+                    }
+                )
+                if res.status_code == 200:
+                    cdata = res.json()
+                    text_out = cdata.get("content", [{}])[0].get("text", "")
+                    clean_text = text_out.strip()
+                    if clean_text.startswith("```json"):
+                        clean_text = clean_text[7:].rstrip("`").strip()
+                    elif clean_text.startswith("```"):
+                        clean_text = clean_text[3:].rstrip("`").strip()
+                    parsed = json.loads(clean_text)
+                    result = {
+                        "success": True,
+                        "powered_by": f"Anthropic Claude ({claude_model})",
+                        "is_live_ai": True,
+                        "data": parsed
+                    }
+                    AI_ISSUE_DIAGNOSES_CACHE[cache_key] = result
+                    return result
+        except Exception as e:
+            print(f"Claude diagnosis error ({claude_model}): {e}")
+
+    # 6. Try Perplexity with selected live model
+    if pplx_key:
+        try:
+            async with httpx.AsyncClient(timeout=14.0) as client:
+                res = await client.post(
+                    "https://api.perplexity.ai/chat/completions",
+                    headers={"Authorization": f"Bearer {pplx_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": pplx_model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "max_tokens": 600
+                    }
+                )
+                if res.status_code == 200:
+                    cdata = res.json()
+                    text_out = cdata.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    clean_text = text_out.strip()
+                    if clean_text.startswith("```json"):
+                        clean_text = clean_text[7:].rstrip("`").strip()
+                    elif clean_text.startswith("```"):
+                        clean_text = clean_text[3:].rstrip("`").strip()
+                    parsed = json.loads(clean_text)
+                    result = {
+                        "success": True,
+                        "powered_by": f"Perplexity AI ({pplx_model})",
+                        "is_live_ai": True,
+                        "data": parsed
+                    }
+                    AI_ISSUE_DIAGNOSES_CACHE[cache_key] = result
+                    return result
+        except Exception as e:
+            print(f"Perplexity diagnosis error ({pplx_model}): {e}")
 
     # 5. Smart fallback when no key is active
     return {

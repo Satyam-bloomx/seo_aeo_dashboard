@@ -45,22 +45,44 @@ const API_INTEGRATIONS = [
     placeholder: 'AIzaSy...'
   },
   {
+    id: 'gemini',
+    name: 'Google Gemini (AI Studio)',
+    category: 'AEO Voice & LLM',
+    categoryColor: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900/50',
+    description: 'Connect your Google AI Studio key to discover and select live Gemini models (Flash, Pro, Lite) for custom root-cause diagnoses and code fixes.',
+    authType: 'api_key',
+    icon: <Sparkles className="text-blue-500" size={24} />,
+    docUrl: 'https://aistudio.google.com/app/apikey',
+    placeholder: 'AIzaSy...'
+  },
+  {
     id: 'openai',
-    name: 'OpenAI GPT-4o Engine',
+    name: 'OpenAI (ChatGPT & Reasoning)',
     category: 'AEO Voice & LLM',
     categoryColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50',
-    description: 'Enriches page content with AI Answer Engine Optimization (AEO) readiness, conversational voice search score, and extractability.',
+    description: 'Connect your OpenAI key to dynamically select from live GPT-4o, o3-mini, and o1 models for AEO content extractability and voice search.',
     authType: 'api_key',
     icon: <Sparkles className="text-emerald-600" size={24} />,
     docUrl: 'https://platform.openai.com/api-keys',
     placeholder: 'sk-proj-...'
   },
   {
-    id: 'perplexity',
-    name: 'Perplexity AI Citations',
+    id: 'claude',
+    name: 'Anthropic Claude',
     category: 'AEO Voice & LLM',
-    categoryColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50',
-    description: 'Performs live generative citation audits to benchmark whether your domain is cited in conversational AI search results.',
+    categoryColor: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-900/50',
+    description: 'Connect your Anthropic key to select live Claude models (Claude 3.7 Sonnet, 3.5 Sonnet, 3.5 Haiku) for nuanced code architecture and content audits.',
+    authType: 'api_key',
+    icon: <Sparkles className="text-purple-500" size={24} />,
+    docUrl: 'https://console.anthropic.com/settings/keys',
+    placeholder: 'sk-ant-...'
+  },
+  {
+    id: 'perplexity',
+    name: 'Perplexity AI (Sonar Search)',
+    category: 'AEO Voice & LLM',
+    categoryColor: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-900/50',
+    description: 'Connect your Perplexity key to benchmark live generative search engine citations using active Sonar and Sonar Pro models.',
     authType: 'api_key',
     icon: <Globe className="text-cyan-600" size={24} />,
     docUrl: 'https://docs.perplexity.ai/',
@@ -114,7 +136,7 @@ const API_INTEGRATIONS = [
 
 const CATEGORIES = ['All', 'Speed & Vitals', 'AEO Voice & LLM', 'GEO Local Search', 'Analytics & Traffic'];
 
-export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedUrl = null, onAuditProperty = null }) {
+export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedUrl = null, pages = [], onAuditProperty = null }) {
   const [integrations, setIntegrations] = useState({});
   const [activeModal, setActiveModal] = useState(null);
   const [modalInitialTab, setModalInitialTab] = useState('one_click');
@@ -142,6 +164,9 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
   // GSC Manual Override State
   const [manualGscProperty, setManualGscProperty] = useState('');
   const [isSavingGscProperty, setIsSavingGscProperty] = useState(false);
+
+  // AI Model Selection & Live Sync State
+  const [syncingModelId, setSyncingModelId] = useState(null);
 
   const handleDismissError = async (serviceId) => {
     setServiceErrors(prev => {
@@ -394,6 +419,53 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
     }
   };
 
+  const handleSelectModel = async (serviceId, modelId) => {
+    if (!modelId) return;
+    setIntegrations(prev => ({
+      ...prev,
+      [serviceId]: {
+        ...(prev[serviceId] || {}),
+        selected_model: modelId
+      }
+    }));
+    try {
+      await axios.post(`${API_BASE_URL}/integrations/select-model`, {
+        project_id: projectId,
+        service: serviceId,
+        model_id: modelId
+      });
+      toast.success(`Active Model: ${modelId}`, {
+        description: `Now targeting ${modelId} for live audit diagnoses and AEO evaluations.`
+      });
+    } catch (e) {
+      toast.error(`Failed to update active model for ${serviceId}`);
+    }
+  };
+
+  const handleRefreshModels = async (serviceId) => {
+    setSyncingModelId(serviceId);
+    try {
+      const res = await axios.get(`${API_BASE_URL}/integrations/models/${projectId}/${serviceId}?refresh=true`);
+      if (res.data?.available_models) {
+        setIntegrations(prev => ({
+          ...prev,
+          [serviceId]: {
+            ...(prev[serviceId] || {}),
+            available_models: res.data.available_models,
+            selected_model: res.data.selected_model || prev[serviceId]?.selected_model
+          }
+        }));
+        toast.success(`Synced live ${serviceId.toUpperCase()} models!`, {
+          description: `Discovered ${res.data.available_models.length} active models directly from provider API.`
+        });
+      }
+    } catch (e) {
+      toast.error(`Failed to sync live models for ${serviceId}`);
+    } finally {
+      setSyncingModelId(null);
+    }
+  };
+
   const handleTestConnection = async (integrationId) => {
     setTestingId(integrationId);
     setTestResults(prev => ({ ...prev, [integrationId]: { status: 'testing' } }));
@@ -560,6 +632,8 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       <IntegrationsWorkspace
         projectId={projectId}
         crawlId={crawlId}
+        seedUrl={seedUrl}
+        pages={pages}
         initialService={workspaceService}
         onBackToGrid={() => setViewMode('grid')}
         integrationsStatus={integrations}
@@ -1202,6 +1276,50 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         <Check size={11} className="shrink-0" />
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Dynamic AI Model Selector for LLM Engines (Gemini, OpenAI, Claude, Perplexity) */}
+                {item.category === 'AEO Voice & LLM' && (isConnected || integrations[item.id]?.has_key) && (
+                  <div className="mb-4 p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/60 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 font-mono">
+                        <Sparkles size={13} className="text-indigo-600 dark:text-indigo-400" />
+                        Active AI Model
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRefreshModels(item.id)}
+                        disabled={syncingModelId === item.id}
+                        title="Query provider API to discover newly live models and prune retired ones"
+                        className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw size={11} className={syncingModelId === item.id ? "animate-spin" : ""} />
+                        <span>{syncingModelId === item.id ? 'Syncing...' : 'Sync Live Models'}</span>
+                      </button>
+                    </div>
+
+                    <select
+                      value={integrations[item.id]?.selected_model || ''}
+                      onChange={(e) => handleSelectModel(item.id, e.target.value)}
+                      className="w-full text-xs font-mono bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-2xs"
+                    >
+                      {(integrations[item.id]?.available_models || []).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name || m.id} {m.recommended ? '★ Recommended' : ''}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-600 dark:text-slate-300 pt-0.5">
+                      <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-semibold">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span>Live Provider Sync Active</span>
+                      </span>
+                      <span className="text-slate-500 dark:text-slate-400">
+                        {(integrations[item.id]?.available_models || []).length} available
+                      </span>
+                    </div>
                   </div>
                 )}
 

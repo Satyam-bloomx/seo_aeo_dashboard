@@ -69,6 +69,52 @@ const GUIDES = {
       }
     ]
   },
+  gemini: {
+    docUrl: 'https://aistudio.google.com/app/apikey',
+    title: 'Google Gemini (AI Studio) Setup',
+    steps: [
+      {
+        step: 1,
+        title: 'Open Google AI Studio',
+        desc: 'Visit Google AI Studio to generate or manage your Gemini API keys.',
+        link: 'https://aistudio.google.com/app/apikey',
+        linkLabel: 'Open Google AI Studio'
+      },
+      {
+        step: 2,
+        title: 'Create an API Key',
+        desc: 'Click "+ Create API key", choose your Google Cloud project (or create in new project), and copy your generated key (starts with "AIzaSy...").'
+      },
+      {
+        step: 3,
+        title: 'Paste, Test Connection & Save',
+        desc: 'Paste your Gemini API key below, click "Test Connection" to verify with Google Generative AI (zero cost), and save to discover all live models.'
+      }
+    ]
+  },
+  claude: {
+    docUrl: 'https://console.anthropic.com/settings/keys',
+    title: 'Anthropic Claude API Setup',
+    steps: [
+      {
+        step: 1,
+        title: 'Open Anthropic Console',
+        desc: 'Log in to your Anthropic Console account to manage API credentials.',
+        link: 'https://console.anthropic.com/settings/keys',
+        linkLabel: 'Open Anthropic Keys'
+      },
+      {
+        step: 2,
+        title: 'Create an API Key',
+        desc: 'Click "Create Key", provide a label, and generate your key (starts with "sk-ant-...").'
+      },
+      {
+        step: 3,
+        title: 'Paste, Test Connection & Save',
+        desc: 'Paste your key below, verify the connection with the Anthropic API, and save to select your preferred Claude model.'
+      }
+    ]
+  },
   openai: {
     docUrl: 'https://platform.openai.com/api-keys',
     title: 'OpenAI API Key Setup',
@@ -231,12 +277,27 @@ export default function ApiKeyModal({
   const [ga4PropertyOverride, setGa4PropertyOverride] = useState('');
   const [isSavingProperty, setIsSavingProperty] = useState(false);
   const [hasExistingApp, setHasExistingApp] = useState(false);
+  const [availableModels, setAvailableModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState('');
 
   useEffect(() => {
     if (initialTab) {
       setOauthTab(initialTab);
     }
   }, [initialTab]);
+
+  useEffect(() => {
+    if (integration?.category === 'AEO Voice & LLM') {
+      axios.get(`${API_BASE_URL}/integrations/models/${projectId}/${integration.id}`)
+        .then(res => {
+          if (res.data?.available_models) {
+            setAvailableModels(res.data.available_models);
+            setSelectedModel(res.data.selected_model || res.data.available_models[0]?.id || '');
+          }
+        })
+        .catch(() => {});
+    }
+  }, [integration, projectId]);
 
   useEffect(() => {
     if (integration?.authType === 'oauth') {
@@ -418,6 +479,16 @@ export default function ApiKeyModal({
         toast.success(`Verified ${integration.name}!`, {
           description: `Latency benchmark: ${res.data.latency_ms || 24}ms`
         });
+        if (integration.category === 'AEO Voice & LLM') {
+          try {
+            const mRes = await axios.get(`${API_BASE_URL}/integrations/models/${projectId}/${integration.id}?api_key=${encodeURIComponent(apiKey.trim())}&refresh=true`);
+            if (mRes.data?.available_models) {
+              setAvailableModels(mRes.data.available_models);
+              setSelectedModel(mRes.data.selected_model || mRes.data.available_models[0]?.id || '');
+              toast.info(`Discovered ${mRes.data.available_models.length} active models from API!`);
+            }
+          } catch {}
+        }
       } else {
         setTestResult({ success: false, message: res.data.detail || 'Connection test failed.' });
         toast.error('Connection verification failed.');
@@ -450,6 +521,17 @@ export default function ApiKeyModal({
         service_name: integration.id,
         api_key: apiKey.trim()
       });
+
+      if (selectedModel && integration.category === 'AEO Voice & LLM') {
+        try {
+          await axios.post(`${API_BASE_URL}/integrations/select-model`, {
+            project_id: projectId,
+            service: integration.id,
+            model_id: selectedModel
+          });
+        } catch {}
+      }
+
       setIsLoading(false);
       const maskedKey = res.data?.masked_key;
       toast.success(`${integration.name} connected successfully!`, {
@@ -1126,6 +1208,36 @@ export default function ApiKeyModal({
                   Your credentials are encrypted per-project and used exclusively for live crawler enrichments.
                 </p>
               </div>
+
+              {/* Dynamic Live Model Discovery & Selection for LLM integrations */}
+              {integration.category === 'AEO Voice & LLM' && availableModels.length > 0 && (
+                <div className="p-3.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/80 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold font-mono text-slate-800 dark:text-slate-200">
+                    <span className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
+                      <Sparkles size={13} />
+                      Live Models Detected ({availableModels.length})
+                    </span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-semibold">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      API Verified
+                    </span>
+                  </div>
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="w-full text-xs font-mono bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-2xs"
+                  >
+                    {availableModels.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.name || m.id} {m.recommended ? '★ Recommended' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                    Active models are discovered in real time from the provider API. Deprecated or decommissioned models are automatically excluded.
+                  </p>
+                </div>
+              )}
 
               {/* Modal Action Buttons */}
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">

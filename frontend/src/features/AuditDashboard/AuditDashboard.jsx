@@ -1239,6 +1239,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                 projectId={1} 
                 crawlId={crawlId} 
                 seedUrl={url} 
+                pages={pages}
                 onAuditProperty={(propUrl) => {
                   if (!propUrl) return;
                   let clean = propUrl.replace(/^sc-domain:/i, '').trim();

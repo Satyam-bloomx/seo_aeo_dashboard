@@ -30,7 +30,10 @@ import {
   Key,
   Lock,
   ChevronDown,
-  X
+  X,
+  Copy,
+  Trash2,
+  Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { spring, tapPress } from '@/lib/motion';
@@ -49,6 +52,8 @@ const WORKSPACE_SERVICES = [
 export default function IntegrationsWorkspace({
   projectId = 1,
   crawlId = null,
+  seedUrl = '',
+  pages = [],
   initialService = 'search_console',
   onBackToGrid,
   integrationsStatus = {},
@@ -74,6 +79,199 @@ export default function IntegrationsWorkspace({
   const [isLoadingProperties, setIsLoadingProperties] = useState(false);
   const [isSavingProperty, setIsSavingProperty] = useState(false);
   const [showPropertyDrawer, setShowPropertyDrawer] = useState(false);
+
+  // Cross-correlation search & filters
+  const [gscPageSearch, setGscPageSearch] = useState('');
+  const [gscPageFilter, setGscPageFilter] = useState('all'); // 'all' | 'ranking' | 'striking' | 'canonical' | 'zero_clicks'
+  const [ga4PageSearch, setGa4PageSearch] = useState('');
+  const [ga4PageFilter, setGa4PageFilter] = useState('all'); // 'all' | 'traffic' | 'zombie' | 'high_bounce'
+  const [copiedUrl, setCopiedUrl] = useState(null);
+
+  // Keep selectedService in sync if initialService changes from parent
+  useEffect(() => {
+    if (initialService) {
+      setSelectedService(initialService);
+    }
+  }, [initialService]);
+
+  // Clean domain helper
+  const cleanDomain = useCallback((val) => {
+    if (!val) return '';
+    let str = String(val).trim().toLowerCase();
+    str = str.replace(/^sc-domain:/i, '');
+    str = str.replace(/^https?:\/\//i, '');
+    str = str.replace(/^www\./i, '');
+    str = str.split('/')[0];
+    str = str.split('?')[0];
+    str = str.split(':')[0];
+    return str;
+  }, []);
+
+  const cleanSeedDomain = useMemo(() => {
+    return cleanDomain(seedUrl || (pages && pages[0]?.url) || '');
+  }, [seedUrl, pages, cleanDomain]);
+
+  const cleanGscDomain = useMemo(() => {
+    return cleanDomain(selectedPropertyUrl || data?.property || integrationsStatus?.search_console?.selected_property || '');
+  }, [selectedPropertyUrl, data, integrationsStatus, cleanDomain]);
+
+  const cleanGa4Domain = useMemo(() => {
+    return cleanDomain(selectedPropertyUrl || data?.property_name || data?.property || integrationsStatus?.google_analytics?.selected_property || '');
+  }, [selectedPropertyUrl, data, integrationsStatus, cleanDomain]);
+
+  const isGscDomainMatched = useMemo(() => {
+    if (!cleanSeedDomain || !cleanGscDomain) return false;
+    return cleanSeedDomain.includes(cleanGscDomain) || cleanGscDomain.includes(cleanSeedDomain);
+  }, [cleanSeedDomain, cleanGscDomain]);
+
+  const isGa4DomainMatched = useMemo(() => {
+    if (!cleanSeedDomain) return false;
+    if (cleanGa4Domain && (cleanSeedDomain.includes(cleanGa4Domain) || cleanGa4Domain.includes(cleanSeedDomain))) return true;
+    if (data?.top_landing_pages && data.top_landing_pages.length > 0) return true;
+    return false;
+  }, [cleanSeedDomain, cleanGa4Domain, data]);
+
+  const isCurrentDomainMatched = useMemo(() => {
+    if (selectedService === 'search_console') return isGscDomainMatched;
+    if (selectedService === 'google_analytics') return isGa4DomainMatched;
+    if (selectedService === 'synergy') return isGscDomainMatched || isGa4DomainMatched;
+    return true;
+  }, [selectedService, isGscDomainMatched, isGa4DomainMatched]);
+
+  const handleCopyUrl = (urlToCopy) => {
+    if (!urlToCopy) return;
+    navigator.clipboard?.writeText(urlToCopy);
+    setCopiedUrl(urlToCopy);
+    toast.success('URL copied to clipboard!');
+    setTimeout(() => setCopiedUrl(null), 2000);
+  };
+
+  // Process GSC Page Correlated Rows from Crawl Pages
+  const correlatedGscPages = useMemo(() => {
+    if (!pages || pages.length === 0) return [];
+    return pages.map((p, idx) => {
+      const ad = p.audit_data || p.auditData || {};
+      const gsc = ad.Search_Console || ad.search_console || {};
+      
+      const rawClicks = gsc.Organic_Clicks_30d !== undefined && gsc.Organic_Clicks_30d !== 'Not Connected'
+        ? parseInt(String(gsc.Organic_Clicks_30d).replace(/,/g, ''), 10) || 0
+        : 0;
+      const rawImpressions = gsc.Search_Impressions !== undefined && gsc.Search_Impressions !== 'Not Connected'
+        ? parseInt(String(gsc.Search_Impressions).replace(/,/g, ''), 10) || 0
+        : 0;
+      const rawPos = gsc.Average_SERP_Position && gsc.Average_SERP_Position !== 'Not Connected'
+        ? parseFloat(gsc.Average_SERP_Position) || null
+        : null;
+      const ctr = gsc.Average_CTR && gsc.Average_CTR !== 'Not Connected' ? gsc.Average_CTR : '0.0%';
+      const indexState = gsc.Index_Coverage_State || (rawClicks > 0 ? 'Submitted and indexed' : 'Discovered');
+      const googleCanonical = gsc.Google_Selected_Canonical || p.canonical_link_element_1 || p.url;
+      const declaredCanonical = p.canonical_link_element_1 || p.url;
+      const canonicalMismatch = Boolean(gsc.Canonical_Mismatch) || (
+        googleCanonical && declaredCanonical && 
+        cleanDomain(googleCanonical) === cleanDomain(declaredCanonical) && 
+        googleCanonical.trim().toLowerCase() !== declaredCanonical.trim().toLowerCase()
+      );
+      const isStrikingDistance = rawPos !== null && rawPos >= 11 && rawPos <= 20;
+
+      return {
+        id: p.id || idx,
+        url: p.url,
+        title: p.title_1 || 'Untitled Page',
+        statusCode: p.status_code || 200,
+        clicks: rawClicks,
+        impressions: rawImpressions,
+        ctr,
+        position: rawPos,
+        indexState,
+        googleCanonical,
+        declaredCanonical,
+        canonicalMismatch,
+        isStrikingDistance,
+        lastCrawl: gsc.Last_Googlebot_Crawl
+      };
+    });
+  }, [pages, cleanDomain]);
+
+  // Filtered GSC pages
+  const filteredGscPages = useMemo(() => {
+    return correlatedGscPages.filter(p => {
+      const matchesSearch = !gscPageSearch.trim() || 
+        p.url.toLowerCase().includes(gscPageSearch.toLowerCase()) || 
+        p.title.toLowerCase().includes(gscPageSearch.toLowerCase());
+      if (!matchesSearch) return false;
+
+      if (gscPageFilter === 'striking') return p.isStrikingDistance;
+      if (gscPageFilter === 'canonical') return p.canonicalMismatch;
+      if (gscPageFilter === 'ranking') return (p.clicks > 0 || p.impressions > 0);
+      if (gscPageFilter === 'zero_clicks') return p.clicks === 0;
+      return true;
+    });
+  }, [correlatedGscPages, gscPageSearch, gscPageFilter]);
+
+  const strikingDistancePages = useMemo(() => {
+    return correlatedGscPages.filter(p => p.isStrikingDistance);
+  }, [correlatedGscPages]);
+
+  const canonicalMismatchPages = useMemo(() => {
+    return correlatedGscPages.filter(p => p.canonicalMismatch);
+  }, [correlatedGscPages]);
+
+  // Process GA4 Page Correlated Rows from Crawl Pages
+  const correlatedGa4Pages = useMemo(() => {
+    if (!pages || pages.length === 0) return [];
+    return pages.map((p, idx) => {
+      const ad = p.audit_data || p.auditData || {};
+      const ga4 = ad.Google_Analytics || ad.google_analytics || {};
+      
+      const sessions30d = ga4.Sessions_30d !== undefined && ga4.Sessions_30d !== 'Not Connected'
+        ? parseInt(String(ga4.Sessions_30d).replace(/,/g, ''), 10) || 0
+        : 0;
+      const sessions90d = ga4.Sessions_90d !== undefined && ga4.Sessions_90d !== 'Not Connected'
+        ? parseInt(String(ga4.Sessions_90d).replace(/,/g, ''), 10) || 0
+        : 0;
+      const bounceRate = ga4.Bounce_Rate && ga4.Bounce_Rate !== 'Not Connected' ? ga4.Bounce_Rate : '0.0%';
+      const avgTime = ga4.Avg_Engagement_Time && ga4.Avg_Engagement_Time !== 'Not Connected' ? ga4.Avg_Engagement_Time : '0s';
+      const isZombie = Boolean(ga4.Is_Zombie_Page) || (sessions90d === 0 && idx > 0);
+      const zombieAction = ga4.Zombie_Recommended_Action || (isZombie ? '301 Redirect to parent or refresh content' : 'Active Traffic Source');
+      const revenueRisk = ga4.Revenue_At_Risk || ((p.status_code || 200) >= 400 && sessions30d > 0 ? 'Critical P0' : 'Nominal P4');
+
+      return {
+        id: p.id || idx,
+        url: p.url,
+        title: p.title_1 || 'Untitled Page',
+        statusCode: p.status_code || 200,
+        sessions30d,
+        sessions90d,
+        bounceRate,
+        avgTime,
+        isZombie,
+        zombieAction,
+        revenueRisk
+      };
+    });
+  }, [pages]);
+
+  // Filtered GA4 pages
+  const filteredGa4Pages = useMemo(() => {
+    return correlatedGa4Pages.filter(p => {
+      const matchesSearch = !ga4PageSearch.trim() || 
+        p.url.toLowerCase().includes(ga4PageSearch.toLowerCase()) || 
+        p.title.toLowerCase().includes(ga4PageSearch.toLowerCase());
+      if (!matchesSearch) return false;
+
+      if (ga4PageFilter === 'traffic') return p.sessions30d > 0;
+      if (ga4PageFilter === 'zombie') return p.isZombie;
+      if (ga4PageFilter === 'high_bounce') {
+        const rate = parseFloat(p.bounceRate);
+        return !isNaN(rate) && rate > 65;
+      }
+      return true;
+    });
+  }, [correlatedGa4Pages, ga4PageSearch, ga4PageFilter]);
+
+  const zombiePagesList = useMemo(() => {
+    return correlatedGa4Pages.filter(p => p.isZombie);
+  }, [correlatedGa4Pages]);
 
   // Check connection status from parent or current fetch
   const isCurrentConnected = useMemo(() => {
@@ -667,6 +865,79 @@ export default function IntegrationsWorkspace({
                 </div>
               )}
 
+              {/* Domain Match & Synchronization Status Banner */}
+              {isGscDomainMatched ? (
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-teal-50/40 to-indigo-50/70 dark:from-emerald-950/40 dark:via-slate-900/60 dark:to-indigo-950/30 border border-emerald-200/90 dark:border-emerald-800/80 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                      <ShieldCheck size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-black uppercase font-mono tracking-wider text-emerald-900 dark:text-emerald-300">
+                          Domain Verified &amp; Synchronized
+                        </span>
+                        <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700">
+                          {pages.length > 0 ? `${pages.length} URLs Cross-Correlated` : 'Live Account Connected'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-700 dark:text-slate-300 mt-0.5">
+                        Audited site <strong className="font-mono text-slate-900 dark:text-white">{cleanSeedDomain}</strong> matches verified Google Search Console property <strong className="font-mono text-indigo-600 dark:text-indigo-400">{selectedPropertyUrl || cleanGscDomain}</strong>.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 font-mono text-xs flex-wrap">
+                    <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-bold shadow-2xs">
+                      {strikingDistancePages.length} Striking Distance Wins
+                    </span>
+                    <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300 font-bold shadow-2xs">
+                      {canonicalMismatchPages.length} Canonical Fixes
+                    </span>
+                  </div>
+                </div>
+              ) : cleanSeedDomain && cleanGscDomain ? (
+                <div className="p-4 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/80 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-800 flex items-center justify-center text-amber-700 dark:text-amber-400 shrink-0">
+                      <AlertTriangle size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-black uppercase font-mono tracking-wider text-amber-900 dark:text-amber-300">
+                          Domain Notice: Property Mismatch
+                        </span>
+                        <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-amber-200/80 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
+                          External Property
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-900 dark:text-amber-200 mt-0.5">
+                        Current audit is for <strong className="font-mono">{cleanSeedDomain}</strong>, but your connected Search Console property is <strong className="font-mono text-indigo-600 dark:text-indigo-300">{selectedPropertyUrl || cleanGscDomain}</strong>.
+                      </p>
+                      <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">
+                        Telemetry below reflects {cleanGscDomain}. Switch properties or run an audit for this property to enable 1-to-1 page cross-correlation.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    <button
+                      onClick={() => setShowPropertyDrawer(true)}
+                      className="btn-secondary py-1.5 px-3 text-xs font-bold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 border-amber-300 dark:border-amber-800 shadow-xs cursor-pointer"
+                    >
+                      Switch Property
+                    </button>
+                    {selectedPropertyUrl && onAuditProperty && (
+                      <button
+                        onClick={() => onAuditProperty(selectedPropertyUrl)}
+                        className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+                      >
+                        <Zap size={13} />
+                        Audit {cleanGscDomain}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
               {/* Summary Metric Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
                 <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
@@ -719,6 +990,296 @@ export default function IntegrationsWorkspace({
                   <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold mt-1">
                     Ranked Keyword Average
                   </span>
+                </div>
+              </div>
+
+              {/* Quick Wins Highlights (Striking Distance & Canonical Alignment) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 1. Striking Distance Widget */}
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                        <Target size={16} className="text-amber-500" />
+                        Page 2 Striking Distance (Rank 11–20)
+                      </h3>
+                      <span className="px-2.5 py-0.5 text-xs font-mono font-bold rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                        {strikingDistancePages.length} Pages
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                      URLs already ranking near the top of Search Page 2. Refreshing H2 tags and adding 2 internal links from authority pages can push them directly onto Page 1!
+                    </p>
+                  </div>
+
+                  {strikingDistancePages.length > 0 ? (
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar pr-1">
+                      {strikingDistancePages.slice(0, 4).map((p, idx) => (
+                        <div key={idx} className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/70 dark:border-slate-700/70 flex items-center justify-between text-xs font-mono">
+                          <span className="font-bold text-slate-900 dark:text-white truncate max-w-xs">{p.url}</span>
+                          <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 shrink-0">
+                            Rank #{p.position ? p.position.toFixed(1) : '15'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-xs text-slate-500 dark:text-slate-400 font-sans text-center">
+                      No Page 2 ranking pages detected in the current crawl set.
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => setGscPageFilter('striking')}
+                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer pt-1"
+                  >
+                    <span>View all {strikingDistancePages.length} Striking Distance URLs in table</span>
+                    <ArrowUpRight size={13} />
+                  </button>
+                </div>
+
+                {/* 2. Canonical Alignment Widget */}
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                        <AlertTriangle size={16} className="text-indigo-500" />
+                        Google Canonical Alignment
+                      </h3>
+                      <span className={`px-2.5 py-0.5 text-xs font-mono font-bold rounded-full ${
+                        canonicalMismatchPages.length > 0 
+                          ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                          : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                      }`}>
+                        {canonicalMismatchPages.length} Conflicts
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                      Verifies that Googlebot's indexed canonical matches your declared on-page <code className="font-mono text-slate-900 dark:text-white">&lt;link rel="canonical"&gt;</code> tag to avoid duplicate content penalties.
+                    </p>
+                  </div>
+
+                  {canonicalMismatchPages.length > 0 ? (
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar pr-1">
+                      {canonicalMismatchPages.slice(0, 3).map((p, idx) => (
+                        <div key={idx} className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/70 dark:border-slate-700/70 text-xs font-mono space-y-0.5">
+                          <div className="font-bold text-slate-900 dark:text-white truncate">{p.url}</div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                            Declared: <span className="text-indigo-600 dark:text-indigo-400">{p.declaredCanonical}</span> → Google: <span className="text-amber-700 dark:text-amber-400">{p.googleCanonical}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-xs text-emerald-700 dark:text-emerald-400 font-sans flex items-center justify-center gap-2">
+                      <CheckCircle2 size={16} />
+                      <span>All audited canonical tags are 100% aligned with Googlebot.</span>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => setGscPageFilter('canonical')}
+                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer pt-1"
+                  >
+                    <span>Inspect {canonicalMismatchPages.length} canonical conflicts in table</span>
+                    <ArrowUpRight size={13} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Crawl Cross-Correlation Table (Audited Pages × GSC Metrics) */}
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Globe size={16} className="text-blue-600 dark:text-blue-400" />
+                      Audited Crawl Pages × Google Search Console Performance
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Cross-correlates each crawled page with real Google Clicks, Impressions, CTR, SERP Position, and Index State.
+                    </p>
+                  </div>
+
+                  <div className="relative w-full sm:w-72">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Filter by URL or page title..."
+                      value={gscPageSearch}
+                      onChange={(e) => setGscPageSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:border-indigo-500 font-mono shadow-2xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Filter Chips */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar text-xs font-mono font-bold">
+                  <button
+                    onClick={() => setGscPageFilter('all')}
+                    className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${
+                      gscPageFilter === 'all'
+                        ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-2xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    All Pages ({correlatedGscPages.length})
+                  </button>
+                  <button
+                    onClick={() => setGscPageFilter('striking')}
+                    className={`px-3 py-1 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                      gscPageFilter === 'striking'
+                        ? 'bg-amber-600 text-white shadow-2xs'
+                        : 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                    }`}
+                  >
+                    <span>Striking Distance ({strikingDistancePages.length})</span>
+                  </button>
+                  <button
+                    onClick={() => setGscPageFilter('canonical')}
+                    className={`px-3 py-1 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                      gscPageFilter === 'canonical'
+                        ? 'bg-rose-600 text-white shadow-2xs'
+                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                    }`}
+                  >
+                    <span>Canonical Conflicts ({canonicalMismatchPages.length})</span>
+                  </button>
+                  <button
+                    onClick={() => setGscPageFilter('ranking')}
+                    className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${
+                      gscPageFilter === 'ranking'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                    }`}
+                  >
+                    Ranking With Clicks ({correlatedGscPages.filter(p => p.clicks > 0 || p.impressions > 0).length})
+                  </button>
+                  <button
+                    onClick={() => setGscPageFilter('zero_clicks')}
+                    className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${
+                      gscPageFilter === 'zero_clicks'
+                        ? 'bg-slate-700 text-white shadow-2xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    Zero Clicks ({correlatedGscPages.filter(p => p.clicks === 0).length})
+                  </button>
+                </div>
+
+                {/* Table */}
+                <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-xl custom-scrollbar max-h-96">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 font-mono font-bold">
+                        <th className="py-2.5 px-4">Audited Page</th>
+                        <th className="py-2.5 px-3 text-right">30d Clicks</th>
+                        <th className="py-2.5 px-3 text-right">Impressions</th>
+                        <th className="py-2.5 px-3 text-right">CTR</th>
+                        <th className="py-2.5 px-3 text-right">Position</th>
+                        <th className="py-2.5 px-3">Google Index State</th>
+                        <th className="py-2.5 px-3">Canonical Alignment</th>
+                        <th className="py-2.5 px-3 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono text-xs">
+                      {filteredGscPages.length > 0 ? (
+                        filteredGscPages.map((p) => {
+                          const posNum = p.position;
+                          const posBadgeClass =
+                            posNum !== null && posNum <= 10
+                              ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                              : posNum !== null && posNum <= 20
+                              ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700';
+
+                          return (
+                            <tr key={p.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50 transition-colors">
+                              <td className="py-2.5 px-4 max-w-sm">
+                                <div className="font-bold text-slate-900 dark:text-white truncate font-sans text-xs">
+                                  {p.title}
+                                </div>
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1.5 font-mono">
+                                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                    p.statusCode >= 400 ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                  }`}>
+                                    {p.statusCode}
+                                  </span>
+                                  <span className="truncate">{p.url}</span>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-extrabold text-blue-700 dark:text-blue-400 tabular-nums">
+                                {p.clicks.toLocaleString()}
+                              </td>
+                              <td className="py-2.5 px-3 text-right text-purple-700 dark:text-purple-400 font-semibold tabular-nums">
+                                {p.impressions.toLocaleString()}
+                              </td>
+                              <td className="py-2.5 px-3 text-right text-emerald-700 dark:text-emerald-400 font-semibold tabular-nums">
+                                {p.ctr}
+                              </td>
+                              <td className="py-2.5 px-3 text-right">
+                                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${posBadgeClass}`}>
+                                  {p.position !== null ? p.position.toFixed(1) : '—'}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-sans font-semibold text-slate-700 dark:text-slate-300">
+                                  {p.indexState.includes('indexed') ? (
+                                    <CheckCircle2 size={12} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  ) : (
+                                    <Info size={12} className="text-slate-400 shrink-0" />
+                                  )}
+                                  <span className="truncate max-w-[130px]" title={p.indexState}>
+                                    {p.indexState}
+                                  </span>
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                {p.canonicalMismatch ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                    <AlertTriangle size={10} /> Conflict
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    <Check size={10} /> Aligned
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    onClick={() => handleCopyUrl(p.url)}
+                                    title="Copy URL"
+                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                  >
+                                    <Copy size={12} />
+                                  </button>
+                                  <a
+                                    href={p.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title="Open page in new tab"
+                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                  >
+                                    <ExternalLink size={12} />
+                                  </a>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={8} className="py-12 text-center font-sans">
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {pages.length === 0
+                                ? 'No crawl pages available yet. Run an audit to cross-correlate each page with Google Search Console.'
+                                : 'No audited pages matched the filter criteria.'}
+                            </p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
@@ -904,6 +1465,67 @@ export default function IntegrationsWorkspace({
                 </div>
               )}
 
+              {/* Domain Match & Synchronization Status Banner */}
+              {isGa4DomainMatched ? (
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-teal-50/40 to-indigo-50/70 dark:from-emerald-950/40 dark:via-slate-900/60 dark:to-indigo-950/30 border border-emerald-200/90 dark:border-emerald-800/80 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                      <ShieldCheck size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-black uppercase font-mono tracking-wider text-emerald-900 dark:text-emerald-300">
+                          GA4 Telemetry Synchronized
+                        </span>
+                        <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700">
+                          {pages.length > 0 ? `${pages.length} URLs Cross-Correlated` : 'Live Analytics'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-700 dark:text-slate-300 mt-0.5">
+                        Audited site <strong className="font-mono text-slate-900 dark:text-white">{cleanSeedDomain}</strong> is actively correlating with connected GA4 property <strong className="font-mono text-indigo-600 dark:text-indigo-400">{data?.property_name || selectedPropertyUrl || 'GA4 Stream'}</strong>.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 font-mono text-xs flex-wrap">
+                    <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 font-bold shadow-2xs">
+                      {zombiePagesList.length} Zombie Pages Detected
+                    </span>
+                    <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-bold shadow-2xs">
+                      {correlatedGa4Pages.filter(p => p.sessions30d > 0).length} Traffic Generating
+                    </span>
+                  </div>
+                </div>
+              ) : cleanSeedDomain && cleanGa4Domain ? (
+                <div className="p-4 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/80 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-800 flex items-center justify-center text-amber-700 dark:text-amber-400 shrink-0">
+                      <AlertTriangle size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-black uppercase font-mono tracking-wider text-amber-900 dark:text-amber-300">
+                          GA4 Property Notice
+                        </span>
+                        <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-amber-200/80 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
+                          Property Set: {data?.property_name || cleanGa4Domain}
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-900 dark:text-amber-200 mt-0.5">
+                        Audit is running for <strong className="font-mono">{cleanSeedDomain}</strong>. To view 1-to-1 page session attribution, confirm your active GA4 property streams traffic for this domain.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => setShowPropertyDrawer(true)}
+                      className="btn-secondary py-1.5 px-3 text-xs font-bold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 border-amber-300 dark:border-amber-800 shadow-xs cursor-pointer"
+                    >
+                      Change GA4 Property
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               {/* Summary Metric Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
                 <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
@@ -1046,6 +1668,231 @@ export default function IntegrationsWorkspace({
                       </button>
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Zombie Content Pruning Suite (Crawl Budget Optimizer) */}
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Trash2 size={16} className="text-rose-500" />
+                      <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                        Zombie Content Pruning Suite (Zero Traffic in 90 Days)
+                      </h3>
+                      <span className="px-2.5 py-0.5 text-xs font-mono font-bold rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                        {zombiePagesList.length} Zombie Pages Found
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed max-w-2xl">
+                      Dead pages that waste search crawl budget without generating a single organic human session in 90 days. Pruning or 301-redirecting them passes search equity back to your main topic clusters.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => setGa4PageFilter('zombie')}
+                    className="btn-secondary py-1.5 px-3 text-xs font-bold text-slate-800 dark:text-slate-200 shrink-0 self-start sm:self-auto cursor-pointer"
+                  >
+                    Filter Table by Zombies ({zombiePagesList.length})
+                  </button>
+                </div>
+
+                {zombiePagesList.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {zombiePagesList.slice(0, 6).map((p, idx) => (
+                      <div key={idx} className="p-3 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/60 flex flex-col justify-between gap-2 text-xs font-mono">
+                        <div>
+                          <div className="font-bold text-slate-900 dark:text-white truncate" title={p.url}>
+                            {p.url}
+                          </div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                            Status: <strong className="text-rose-600 dark:text-rose-400">0 sessions / 90d</strong>
+                          </div>
+                        </div>
+                        <div className="pt-1.5 border-t border-rose-200/60 dark:border-rose-900/40 flex items-center justify-between text-[11px] font-sans">
+                          <span className="text-slate-600 dark:text-slate-300 font-semibold">Recommended:</span>
+                          <span className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 font-bold text-rose-800 dark:text-rose-300 text-[10px]">
+                            301 Redirect
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-6 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-xs text-emerald-700 dark:text-emerald-400 text-center flex items-center justify-center gap-2">
+                    <CheckCircle2 size={16} />
+                    <span>No zero-traffic zombie pages detected in current crawl dataset.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Crawl Cross-Correlation Table (Audited Pages × GA4 Metrics) */}
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                      <BarChart3 size={16} className="text-orange-500" />
+                      Audited Crawl Pages × Live GA4 Traffic &amp; Human Engagement
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Correlates your crawled site structure with real visitor traffic, bounce rates, and engagement duration.
+                    </p>
+                  </div>
+
+                  <div className="relative w-full sm:w-72">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Filter by URL or title..."
+                      value={ga4PageSearch}
+                      onChange={(e) => setGa4PageSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:border-indigo-500 font-mono shadow-2xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Filter Chips */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar text-xs font-mono font-bold">
+                  <button
+                    onClick={() => setGa4PageFilter('all')}
+                    className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${
+                      ga4PageFilter === 'all'
+                        ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-2xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    All Pages ({correlatedGa4Pages.length})
+                  </button>
+                  <button
+                    onClick={() => setGa4PageFilter('traffic')}
+                    className={`px-3 py-1 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                      ga4PageFilter === 'traffic'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                    }`}
+                  >
+                    <span>Active Traffic ({correlatedGa4Pages.filter(p => p.sessions30d > 0).length})</span>
+                  </button>
+                  <button
+                    onClick={() => setGa4PageFilter('zombie')}
+                    className={`px-3 py-1 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                      ga4PageFilter === 'zombie'
+                        ? 'bg-rose-600 text-white shadow-2xs'
+                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                    }`}
+                  >
+                    <span>Zombie Content ({zombiePagesList.length})</span>
+                  </button>
+                  <button
+                    onClick={() => setGa4PageFilter('high_bounce')}
+                    className={`px-3 py-1 rounded-xl transition-all cursor-pointer ${
+                      ga4PageFilter === 'high_bounce'
+                        ? 'bg-amber-600 text-white shadow-2xs'
+                        : 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                    }`}
+                  >
+                    High Bounce Rate
+                  </button>
+                </div>
+
+                {/* Table */}
+                <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-xl custom-scrollbar max-h-96">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 font-mono font-bold">
+                        <th className="py-2.5 px-4">Audited Page</th>
+                        <th className="py-2.5 px-3 text-right">30d Sessions</th>
+                        <th className="py-2.5 px-3 text-right">90d Sessions</th>
+                        <th className="py-2.5 px-3 text-right">Bounce Rate</th>
+                        <th className="py-2.5 px-3 text-right">Avg Engagement</th>
+                        <th className="py-2.5 px-3">Content Health Status</th>
+                        <th className="py-2.5 px-3 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono text-xs">
+                      {filteredGa4Pages.length > 0 ? (
+                        filteredGa4Pages.map((p) => {
+                          const bounceNum = parseFloat(p.bounceRate);
+                          const isHighBounce = !isNaN(bounceNum) && bounceNum > 65;
+
+                          return (
+                            <tr key={p.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50 transition-colors">
+                              <td className="py-2.5 px-4 max-w-sm">
+                                <div className="font-bold text-slate-900 dark:text-white truncate font-sans text-xs">
+                                  {p.title}
+                                </div>
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1.5 font-mono">
+                                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                    p.statusCode >= 400 ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                  }`}>
+                                    {p.statusCode}
+                                  </span>
+                                  <span className="truncate">{p.url}</span>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-extrabold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                                {p.sessions30d.toLocaleString()}
+                              </td>
+                              <td className="py-2.5 px-3 text-right text-blue-700 dark:text-blue-400 font-semibold tabular-nums">
+                                {p.sessions90d.toLocaleString()}
+                              </td>
+                              <td className="py-2.5 px-3 text-right">
+                                <span className={`font-semibold tabular-nums ${
+                                  isHighBounce ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-700 dark:text-slate-300'
+                                }`}>
+                                  {p.bounceRate}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-right text-indigo-700 dark:text-indigo-400 font-semibold tabular-nums">
+                                {p.avgTime}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                {p.isZombie ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                    <AlertTriangle size={10} /> Zombie (Prune / 301)
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    <Check size={10} /> Active Traffic
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    onClick={() => handleCopyUrl(p.url)}
+                                    title="Copy URL"
+                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                  >
+                                    <Copy size={12} />
+                                  </button>
+                                  <a
+                                    href={p.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title="Open page in new tab"
+                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                  >
+                                    <ExternalLink size={12} />
+                                  </a>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={7} className="py-12 text-center font-sans">
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {pages.length === 0
+                                ? 'No crawl pages available yet. Run an audit to cross-correlate each page with Google Analytics.'
+                                : 'No audited pages matched the filter criteria.'}
+                            </p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </motion.div>
@@ -1292,8 +2139,16 @@ export default function IntegrationsWorkspace({
                 </div>
 
                 <div className="space-y-2">
-                  {synergyData?.canonical_mismatches && synergyData.canonical_mismatches.length > 0 ? (
-                    synergyData.canonical_mismatches.map((m, idx) => (
+                  {((synergyData?.canonical_mismatches && synergyData.canonical_mismatches.length > 0) || canonicalMismatchPages.length > 0) ? (
+                    (synergyData?.canonical_mismatches && synergyData.canonical_mismatches.length > 0
+                      ? synergyData.canonical_mismatches
+                      : canonicalMismatchPages.map(p => ({
+                          url: p.url,
+                          declared_canonical: p.declaredCanonical,
+                          google_selected_canonical: p.googleCanonical,
+                          action: 'Align self-referencing canonical tag to match Google preferred URL structure.'
+                        }))
+                    ).map((m, idx) => (
                       <div key={idx} className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div className="truncate max-w-md">
                           <div className="text-slate-900 dark:text-white font-bold truncate">{m.url}</div>
@@ -1311,6 +2166,123 @@ export default function IntegrationsWorkspace({
                       No canonical mismatch anomalies detected across audited crawl pages.
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* 3. Striking Distance Opportunities (Positions 11–20) */}
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Target size={16} className="text-amber-500" />
+                      Page 2 Striking Distance Jump (Rank 11–20)
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Pages ranking on Google Page 2 that require minimal on-page optimization to break into Page 1.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                    High ROI Quick Wins
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-xl">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 font-mono font-bold">
+                        <th className="py-2.5 px-4">Page URL</th>
+                        <th className="py-2.5 px-3 text-right">Current Position</th>
+                        <th className="py-2.5 px-3 text-right">Impressions</th>
+                        <th className="py-2.5 px-3 text-right">30d Clicks</th>
+                        <th className="py-2.5 px-4">High-Impact Growth Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono text-xs">
+                      {strikingDistancePages.length > 0 ? (
+                        strikingDistancePages.slice(0, 10).map((p, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50">
+                            <td className="py-2.5 px-4 max-w-sm">
+                              <div className="font-bold text-slate-900 dark:text-white truncate font-sans">{p.title}</div>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{p.url}</div>
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 tabular-nums">
+                                Rank #{p.position ? p.position.toFixed(1) : '15'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right text-purple-700 dark:text-purple-400 font-semibold tabular-nums">{p.impressions.toLocaleString()}</td>
+                            <td className="py-2.5 px-3 text-right font-extrabold text-blue-700 dark:text-blue-400 tabular-nums">{p.clicks.toLocaleString()}</td>
+                            <td className="py-2.5 px-4 font-sans text-xs text-slate-600 dark:text-slate-300">
+                              Add 2 internal links from top authority pages &amp; refresh H2 subheadings with target keywords.
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-slate-400 font-sans text-xs">
+                            No Page 2 ranking URLs detected in current crawl dataset.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* 4. Zombie Content Pruning List */}
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Trash2 size={16} className="text-rose-500" />
+                      Zombie Pages (0 Organic Sessions in 90 Days)
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Low-value pages consuming crawl equity without generating search traffic.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                    Crawl Budget Pruning
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-xl">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 font-mono font-bold">
+                        <th className="py-2.5 px-4">Zombie Page URL</th>
+                        <th className="py-2.5 px-3 text-right">Status Code</th>
+                        <th className="py-2.5 px-3 text-right">90d Sessions</th>
+                        <th className="py-2.5 px-4">Recommended SEO Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono text-xs">
+                      {((synergyData?.zombie_pages && synergyData.zombie_pages.length > 0) || zombiePagesList.length > 0) ? (
+                        (synergyData?.zombie_pages && synergyData.zombie_pages.length > 0
+                          ? synergyData.zombie_pages
+                          : zombiePagesList.map(p => ({
+                              url: p.url,
+                              status_code: p.statusCode,
+                              organic_sessions_90d: p.sessions90d,
+                              action: p.zombieAction
+                            }))
+                        ).slice(0, 10).map((z, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50">
+                            <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-white truncate max-w-sm">{z.url}</td>
+                            <td className="py-2.5 px-3 text-right font-bold tabular-nums text-slate-700 dark:text-slate-300">{z.status_code || 200}</td>
+                            <td className="py-2.5 px-3 text-right font-extrabold text-rose-600 dark:text-rose-400 tabular-nums">0</td>
+                            <td className="py-2.5 px-4 font-sans text-xs text-slate-600 dark:text-slate-300">{z.action}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={4} className="py-8 text-center text-slate-400 font-sans text-xs">
+                            No zombie pages detected. All crawled URLs have active traffic or index value.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </motion.div>

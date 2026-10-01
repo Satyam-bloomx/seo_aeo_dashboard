@@ -15,28 +15,47 @@ load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 if api_key and api_key != "your_key_here":
     genai.configure(api_key=api_key)
-    model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
     model = genai.GenerativeModel(model_name)
-    fallback_model = genai.GenerativeModel("gemini-2.5-flash-lite")
+    fallback_model = genai.GenerativeModel("gemini-3.5-flash-lite")
 else:
     model = None
     fallback_model = None
 
-async def generate_with_fallback(prompt: str):
-    """Attempts to generate content with primary model, falls back if it errors."""
-    try:
-        return await model.generate_content_async(prompt)
-    except Exception as e:
-        print(f"Primary model failed ({e}), falling back to gemini-2.5-flash-lite")
-        return await fallback_model.generate_content_async(prompt)
+def get_gemini_models(custom_key: str = None):
+    global model, fallback_model
+    k = custom_key or os.getenv("GEMINI_API_KEY")
+    if k and k != "your_key_here":
+        try:
+            genai.configure(api_key=k)
+            m_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+            m = genai.GenerativeModel(m_name)
+            fb = genai.GenerativeModel("gemini-3.5-flash-lite")
+            return m, fb
+        except Exception as e:
+            print(f"Gemini init error: {e}")
+    return model, fallback_model
 
-async def check_brand_with_gemini(url: str, raw_html: str = None):
+async def generate_with_fallback(prompt: str, m=None, fb=None):
+    """Attempts to generate content with primary model, falls back if it errors."""
+    target_m = m or model
+    target_fb = fb or fallback_model
+    try:
+        return await target_m.generate_content_async(prompt)
+    except Exception as e:
+        print(f"Primary model failed ({e}), falling back to gemini-3.5-flash-lite")
+        if target_fb:
+            return await target_fb.generate_content_async(prompt)
+        raise
+
+async def check_brand_with_gemini(url: str, raw_html: str = None, api_key_override: str = None):
     """
     Tests Generative Engine Optimization by using a two-step AI prompt.
     1. Extracts context (Brand Name, Target Query) from the page HTML.
     2. Simulates an AI search for that query to see if the brand is cited.
     """
-    if not model:
+    active_m, active_fb = get_gemini_models(api_key_override)
+    if not active_m:
         return {
             "status": "skipped",
             "message": "Gemini API key not configured or invalid.",
