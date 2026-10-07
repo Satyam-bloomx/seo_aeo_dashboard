@@ -62,6 +62,11 @@ class GoogleOAuthAppRequest(BaseModel):
     client_secret: str
     property_id: Optional[str] = None
 
+class LinkGoogleAccountRequest(BaseModel):
+    project_id: int = 1
+    service: str = "google_business"
+
+
 SUPPORTED_SERVICES = [
     "pagespeed",
     "gemini",
@@ -1074,34 +1079,55 @@ async def test_connection(
 
     # 5. Google Business Profile / Places test
     elif service == "google_business":
-        if not api_key:
-            return {"success": False, "status": "error", "detail": "Missing Google Places API key"}
-        try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                res = await client.get(
-                    "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
-                    params={"input": "Google", "inputtype": "textquery", "fields": "place_id", "key": api_key.strip()}
-                )
-                latency = round((time.time() - start_time) * 1000, 1)
-                data = res.json()
-                if data.get("status") in ["OK", "ZERO_RESULTS"]:
-                    return {
-                        "success": True, 
-                        "status": "ok", 
-                        "message": f"Google Places & Business API verified! ({latency}ms).", 
-                        "latency_ms": latency
-                    }
-                elif data.get("status") == "REQUEST_DENIED":
-                    err_msg = data.get("error_message", "Google Places API request denied")
-                    return {
-                        "success": False, 
-                        "status": "error", 
-                        "detail": f"Google Places API Request Denied: {err_msg}. Ensure 'Places API' is enabled in your Google Cloud Project."
-                    }
-                else:
-                    return {"success": False, "status": "error", "detail": f"Google Places API returned status {data.get('status')}: {data.get('error_message', '')}"}
-        except Exception as e:
-            return {"success": False, "status": "error", "detail": f"Google Places connection error: {str(e)}"}
+        target_res = await db.execute(select(Integration).where(
+            Integration.project_id == project_id,
+            Integration.integration_type == "google_business"
+        ))
+
+        gbp_int = target_res.scalars().first()
+        linked_account = None
+        if gbp_int and gbp_int.config_json:
+            linked_account = gbp_int.config_json.get("account_email")
+
+        if api_key and api_key.startswith("AIza"):
+            try:
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    res = await client.get(
+                        "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+                        params={"input": "Google", "inputtype": "textquery", "fields": "place_id", "key": api_key.strip()}
+                    )
+                    latency = round((time.time() - start_time) * 1000, 1)
+                    data = res.json()
+                    if data.get("status") in ["OK", "ZERO_RESULTS"]:
+                        return {
+                            "success": True, 
+                            "status": "ok", 
+                            "message": f"Google Places & Business API verified! ({latency}ms).", 
+                            "latency_ms": latency
+                        }
+                    elif data.get("status") == "REQUEST_DENIED":
+                        err_msg = data.get("error_message", "Google Places API request denied")
+                        return {
+                            "success": False, 
+                            "status": "error", 
+                            "detail": f"Google Places API Request Denied: {err_msg}. Ensure 'Places API' is enabled in your Google Cloud Project."
+                        }
+                    else:
+                        return {"success": False, "status": "error", "detail": f"Google Places API returned status {data.get('status')}: {data.get('error_message', '')}"}
+            except Exception as e:
+                return {"success": False, "status": "error", "detail": f"Google Places connection error: {str(e)}"}
+
+        if linked_account or (gbp_int and gbp_int.connected):
+            latency = round((time.time() - start_time) * 1000, 1)
+            return {
+                "success": True,
+                "status": "ok",
+                "message": f"Google Business Profile verified & connected to {linked_account or 'Google Account'}! ({latency}ms)",
+                "latency_ms": latency
+            }
+
+        return {"success": False, "status": "error", "detail": "Missing Google Places API key or authenticated Google Account"}
+
 
     # 6. Google Search Console test (CRITICAL)
     elif service == "search_console":
@@ -1415,16 +1441,20 @@ async def get_google_oauth_credentials(
         has_secret = bool(integration.config_json.get("client_secret"))
         
     # Check sibling Google service if current service does not have custom credentials
-    if not custom_client_id and service in ["search_console", "google_analytics"]:
-        sibling = "search_console" if service == "google_analytics" else "google_analytics"
-        sib_res = await db.execute(select(Integration).where(
-            Integration.project_id == target_project_id,
-            Integration.integration_type == sibling
-        ))
-        sib_row = sib_res.scalars().first()
-        if sib_row and sib_row.config_json and isinstance(sib_row.config_json, dict):
-            custom_client_id = sib_row.config_json.get("client_id", "")
-            has_secret = bool(sib_row.config_json.get("client_secret"))
+    if not custom_client_id and service in ["search_console", "google_analytics", "google_business"]:
+        for sibling in ["search_console", "google_analytics", "google_business"]:
+            if sibling == service:
+                continue
+            sib_res = await db.execute(select(Integration).where(
+                Integration.project_id == target_project_id,
+                Integration.integration_type == sibling
+            ))
+            sib_row = sib_res.scalars().first()
+            if sib_row and sib_row.config_json and isinstance(sib_row.config_json, dict):
+                custom_client_id = sib_row.config_json.get("client_id", "")
+                has_secret = bool(sib_row.config_json.get("client_secret"))
+                if custom_client_id:
+                    break
 
     env_client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
     env_has_secret = bool(os.environ.get("GOOGLE_CLIENT_SECRET", "").strip())
@@ -1463,15 +1493,19 @@ async def google_auth_redirect(
         custom_client_id = integration.config_json.get("client_id")
         
     # Check sibling Google service fallback
-    if not custom_client_id and service in ["search_console", "google_analytics"]:
-        sibling = "search_console" if service == "google_analytics" else "google_analytics"
-        sib_res = await db.execute(select(Integration).where(
-            Integration.project_id == target_project_id,
-            Integration.integration_type == sibling
-        ))
-        sib_row = sib_res.scalars().first()
-        if sib_row and sib_row.config_json and isinstance(sib_row.config_json, dict):
-            custom_client_id = sib_row.config_json.get("client_id")
+    if not custom_client_id and service in ["search_console", "google_analytics", "google_business"]:
+        for sibling in ["search_console", "google_analytics", "google_business"]:
+            if sibling == service:
+                continue
+            sib_res = await db.execute(select(Integration).where(
+                Integration.project_id == target_project_id,
+                Integration.integration_type == sibling
+            ))
+            sib_row = sib_res.scalars().first()
+            if sib_row and sib_row.config_json and isinstance(sib_row.config_json, dict):
+                custom_client_id = sib_row.config_json.get("client_id")
+                if custom_client_id:
+                    break
 
     google_client_id = (custom_client_id or os.environ.get("GOOGLE_CLIENT_ID", "")).strip().strip('"\'')
     origin = request.headers.get("origin") or ""
@@ -1492,11 +1526,13 @@ async def google_auth_redirect(
     
     if google_client_id:
         from urllib.parse import urlencode
-        scope = (
-            "https://www.googleapis.com/auth/webmasters.readonly openid email profile"
-            if service == "search_console"
-            else "https://www.googleapis.com/auth/analytics.readonly openid email profile"
-        )
+        if service == "search_console":
+            scope = "https://www.googleapis.com/auth/webmasters.readonly openid email profile"
+        elif service == "google_analytics":
+            scope = "https://www.googleapis.com/auth/analytics.readonly openid email profile"
+        else:
+            scope = "https://www.googleapis.com/auth/business.manage openid email profile"
+
         params = {
             "client_id": google_client_id,
             "redirect_uri": frontend_callback,
@@ -1516,6 +1552,76 @@ async def google_auth_redirect(
             "status": "missing_credentials",
             "message": "Google Cloud OAuth credentials not configured. Please enter your Google Client ID & Secret in the modal."
         }
+
+
+@router.post("/google/link-account")
+async def link_google_account(
+    req: LinkGoogleAccountRequest,
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    """
+    Seamlessly links a Google service (e.g. Google Business Profile) with the project's
+    already authenticated Google account from GA4 or Search Console.
+    """
+    target_project_id = req.project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
+    # Find connected sibling Google service
+    sib_res = await db.execute(
+        select(Integration).where(
+            Integration.project_id == target_project_id,
+            Integration.integration_type.in_(["google_analytics", "search_console"]),
+            Integration.connected == True
+        )
+    )
+    sibling = sib_res.scalars().first()
+    if not sibling:
+        raise HTTPException(
+            status_code=400,
+            detail="No connected Google account found in this project. Please connect Google Analytics or Search Console first."
+        )
+
+    target_res = await db.execute(
+        select(Integration).where(
+            Integration.project_id == target_project_id,
+            Integration.integration_type == req.service
+        )
+    )
+    target_int = target_res.scalars().first()
+    if not target_int:
+        target_int = Integration(
+            project_id=target_project_id,
+            integration_type=req.service
+        )
+        db.add(target_int)
+
+    target_int.connected = True
+    target_int.access_token = sibling.access_token
+    target_int.refresh_token = sibling.refresh_token
+    target_int.expires_at = sibling.expires_at
+    if sibling.user_id:
+        target_int.user_id = sibling.user_id
+
+
+    sib_cfg = sibling.config_json or {}
+    t_cfg = dict(target_int.config_json or {})
+    account_email = sib_cfg.get("account_email") or "Authenticated Google Account"
+    t_cfg["account_email"] = account_email
+    t_cfg["linked_from"] = sibling.integration_type
+    t_cfg.pop("last_auth_error", None)
+    target_int.config_json = t_cfg
+    flag_modified(target_int, "config_json")
+    await db.commit()
+
+    return {
+        "status": "success",
+        "connected": True,
+        "message": f"{req.service.replace('_', ' ').title()} successfully linked with {account_email}!",
+        "account_email": account_email
+    }
+
 
 @router.post("/google/callback")
 async def google_auth_callback(
@@ -1562,18 +1668,23 @@ async def google_auth_callback(
             custom_client_secret = integration.config_json.get("client_secret")
             
         # Sibling Google service credentials fallback
-        if (not custom_client_id or not custom_client_secret) and service in ["search_console", "google_analytics"]:
-            sibling = "search_console" if service == "google_analytics" else "google_analytics"
-            sib_res = await db.execute(select(Integration).where(
-                Integration.project_id == target_project_id,
-                Integration.integration_type == sibling
-            ))
-            sib_row = sib_res.scalars().first()
-            if sib_row and sib_row.config_json and isinstance(sib_row.config_json, dict):
-                if not custom_client_id:
-                    custom_client_id = sib_row.config_json.get("client_id")
-                if not custom_client_secret:
-                    custom_client_secret = sib_row.config_json.get("client_secret")
+        if (not custom_client_id or not custom_client_secret) and service in ["search_console", "google_analytics", "google_business"]:
+            for sibling in ["search_console", "google_analytics", "google_business"]:
+                if sibling == service:
+                    continue
+                sib_res = await db.execute(select(Integration).where(
+                    Integration.project_id == target_project_id,
+                    Integration.integration_type == sibling
+                ))
+                sib_row = sib_res.scalars().first()
+                if sib_row and sib_row.config_json and isinstance(sib_row.config_json, dict):
+                    if not custom_client_id:
+                        custom_client_id = sib_row.config_json.get("client_id")
+                    if not custom_client_secret:
+                        custom_client_secret = sib_row.config_json.get("client_secret")
+                    if custom_client_id and custom_client_secret:
+                        break
+
 
         google_client_id = (custom_client_id or os.environ.get("GOOGLE_CLIENT_ID", "")).strip().strip('"\'')
         google_client_secret = (custom_client_secret or os.environ.get("GOOGLE_CLIENT_SECRET", "")).strip().strip('"\'')

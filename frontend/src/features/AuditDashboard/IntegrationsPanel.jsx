@@ -105,10 +105,11 @@ const API_INTEGRATIONS = [
     category: 'GEO Local Search',
     categoryColor: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900/50',
     description: 'Verifies Name-Address-Phone (NAP) consistency, Google Maps location accuracy, and local business schema synchronization.',
-    authType: 'api_key',
+    authType: 'oauth',
     icon: <MapPin className="text-rose-600" size={24} />,
     docUrl: 'https://developers.google.com/my-business',
     placeholder: 'Google Places API Key'
+
   },
   {
     id: 'google_analytics',
@@ -378,6 +379,13 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
     const cleanId = propId.trim().startsWith('properties/') ? propId.trim() : `properties/${propId.trim()}`;
     setSelectedGa4Property(cleanId);
     setManualGa4PropertyId(cleanId.replace(/^properties\//, ''));
+    setIntegrations(prev => ({
+      ...prev,
+      google_analytics: {
+        ...(prev.google_analytics || {}),
+        selected_property: cleanId
+      }
+    }));
     setIsSavingGa4Property(true);
     try {
       await axios.post(`${API_BASE_URL}/integrations/google/select-property`, {
@@ -388,7 +396,6 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       toast.success('GA4 Property Saved & Synchronized', {
         description: `Active Property: ${cleanId}`
       });
-      fetchStatus();
     } catch (e) {
       toast.error('Failed to save selected GA4 property');
     } finally {
@@ -401,6 +408,13 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
     const cleanUrl = propertyUrl.trim();
     setSelectedGscProperty(cleanUrl);
     setManualGscProperty(cleanUrl);
+    setIntegrations(prev => ({
+      ...prev,
+      search_console: {
+        ...(prev.search_console || {}),
+        selected_property: cleanUrl
+      }
+    }));
     setIsSavingGscProperty(true);
     try {
       await axios.post(`${API_BASE_URL}/integrations/google/select-property`, {
@@ -411,13 +425,28 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       toast.success('GSC Property Saved & Synchronized', {
         description: `Targeting property: ${cleanUrl}`
       });
-      fetchStatus();
     } catch (e) {
       toast.error('Failed to save selected property');
     } finally {
       setIsSavingGscProperty(false);
     }
   };
+
+  const handleLinkGoogleAccount = async (targetService = 'google_business') => {
+    try {
+      const res = await axios.post(`${API_BASE_URL}/integrations/google/link-account`, {
+        project_id: projectId,
+        service: targetService
+      });
+      if (res.data?.status === 'success') {
+        toast.success(res.data.message || 'Linked with Google Account!');
+        fetchStatus();
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to link Google account');
+    }
+  };
+
 
   const handleSelectModel = async (serviceId, modelId) => {
     if (!modelId) return;
@@ -837,9 +866,8 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
             <motion.div
               key={item.id}
               variants={staggerItem}
-              whileHover={{ y: -2 }}
-              transition={spring.press}
-              className={`p-5 rounded-2xl transition-all border flex flex-col justify-between ${
+              className={`p-5 rounded-2xl border flex flex-col justify-between relative transition-colors duration-150 focus-within:z-30 hover:z-20 hover:shadow-md ${
+
                 hasError && !isConnected
                   ? 'bg-white dark:bg-slate-900/90 border-rose-400 dark:border-rose-600/80 shadow-xs ring-2 ring-rose-500/20'
                   : hasNoProperties
@@ -1238,12 +1266,18 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         onChange={(e) => handleSelectGa4Property(e.target.value)}
                         className="w-full text-xs font-mono bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500/20 shadow-2xs"
                       >
-                        <option value="">-- Choose GA4 Property --</option>
-                        {ga4Properties.map((p) => (
-                          <option key={p.name || p.propertyId} value={p.name || `properties/${p.propertyId}`}>
-                            {p.displayName || p.name} ({p.propertyId || p.name})
-                          </option>
-                        ))}
+                        {ga4Properties.map((p) => {
+                          const val = p.name || `properties/${p.propertyId}`;
+                          const cleanId = String(p.propertyId || p.name || '').replace(/^properties\//, '');
+                          const rawName = p.displayName || p.name || `Property ${cleanId}`;
+                          const label = cleanId && !rawName.includes(cleanId) ? `${rawName} (${cleanId})` : rawName;
+                          return (
+                            <option key={val} value={val}>
+                              {label}
+                            </option>
+                          );
+                        })}
+
                       </select>
                     ) : (
                       <div className="space-y-1.5">
@@ -1434,7 +1468,51 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                   </>
                 ) : (
                   <>
-                    {item.authType === 'api_key' ? (
+                    {item.id === 'google_business' ? (
+                      <div className="w-full space-y-2">
+                        {Boolean(integrations['google_analytics']?.account_email || integrations['search_console']?.account_email) ? (
+                          <div className="flex flex-col sm:flex-row items-center gap-2">
+                            <motion.button
+                              onClick={() => handleLinkGoogleAccount('google_business')}
+                              whileTap={tapPress}
+                              transition={spring.press}
+                              className="w-full flex-1 btn-primary py-2 text-xs font-bold gap-2 shadow-xs cursor-pointer justify-center"
+                              title="Instantly link with your connected Google account"
+                            >
+                              <Globe size={14} /> Link with {integrations['google_analytics']?.account_email || integrations['search_console']?.account_email}
+                            </motion.button>
+                            <motion.button
+                              onClick={() => setActiveModal(item)}
+                              whileTap={tapPress}
+                              transition={spring.press}
+                              className="w-full sm:w-auto btn-secondary py-2 px-3 text-xs font-bold gap-1.5 shadow-2xs text-slate-700 dark:text-slate-200 justify-center"
+                              title="Configure Places API Key"
+                            >
+                              <Key size={13} /> Places API Key
+                            </motion.button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <motion.button
+                              onClick={() => handleOAuthConnect(item.id)}
+                              whileTap={tapPress}
+                              transition={spring.press}
+                              className="flex-1 btn-primary py-2 text-xs font-bold gap-2 shadow-xs cursor-pointer"
+                            >
+                              <Globe size={14} /> Connect with Google
+                            </motion.button>
+                            <motion.button
+                              onClick={() => setActiveModal(item)}
+                              whileTap={tapPress}
+                              transition={spring.press}
+                              className="btn-secondary py-2 px-3 text-xs font-bold gap-1.5 shadow-2xs text-slate-700 dark:text-slate-200"
+                            >
+                              <Key size={13} /> API Key
+                            </motion.button>
+                          </div>
+                        )}
+                      </div>
+                    ) : item.authType === 'api_key' ? (
                       <motion.button
                         onClick={() => setActiveModal(item)}
                         whileTap={tapPress}
@@ -1444,6 +1522,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         <Key size={14} /> Configure API Key
                       </motion.button>
                     ) : (
+
                       <div className="w-full space-y-2">
                         {hasConfiguredApp && !hasError && (
                           <div className="p-2.5 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-900/50 space-y-1 text-[11px] text-indigo-900 dark:text-indigo-200">

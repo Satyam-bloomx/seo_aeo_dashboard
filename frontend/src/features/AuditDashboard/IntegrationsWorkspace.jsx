@@ -841,7 +841,7 @@ export default function IntegrationsWorkspace({
 
           {/* Connect Action Button */}
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-sm">
-            {selectedService === 'search_console' || selectedService === 'google_analytics' ? (
+            {selectedService === 'search_console' || selectedService === 'google_analytics' || selectedService === 'google_business' ? (
               <button
                 onClick={() => {
                   if (onOAuthConnect) onOAuthConnect(selectedService);
@@ -853,6 +853,7 @@ export default function IntegrationsWorkspace({
                 Connect with Google OAuth
               </button>
             ) : (
+
               <button
                 onClick={() => {
                   if (onOpenModal) onOpenModal({ id: selectedService, name: activeServiceObj.name, authType: 'api_key' });
