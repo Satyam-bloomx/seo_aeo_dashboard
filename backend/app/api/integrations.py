@@ -1935,6 +1935,36 @@ async def get_audit_synergy(
         raise HTTPException(status_code=500, detail=f"Failed to generate synergy report: {str(e)}")
 
 
+@router.post("/ai-analytics-insights/{project_id}")
+@router.get("/ai-analytics-insights/{project_id}")
+async def get_ai_analytics_insights(
+    project_id: int,
+    crawl_id: Optional[int] = None,
+    domain: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    user: Optional[UserSession] = Depends(get_optional_user)
+):
+    """
+    Synthesizes GA4 + GSC cross-correlated telemetry into an actionable
+    SEO, AEO (Answer Engine Optimization) & GEO strategic diagnostic report.
+    Token-optimized (~1,100 input / ~500 output tokens) with caching.
+    """
+    target_project_id = project_id
+    if user:
+        target_project_id = await get_or_create_user_project(db, user.id)
+
+    try:
+        insights = await IntelligenceService.generate_ai_analytics_strategy(
+            db=db,
+            project_id=target_project_id,
+            crawl_id=crawl_id,
+            domain=domain
+        )
+        return insights
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate AI analytics insights: {str(e)}")
+
+
 @router.get("/google/properties/{project_id}")
 async def get_google_properties(
     project_id: int,
