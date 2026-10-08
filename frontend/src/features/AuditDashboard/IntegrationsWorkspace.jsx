@@ -351,6 +351,9 @@ export default function IntegrationsWorkspace({
   const isCurrentConnected = useMemo(() => {
     if (selectedService === 'synergy') return true;
     const statusObj = integrationsStatus[selectedService];
+    if (selectedService === 'google_business') {
+      return Boolean(statusObj?.connected && (statusObj?.has_key || statusObj?.has_telemetry));
+    }
     return Boolean(statusObj?.connected || statusObj?.selected_property || statusObj?.has_telemetry);
   }, [selectedService, integrationsStatus]);
 
@@ -855,7 +858,7 @@ export default function IntegrationsWorkspace({
 
           {/* Connect Action Button */}
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-sm">
-            {selectedService === 'search_console' || selectedService === 'google_analytics' || selectedService === 'google_business' ? (
+            {selectedService === 'search_console' || selectedService === 'google_analytics' ? (
               <button
                 onClick={() => {
                   if (onOAuthConnect) onOAuthConnect(selectedService);
@@ -867,26 +870,34 @@ export default function IntegrationsWorkspace({
                 Connect with Google OAuth
               </button>
             ) : (
-
               <button
                 onClick={() => {
-                  if (onOpenModal) onOpenModal({ id: selectedService, name: activeServiceObj.name, authType: 'api_key' });
+                  if (onOpenModal) onOpenModal({ 
+                    id: selectedService, 
+                    name: activeServiceObj.name, 
+                    authType: 'api_key',
+                    placeholder: selectedService === 'google_business' ? 'AIzaSy... (Google Places API Key)' : undefined
+                  });
                 }}
                 className="w-full btn-primary py-3 px-5 text-xs font-bold gap-2 shadow-md cursor-pointer justify-center"
               >
                 <Key size={15} />
-                Configure API Key
+                {selectedService === 'google_business' ? 'Configure Places API Key' : 'Configure API Key'}
               </button>
             )}
 
             <button
               onClick={() => {
-                if (onOpenModal) onOpenModal({ id: selectedService, name: activeServiceObj.name, authType: 'oauth' });
+                if (onOpenModal) onOpenModal({ 
+                  id: selectedService, 
+                  name: activeServiceObj.name, 
+                  authType: (selectedService === 'search_console' || selectedService === 'google_analytics') ? 'oauth' : 'api_key'
+                });
               }}
               className="w-full btn-secondary py-3 px-4 text-xs font-bold gap-2 shadow-xs cursor-pointer justify-center text-slate-700 dark:text-slate-200"
             >
               <Sliders size={14} />
-              Setup Guide &amp; Keys
+              Setup Guide & Keys
             </button>
           </div>
         </motion.div>

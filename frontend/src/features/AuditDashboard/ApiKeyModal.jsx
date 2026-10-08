@@ -69,6 +69,31 @@ const GUIDES = {
       }
     ]
   },
+  google_business: {
+    docUrl: 'https://developers.google.com/maps/documentation/places/web-service/get-api-key',
+    title: 'Google Places / Business Profile API Setup Guide',
+    steps: [
+      {
+        step: 1,
+        title: 'Open Google Cloud Console Places API',
+        desc: 'Go to Google Cloud Console APIs & Services and ensure "Places API" is enabled for your project.',
+        link: 'https://console.cloud.google.com/apis/library/places-backend.googleapis.com',
+        linkLabel: 'Enable Places API in Google Cloud'
+      },
+      {
+        step: 2,
+        title: 'Create or Locate Your API Key',
+        desc: 'Go to Credentials in Google Cloud Console, click "+ Create Credentials" > "API key", and copy your key (starts with "AIzaSy...").',
+        link: 'https://console.cloud.google.com/apis/credentials',
+        linkLabel: 'Open Google Cloud Credentials'
+      },
+      {
+        step: 3,
+        title: 'Paste, Test Connection & Save',
+        desc: 'Paste your Places API Key below, click "Test Connection" to verify NAP location data, and click "Connect & Save".'
+      }
+    ]
+  },
   gemini: {
     docUrl: 'https://aistudio.google.com/app/apikey',
     title: 'Google Gemini (AI Studio) Setup',

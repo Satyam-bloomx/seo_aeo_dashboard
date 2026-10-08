@@ -304,6 +304,24 @@ async def get_integration_status(
                 connected = False
                 has_key = bool(raw_key) if not is_invalid_aiza else False
 
+            # Strict verification for google_business:
+            # Google Business Profile / Places API strictly requires a valid Places API key (starts with AIza)
+            # or verified live data with a real business name.
+            # Stale OAuth tokens (ya29...) or unverified linked records MUST NOT be reported as connected.
+            if svc == "google_business":
+                has_valid_places_key = bool(raw_key and raw_key.strip().startswith("AIza"))
+                has_real_gbp_data = bool(isinstance(data_obj, dict) and data_obj.get("business_name") and data_obj.get("status") not in [None, "NOT_CONNECTED", "Unverified", "NO_LOCATIONS"])
+                if not (has_valid_places_key or has_real_gbp_data):
+                    connected = False
+                    has_key = False
+                    if item.connected:
+                        try:
+                            item.connected = False
+                            flag_modified(item, "connected")
+                            await db.commit()
+                        except Exception:
+                            pass
+
             if not account_email and raw_key and raw_key.startswith("{"):
                 try:
                     sa_data = json.loads(raw_key)
@@ -314,8 +332,8 @@ async def get_integration_status(
         has_configured_app = False
         if item and isinstance(item.config_json, dict):
             has_configured_app = bool(item.config_json.get("client_id"))
-        if not has_configured_app and svc in ["search_console", "google_analytics", "google_business"]:
-            for sib_svc in ["search_console", "google_analytics", "google_business"]:
+        if not has_configured_app and svc in ["search_console", "google_analytics"]:
+            for sib_svc in ["search_console", "google_analytics"]:
                 if sib_svc != svc:
                     sib_item = integrations.get(sib_svc)
                     if sib_item and isinstance(sib_item.config_json, dict) and sib_item.config_json.get("client_id"):
@@ -1104,16 +1122,14 @@ async def test_connection(
         ))
 
         gbp_int = target_res.scalars().first()
-        linked_account = None
-        if gbp_int and gbp_int.config_json:
-            linked_account = gbp_int.config_json.get("account_email")
+        active_key = (api_key or (gbp_int.api_key if gbp_int else None) or "").strip()
 
-        if api_key and api_key.startswith("AIza"):
+        if active_key and active_key.startswith("AIza"):
             try:
                 async with httpx.AsyncClient(timeout=8.0) as client:
                     res = await client.get(
                         "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
-                        params={"input": "Google", "inputtype": "textquery", "fields": "place_id", "key": api_key.strip()}
+                        params={"input": "Google", "inputtype": "textquery", "fields": "place_id", "key": active_key}
                     )
                     latency = round((time.time() - start_time) * 1000, 1)
                     data = res.json()
@@ -1136,16 +1152,7 @@ async def test_connection(
             except Exception as e:
                 return {"success": False, "status": "error", "detail": f"Google Places connection error: {str(e)}"}
 
-        if linked_account or (gbp_int and gbp_int.connected):
-            latency = round((time.time() - start_time) * 1000, 1)
-            return {
-                "success": True,
-                "status": "ok",
-                "message": f"Google Business Profile verified & connected to {linked_account or 'Google Account'}! ({latency}ms)",
-                "latency_ms": latency
-            }
-
-        return {"success": False, "status": "error", "detail": "Missing Google Places API key or authenticated Google Account"}
+        return {"success": False, "status": "error", "detail": "Missing Google Places API key. Please configure a Places API key (starts with AIza) from Google Cloud Console."}
 
 
     # 6. Google Search Console test (CRITICAL)
@@ -1616,13 +1623,16 @@ async def link_google_account(
         )
         db.add(target_int)
 
-    target_int.connected = True
+    is_gbp = (req.service == "google_business")
+    has_valid_places_key = bool(target_int.api_key and target_int.api_key.startswith("AIza"))
+
+    # Only mark connected for google_business if it actually possesses a valid Places API key
+    target_int.connected = True if (not is_gbp or has_valid_places_key) else False
     target_int.access_token = sibling.access_token
     target_int.refresh_token = sibling.refresh_token
     target_int.expires_at = sibling.expires_at
     if sibling.user_id:
         target_int.user_id = sibling.user_id
-
 
     sib_cfg = sibling.config_json or {}
     t_cfg = dict(target_int.config_json or {})
@@ -1633,6 +1643,14 @@ async def link_google_account(
     target_int.config_json = t_cfg
     flag_modified(target_int, "config_json")
     await db.commit()
+
+    if is_gbp and not has_valid_places_key:
+        return {
+            "status": "pending_key",
+            "connected": False,
+            "message": f"Associated with {account_email}. Please configure your Google Places API Key to activate live Maps & Business Profile data.",
+            "account_email": account_email
+        }
 
     return {
         "status": "success",

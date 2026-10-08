@@ -105,12 +105,11 @@ const API_INTEGRATIONS = [
     name: 'Google Business Profile',
     category: 'GEO Local Search',
     categoryColor: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900/50',
-    description: 'Verifies Name-Address-Phone (NAP) consistency, Google Maps location accuracy, and local business schema synchronization.',
-    authType: 'oauth',
+    description: 'Verifies Name-Address-Phone (NAP) consistency, Google Maps location accuracy, and local business schema synchronization via Google Places API.',
+    authType: 'api_key',
     icon: <MapPin className="text-rose-600" size={24} />,
-    docUrl: 'https://developers.google.com/my-business',
-    placeholder: 'Google Places API Key'
-
+    docUrl: 'https://developers.google.com/maps/documentation/places/web-service',
+    placeholder: 'AIzaSy... (Google Places API Key)'
   },
   {
     id: 'google_analytics',
@@ -1486,58 +1485,14 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                   </>
                 ) : (
                   <>
-                    {item.id === 'google_business' ? (
-                      <div className="w-full space-y-2">
-                        {Boolean(integrations['google_analytics']?.account_email || integrations['search_console']?.account_email) ? (
-                          <div className="flex flex-col sm:flex-row items-center gap-2">
-                            <motion.button
-                              onClick={() => handleLinkGoogleAccount('google_business')}
-                              whileTap={tapPress}
-                              transition={spring.press}
-                              className="w-full flex-1 btn-primary py-2 text-xs font-bold gap-2 shadow-xs cursor-pointer justify-center"
-                              title="Instantly link with your connected Google account"
-                            >
-                              <Globe size={14} /> Link with {integrations['google_analytics']?.account_email || integrations['search_console']?.account_email}
-                            </motion.button>
-                            <motion.button
-                              onClick={() => setActiveModal(item)}
-                              whileTap={tapPress}
-                              transition={spring.press}
-                              className="w-full sm:w-auto btn-secondary py-2 px-3 text-xs font-bold gap-1.5 shadow-2xs text-slate-700 dark:text-slate-200 justify-center"
-                              title="Configure Places API Key"
-                            >
-                              <Key size={13} /> Places API Key
-                            </motion.button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <motion.button
-                              onClick={() => handleOAuthConnect(item.id)}
-                              whileTap={tapPress}
-                              transition={spring.press}
-                              className="flex-1 btn-primary py-2 text-xs font-bold gap-2 shadow-xs cursor-pointer"
-                            >
-                              <Globe size={14} /> Connect with Google
-                            </motion.button>
-                            <motion.button
-                              onClick={() => setActiveModal(item)}
-                              whileTap={tapPress}
-                              transition={spring.press}
-                              className="btn-secondary py-2 px-3 text-xs font-bold gap-1.5 shadow-2xs text-slate-700 dark:text-slate-200"
-                            >
-                              <Key size={13} /> API Key
-                            </motion.button>
-                          </div>
-                        )}
-                      </div>
-                    ) : item.authType === 'api_key' ? (
+                    {item.authType === 'api_key' ? (
                       <motion.button
                         onClick={() => setActiveModal(item)}
                         whileTap={tapPress}
                         transition={spring.press}
                         className="w-full btn-primary py-2 text-xs font-bold gap-2 shadow-xs cursor-pointer"
                       >
-                        <Key size={14} /> Configure API Key
+                        <Key size={14} /> {item.id === 'google_business' ? 'Configure Places API Key' : 'Configure API Key'}
                       </motion.button>
                     ) : (
 

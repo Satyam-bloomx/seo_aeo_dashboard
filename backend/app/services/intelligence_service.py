@@ -77,10 +77,43 @@ class IntelligenceService:
                 "message": f"{service} is not currently connected."
             }
 
+        # Strict verification for Google Business Profile (requires Google Places API key)
+        if service == "google_business":
+            gbp_key = (
+                (integration.api_key if integration else None) or
+                os.getenv("GOOGLE_PLACES_API_KEY") or
+                os.getenv("GOOGLE_MAPS_API_KEY") or
+                ""
+            ).strip()
+            if not (gbp_key.startswith("AIza") and len(gbp_key) > 20):
+                # Self-heal stale connected flag if no valid Places key exists
+                if integration and integration.connected:
+                    integration.connected = False
+                    await db.commit()
+                return {
+                    "service": service,
+                    "connected": False,
+                    "data": None,
+                    "message": "Google Business Profile is not connected. Please configure a valid Google Places API key (starts with 'AIza')."
+                }
+
         # If data already exists in database, return it immediately (sub-10ms response)
         if integration.config_json and "data" in integration.config_json and integration.config_json.get("data"):
             data_val = integration.config_json.get("data")
-            if isinstance(data_val, dict) and data_val.get("summary") and data_val.get("summary", {}).get("total_sessions", 0) > 0:
+            is_valid_cache = False
+            if isinstance(data_val, dict):
+                if service == "google_analytics":
+                    is_valid_cache = data_val.get("summary", {}).get("total_sessions", 0) > 0 or data_val.get("status") == "connected"
+                elif service == "google_business":
+                    is_valid_cache = bool(data_val.get("business_name")) and data_val.get("status") not in ["NOT_CONNECTED", "ERROR"]
+                elif service == "search_console":
+                    is_valid_cache = ("total_clicks" in data_val or "queries" in data_val) and data_val.get("status") != "NOT_CONNECTED"
+                elif service == "pagespeed":
+                    is_valid_cache = bool(data_val.get("performance_score") or data_val.get("metrics"))
+                else:
+                    is_valid_cache = data_val.get("status") not in ["NOT_CONNECTED", "ERROR"]
+
+            if is_valid_cache:
                 return {
                     "service": service,
                     "connected": True,
@@ -104,27 +137,42 @@ class IntelligenceService:
             )
         )
         integration = result.scalars().first()
-        is_conn = bool(
-            integration and (
-                integration.connected or 
-                (integration.config_json and isinstance(integration.config_json, dict) and integration.config_json.get("selected_property"))
+        if service == "google_business":
+            gbp_key = (
+                (integration.api_key if integration else None) or
+                os.getenv("GOOGLE_PLACES_API_KEY") or
+                os.getenv("GOOGLE_MAPS_API_KEY") or
+                ""
+            ).strip()
+            if not (gbp_key.startswith("AIza") and len(gbp_key) > 20):
+                if integration and integration.connected:
+                    integration.connected = False
+                    await db.commit()
+                return {
+                    "service": service,
+                    "connected": False,
+                    "data": None,
+                    "message": "Cannot sync Google Business Profile: Valid Google Places API key (starts with 'AIza') is required."
+                }
+            token = gbp_key
+        else:
+            is_conn = bool(
+                integration and (
+                    integration.connected or 
+                    (integration.config_json and isinstance(integration.config_json, dict) and integration.config_json.get("selected_property"))
+                )
             )
-        )
-        if not integration or not is_conn:
-            return {
-                "service": service,
-                "connected": False,
-                "data": None,
-                "message": f"Cannot sync: {service} is not connected."
-            }
+            if not integration or not is_conn:
+                return {
+                    "service": service,
+                    "connected": False,
+                    "data": None,
+                    "message": f"Cannot sync: {service} is not connected."
+                }
 
-        # Ensure integration is marked connected
-        if not integration.connected:
-            integration.connected = True
-
-        token = (integration.api_key or integration.access_token or "").strip()
-        if token.lower().startswith("bearer "):
-            token = token[7:].strip()
+            token = (integration.api_key or integration.access_token or "").strip()
+            if token.lower().startswith("bearer "):
+                token = token[7:].strip()
 
         # Extract domain if not supplied
         if not domain:
@@ -187,6 +235,15 @@ class IntelligenceService:
         saved_config["latency_ms"] = latency
         saved_config["domain"] = domain
         saved_config["data"] = data_payload
+        # Update connection state based on fetched data
+        if service == "google_business":
+            is_valid_conn = bool(
+                data_payload.get("verified_google_maps") or
+                (data_payload.get("status") not in ["NOT_CONNECTED", "ERROR"] and data_payload.get("is_live_data"))
+            )
+            integration.connected = is_valid_conn
+        elif not integration.connected:
+            integration.connected = True
 
         integration.config_json = saved_config
         flag_modified(integration, "config_json")
@@ -1041,74 +1098,136 @@ class IntelligenceService:
         """Queries Google Places / Business Profile API for NAP and rating verification."""
         clean_dom = domain.lower().replace("www.", "").split(".")[0].capitalize()
         
-        # If real Google Places API Key is present (AIza...), query Google Maps Places API
-        if token and len(token) > 20 and token.startswith("AIza"):
-            try:
-                async with httpx.AsyncClient(timeout=8.0) as client:
+        # If no valid Google Places API Key (starts with AIza...), return disconnected state
+        if not token or not token.startswith("AIza") or len(token) < 20:
+            return {
+                "business_name": None,
+                "place_id": None,
+                "formatted_address": "Not Connected (Configure Google Places API Key)",
+                "formatted_phone": "N/A",
+                "primary_category": "Unverified",
+                "rating": None,
+                "total_reviews": 0,
+                "status": "NOT_CONNECTED",
+                "verified_google_maps": False,
+                "nap_consistency_score": "0%",
+                "local_pack_ready": False,
+                "schema_present": False,
+                "is_live_data": False
+            }
+
+        queries_to_try = [domain.lower().replace("www.", ""), clean_dom]
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                candidate = None
+                for q in queries_to_try:
                     res = await client.get(
                         "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
                         params={
-                            "input": clean_dom,
+                            "input": q,
                             "inputtype": "textquery",
                             "fields": "place_id,name,formatted_address,rating,user_ratings_total,business_status",
                             "key": token
                         }
                     )
                     if res.status_code == 200:
-                        candidates = res.json().get("candidates", [])
+                        data = res.json()
+                        candidates = data.get("candidates", [])
                         if candidates:
-                            c = candidates[0]
+                            candidate = candidates[0]
+                            break
+                        if data.get("status") in ["REQUEST_DENIED", "OVER_QUERY_LIMIT"]:
+                            error_msg = data.get("error_message", "Google Places API request denied")
                             return {
-                                "business_name": c.get("name", clean_dom),
-                                "place_id": c.get("place_id", ""),
-                                "formatted_address": c.get("formatted_address", ""),
-                                "rating": c.get("rating", None),
-                                "total_reviews": c.get("user_ratings_total", 0),
-                                "status": c.get("business_status", "OPERATIONAL"),
-                                "verified_google_maps": True,
-                                "nap_consistency_score": "100%",
-                                "local_pack_ready": True,
-                                "schema_present": True
+                                "business_name": None,
+                                "place_id": None,
+                                "formatted_address": f"Error: {error_msg}",
+                                "formatted_phone": "N/A",
+                                "primary_category": "API Key Error",
+                                "rating": None,
+                                "total_reviews": 0,
+                                "status": "ERROR",
+                                "error": error_msg,
+                                "verified_google_maps": False,
+                                "nap_consistency_score": "0%",
+                                "local_pack_ready": False,
+                                "schema_present": False,
+                                "is_live_data": False
                             }
-            except Exception as e:
-                print(f"Places API note: {e}")
 
-        # If authenticated via Google Account or OAuth token, return verified domain entity status
-        if token and (token.startswith("ya29.") or token.startswith("oauth_") or len(token) > 5):
-            b_name = clean_dom.replace("solutions", " Solutions").replace("Bloomx", "BloomX").title()
-            if "Bloom" in b_name:
-                b_name = "BloomX Business Solutions"
+                if candidate:
+                    place_id = candidate.get("place_id", "")
+                    phone = "N/A"
+                    category = "Local Business"
+                    
+                    if place_id:
+                        try:
+                            det_res = await client.get(
+                                "https://maps.googleapis.com/maps/api/place/details/json",
+                                params={
+                                    "place_id": place_id,
+                                    "fields": "formatted_phone_number,types,url,website",
+                                    "key": token
+                                }
+                            )
+                            if det_res.status_code == 200:
+                                det_data = det_res.json().get("result", {})
+                                phone = det_data.get("formatted_phone_number") or phone
+                                types = det_data.get("types", [])
+                                if types:
+                                    category = types[0].replace("_", " ").title()
+                        except Exception as det_err:
+                            print(f"[GBP Details Err]: {det_err}")
+
+                    return {
+                        "business_name": candidate.get("name", clean_dom),
+                        "place_id": place_id,
+                        "formatted_address": candidate.get("formatted_address", ""),
+                        "formatted_phone": phone,
+                        "primary_category": category,
+                        "rating": candidate.get("rating"),
+                        "total_reviews": candidate.get("user_ratings_total", 0),
+                        "status": candidate.get("business_status", "OPERATIONAL"),
+                        "verified_google_maps": True,
+                        "nap_consistency_score": "100%",
+                        "local_pack_ready": True,
+                        "schema_present": True,
+                        "is_live_data": True
+                    }
+                else:
+                    return {
+                        "business_name": clean_dom,
+                        "place_id": None,
+                        "formatted_address": f"No Google Maps listing found for query '{clean_dom}'",
+                        "formatted_phone": "N/A",
+                        "primary_category": "Unclaimed Listing",
+                        "rating": None,
+                        "total_reviews": 0,
+                        "status": "NOT_FOUND",
+                        "verified_google_maps": False,
+                        "nap_consistency_score": "40%",
+                        "local_pack_ready": False,
+                        "schema_present": False,
+                        "is_live_data": True,
+                        "message": f"API key valid, but no matching Google Business profile found for '{domain}'"
+                    }
+        except Exception as e:
+            print(f"[GBP Fetch Exception]: {e}")
             return {
-                "business_name": b_name,
-                "place_id": f"ChIJ_{clean_dom.lower()}_verified",
-                "formatted_address": f"Verified Business Entity ({domain.lower()})",
-                "formatted_phone": "+1 (Verified Inbound)",
-                "primary_category": "Digital Solutions & Consulting",
-                "rating": 4.9,
-                "total_reviews": 18,
-                "status": "OPERATIONAL",
-                "verified_google_maps": True,
-                "nap_consistency_score": "100%",
-                "local_pack_ready": True,
-                "schema_present": True
+                "business_name": None,
+                "place_id": None,
+                "formatted_address": f"Error querying Places API: {str(e)}",
+                "formatted_phone": "N/A",
+                "primary_category": "Error",
+                "rating": None,
+                "total_reviews": 0,
+                "status": "ERROR",
+                "verified_google_maps": False,
+                "nap_consistency_score": "0%",
+                "local_pack_ready": False,
+                "schema_present": False,
+                "is_live_data": False
             }
-
-
-        # Disconnected state — strictly zero fake addresses
-        return {
-            "business_name": None,
-            "place_id": None,
-            "formatted_address": "Not Connected (Configure Google Places / GBP API Key)",
-            "formatted_phone": "N/A",
-            "primary_category": "Unverified",
-            "rating": None,
-            "total_reviews": 0,
-            "status": "NOT_CONNECTED",
-            "verified_google_maps": False,
-            "nap_consistency_score": "0%",
-            "local_pack_ready": False,
-            "schema_present": False
-        }
 
     @staticmethod
     async def _fetch_live_pagespeed_data(token: str, domain: str) -> Dict[str, Any]:
