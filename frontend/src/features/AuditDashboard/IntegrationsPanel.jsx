@@ -29,6 +29,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import ApiKeyModal from './ApiKeyModal';
 import IntegrationsWorkspace from './IntegrationsWorkspace';
+import CustomSelect from '@/components/ui/CustomSelect';
 import { API_BASE_URL } from '@/api/client';
 import { copyToClipboard } from '@/utils/clipboard';
 
@@ -168,6 +169,33 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
 
   // AI Model Selection & Live Sync State
   const [syncingModelId, setSyncingModelId] = useState(null);
+
+  // Formatted & deduplicated options for CustomSelect dropdowns
+  const gscOptions = useMemo(() => {
+    return gscProperties.map((p) => ({
+      value: p.siteUrl,
+      label: p.siteUrl,
+      badge: p.permissionLevel || 'Verified'
+    }));
+  }, [gscProperties]);
+
+  const ga4Options = useMemo(() => {
+    return ga4Properties.map((p) => {
+      const val = p.name || p.siteUrl || (p.propertyId ? `properties/${p.propertyId}` : '');
+      const cleanId = String(p.propertyId || p.siteUrl || p.name || '').replace(/^properties\//, '');
+      let rawName = p.displayName || p.name || `Property ${cleanId}`;
+      if (cleanId) {
+        // Strip duplicate trailing "(cleanId) (cleanId)"
+        rawName = rawName.replace(new RegExp(`\\(${cleanId}\\)\\s*\\(${cleanId}\\)`, 'g'), `(${cleanId})`);
+      }
+      const label = cleanId && !rawName.includes(cleanId) ? `${rawName} (${cleanId})` : rawName;
+      return {
+        value: val,
+        label: label,
+        badge: p.account ? p.account : (cleanId ? `ID: ${cleanId}` : null)
+      };
+    });
+  }, [ga4Properties]);
 
   const handleDismissError = async (serviceId) => {
     setServiceErrors(prev => {
@@ -866,7 +894,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
             <motion.div
               key={item.id}
               variants={staggerItem}
-              className={`p-5 rounded-2xl border flex flex-col justify-between relative transition-colors duration-150 focus-within:z-30 hover:z-20 hover:shadow-md ${
+              className={`p-5 rounded-2xl border flex flex-col justify-between relative transition-colors duration-150 focus-within:z-40 hover:z-20 hover:shadow-md ${
 
                 hasError && !isConnected
                   ? 'bg-white dark:bg-slate-900/90 border-rose-400 dark:border-rose-600/80 shadow-xs ring-2 ring-rose-500/20'
@@ -1179,18 +1207,15 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                       {loadingProperties && <RefreshCw size={12} className="animate-spin text-blue-600 dark:text-blue-400" />}
                     </div>
                     {gscProperties.length > 0 ? (
-                      <select
-                        value={selectedGscProperty}
-                        onChange={(e) => handleSelectProperty(e.target.value)}
-                        className="w-full text-xs font-mono bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-2xs"
-                      >
-                        <option value="">-- Choose verified property --</option>
-                        {gscProperties.map((p) => (
-                          <option key={p.siteUrl} value={p.siteUrl}>
-                            {p.siteUrl} ({p.permissionLevel || 'Verified'})
-                          </option>
-                        ))}
-                      </select>
+                      <CustomSelect
+                        value={selectedGscProperty || ''}
+                        onChange={(val) => handleSelectProperty(val)}
+                        options={gscOptions}
+                        placeholder="-- Choose verified property --"
+                        menuClassName="w-full max-w-none shadow-2xl"
+                        buttonClassName="border-blue-300 dark:border-blue-700/80 rounded-lg px-2.5 py-1.5 text-xs font-mono bg-white dark:bg-slate-900"
+                        valueClassName="text-slate-900 dark:text-slate-100 font-mono text-xs font-medium truncate"
+                      />
                     ) : (
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-1.5">
@@ -1261,24 +1286,15 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                     </div>
 
                     {ga4Properties.length > 0 ? (
-                      <select
+                      <CustomSelect
                         value={selectedGa4Property || item.selected_property || ''}
-                        onChange={(e) => handleSelectGa4Property(e.target.value)}
-                        className="w-full text-xs font-mono bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500/20 shadow-2xs"
-                      >
-                        {ga4Properties.map((p) => {
-                          const val = p.name || `properties/${p.propertyId}`;
-                          const cleanId = String(p.propertyId || p.name || '').replace(/^properties\//, '');
-                          const rawName = p.displayName || p.name || `Property ${cleanId}`;
-                          const label = cleanId && !rawName.includes(cleanId) ? `${rawName} (${cleanId})` : rawName;
-                          return (
-                            <option key={val} value={val}>
-                              {label}
-                            </option>
-                          );
-                        })}
-
-                      </select>
+                        onChange={(val) => handleSelectGa4Property(val)}
+                        options={ga4Options}
+                        placeholder="-- Choose GA4 Property --"
+                        menuClassName="w-full max-w-none shadow-2xl"
+                        buttonClassName="border-orange-300 dark:border-orange-700/80 rounded-lg px-2.5 py-1.5 text-xs font-mono bg-white dark:bg-slate-900"
+                        valueClassName="text-slate-900 dark:text-slate-100 font-mono text-xs font-medium truncate"
+                      />
                     ) : (
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-1.5">
@@ -1333,17 +1349,19 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                       </button>
                     </div>
 
-                    <select
+                    <CustomSelect
                       value={integrations[item.id]?.selected_model || ''}
-                      onChange={(e) => handleSelectModel(item.id, e.target.value)}
-                      className="w-full text-xs font-mono bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-2xs"
-                    >
-                      {(integrations[item.id]?.available_models || []).map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name || m.id} {m.recommended ? '★ Recommended' : ''}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(val) => handleSelectModel(item.id, val)}
+                      options={(integrations[item.id]?.available_models || []).map((m) => ({
+                        value: m.id,
+                        label: m.name || m.id,
+                        badge: m.recommended ? '★ Recommended' : null
+                      }))}
+                      placeholder="Select AI Model..."
+                      menuClassName="w-full max-w-none shadow-2xl"
+                      buttonClassName="border-indigo-300 dark:border-indigo-700/80 rounded-lg px-2.5 py-1.5 text-xs font-mono bg-white dark:bg-slate-900"
+                      valueClassName="text-slate-900 dark:text-slate-100 font-mono text-xs font-medium truncate"
+                    />
 
                     <div className="flex items-center justify-between text-[10px] font-mono text-slate-600 dark:text-slate-300 pt-0.5">
                       <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-semibold">

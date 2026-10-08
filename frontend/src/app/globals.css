@@ -678,6 +678,19 @@ html:not(.dark):not([data-theme="dark"]) aside .bg-slate-50\/80 {
   color: #71717a;
 }
 
+/* Prevent native select tearing and white artifacts on Windows Chromium in dark mode */
+select {
+  color-scheme: light dark;
+}
+.dark select,
+[data-theme="dark"] select {
+  color-scheme: dark;
+}
+select option {
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+
 /* ==========================================================================
    Effects
    ========================================================================== */

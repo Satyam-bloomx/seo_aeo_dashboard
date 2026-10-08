@@ -172,10 +172,14 @@ export default function CustomSelect({
     },
   };
 
+  const hasCustomBorder = buttonClassName?.includes('border-');
+  const hasCustomRounded = buttonClassName?.includes('rounded-');
+  const hasCustomPadding = buttonClassName?.includes('p-') || buttonClassName?.includes('py-') || buttonClassName?.includes('px-');
+
   return (
     <div
       ref={containerRef}
-      className={`relative inline-block w-full text-left ${disabled ? 'opacity-60 pointer-events-none' : ''}`}
+      className={`relative inline-block w-full text-left ${isOpen ? 'z-50' : ''} ${disabled ? 'opacity-60 pointer-events-none' : ''}`}
       onKeyDown={handleKeyDown}
     >
       {/* Trigger Button */}
@@ -186,11 +190,13 @@ export default function CustomSelect({
         aria-expanded={isOpen}
         onClick={() => setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`w-full flex items-center justify-between gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 p-1 rounded-xl shadow-xs transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/20 focus-visible:border-indigo-400 cursor-pointer ${
+        className={`w-full flex items-center justify-between gap-2 bg-white dark:bg-slate-900 border ${
+          hasCustomBorder ? '' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+        } ${hasCustomPadding ? '' : 'p-1'} ${hasCustomRounded ? '' : 'rounded-xl'} shadow-xs transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/20 focus-visible:border-indigo-400 cursor-pointer ${
           isOpen ? 'ring-2 ring-indigo-500/15 border-indigo-400' : ''
         } ${buttonClassName}`}
       >
-        <div className="flex items-center gap-2 truncate flex-1 pl-1">
+        <div className={`flex items-center gap-2 truncate flex-1 ${hasCustomPadding ? '' : 'pl-1'}`}>
           {label && (
             <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shrink-0">
               {label}
@@ -219,7 +225,9 @@ export default function CustomSelect({
             initial="initial"
             animate="animate"
             exit="exit"
-            className={`absolute top-full mt-1.5 z-50 min-w-[200px] w-full max-w-sm rounded-2xl bg-white/98 dark:bg-slate-900/98 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-xl ring-1 ring-slate-900/5 dark:ring-white/10 p-1.5 flex flex-col ${
+            className={`absolute top-full mt-1.5 z-50 min-w-[200px] w-full ${
+              menuClassName?.includes('max-w-') ? '' : 'max-w-sm'
+            } rounded-2xl bg-white/98 dark:bg-slate-900/98 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-xl ring-1 ring-slate-900/5 dark:ring-white/10 p-1.5 flex flex-col ${
               align === 'right' ? 'right-0' : 'left-0'
             } ${menuClassName}`}
             role="listbox"
@@ -269,6 +277,7 @@ export default function CustomSelect({
                       key={`${opt.value}-${index}`}
                       type="button"
                       role="option"
+                      title={opt.label}
                       aria-selected={isSelected}
                       onClick={() => handleSelect(opt.value)}
                       onMouseEnter={() => setHighlightedIndex(index)}
@@ -287,7 +296,7 @@ export default function CustomSelect({
 
                       <div className="flex items-center gap-1.5 shrink-0">
                         {opt.badge && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                             {opt.badge}
                           </span>
                         )}
@@ -297,7 +306,7 @@ export default function CustomSelect({
                             animate={{ scale: 1, opacity: 1 }}
                             transition={spring.press}
                           >
-                            <Check size={14} className="text-indigo-600 stroke-[2.5]" />
+                            <Check size={14} className="text-indigo-600 dark:text-indigo-400 stroke-[2.5]" />
                           </motion.div>
                         )}
                       </div>

@@ -46,6 +46,7 @@ import { spring, tapPress } from '@/lib/motion';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { API_BASE_URL } from '@/api/client';
+import CustomSelect from '@/components/ui/CustomSelect';
 
 const WORKSPACE_SERVICES = [
   { id: 'search_console', name: 'Google Search Console', icon: Globe, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900/60' },
@@ -85,6 +86,22 @@ export default function IntegrationsWorkspace({
   const [isLoadingProperties, setIsLoadingProperties] = useState(false);
   const [isSavingProperty, setIsSavingProperty] = useState(false);
   const [showPropertyDrawer, setShowPropertyDrawer] = useState(false);
+
+  const availablePropertyOptions = useMemo(() => {
+    return availableProperties.map((p) => {
+      const val = p.siteUrl || p.name || p.id;
+      const cleanId = String(p.propertyId || p.siteUrl || p.name || '').replace(/^properties\//, '');
+      let rawName = p.displayName || p.siteUrl || p.name || `Property ${cleanId}`;
+      if (cleanId) {
+        rawName = rawName.replace(new RegExp(`\\(${cleanId}\\)\\s*\\(${cleanId}\\)`, 'g'), `(${cleanId})`);
+      }
+      return {
+        value: val,
+        label: rawName,
+        badge: p.account ? p.account : (cleanId ? `ID: ${cleanId}` : null)
+      };
+    });
+  }, [availableProperties]);
 
   // Cross-correlation search & filters
   const [gscPageSearch, setGscPageSearch] = useState('');
@@ -637,18 +654,15 @@ export default function IntegrationsWorkspace({
                     <span>Refresh</span>
                   </button>
                 </div>
-                <select
-                  value={selectedPropertyUrl}
-                  onChange={(e) => handleSelectProperty(e.target.value)}
-                  className="w-full text-xs font-mono bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs cursor-pointer"
-                >
-                  <option value="">-- Choose verified property --</option>
-                  {availableProperties.map((p, idx) => (
-                    <option key={idx} value={p.siteUrl || p.name || p.id}>
-                      {p.displayName || p.siteUrl || p.name} {p.account ? `(${p.account})` : ''}
-                    </option>
-                  ))}
-                </select>
+                <CustomSelect
+                  value={selectedPropertyUrl || ''}
+                  onChange={(val) => handleSelectProperty(val)}
+                  options={availablePropertyOptions}
+                  placeholder="-- Choose verified property --"
+                  menuClassName="w-full max-w-none shadow-2xl"
+                  buttonClassName="border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs font-mono bg-slate-50 dark:bg-slate-800/80"
+                  valueClassName="text-slate-900 dark:text-white font-mono text-xs font-medium truncate"
+                />
               </div>
             )}
 

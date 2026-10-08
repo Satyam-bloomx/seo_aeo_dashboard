@@ -8,6 +8,7 @@ import datetime
 import os
 import httpx
 import time
+import json
 
 from app.core.database import get_db
 from app.models.domain import Integration, Project
@@ -81,9 +82,9 @@ SUPPORTED_SERVICES = [
 
 DEFAULT_PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
     "gemini": [
-        {"id": "gemini-3.5-flash", "name": "Gemini 3.5 Flash", "description": "Smart, fast & cost-effective flagship reasoning engine", "recommended": True},
-        {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash-Lite", "description": "Ultra low-latency token-efficient model", "recommended": False},
-        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "description": "Previous generation multimodal flash model", "recommended": False},
+        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "description": "High-speed multimodal reasoning model", "recommended": True},
+        {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "description": "Next-gen multimodal workhorse model", "recommended": True},
+        {"id": "gemini-2.0-flash-lite", "name": "Gemini 2.0 Flash-Lite", "description": "Ultra low-latency token-efficient model", "recommended": False},
         {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "description": "Deep reasoning for complex architectural audits", "recommended": False},
         {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "description": "Stable previous generation model", "recommended": False},
         {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "description": "Large-window analysis model", "recommended": False}
@@ -156,9 +157,9 @@ async def fetch_live_models_from_provider(service: str, api_key: Optional[str]) 
                                 "is_live": True
                             })
                     priority_order = [
-                        "gemini-3.5-flash",
-                        "gemini-3.5-flash-lite",
                         "gemini-2.5-flash",
+                        "gemini-2.0-flash",
+                        "gemini-2.0-flash-lite",
                         "gemini-2.5-pro",
                         "gemini-1.5-flash",
                         "gemini-1.5-pro"
@@ -276,7 +277,7 @@ async def get_integration_status(
         no_properties_warning = None
         diagnostic_help = None
 
-        if item and item.connected:
+        if item:
             config = item.config_json if isinstance(item.config_json, dict) else {}
             auth_error = config.get("last_auth_error")
             selected_property = config.get("selected_property")
@@ -296,29 +297,45 @@ async def get_integration_status(
             raw_key = item.api_key or item.access_token
             is_invalid_aiza = bool(svc in ["search_console", "google_analytics"] and raw_key and raw_key.startswith("AIza"))
             
-            if is_invalid_aiza:
-                connected = False
-                has_key = False
-            else:
+            if item.connected and not is_invalid_aiza:
                 connected = True
                 has_key = bool(raw_key or selected_property)
+            else:
+                connected = False
+                has_key = bool(raw_key) if not is_invalid_aiza else False
+
+            if not account_email and raw_key and raw_key.startswith("{"):
+                try:
+                    sa_data = json.loads(raw_key)
+                    account_email = sa_data.get("client_email")
+                except Exception:
+                    pass
             
         has_configured_app = False
         if item and isinstance(item.config_json, dict):
             has_configured_app = bool(item.config_json.get("client_id"))
-        if not has_configured_app and svc in ["search_console", "google_analytics"]:
-            sibling = "search_console" if svc == "google_analytics" else "google_analytics"
-            sib_item = integrations.get(sibling)
-            if sib_item and isinstance(sib_item.config_json, dict):
-                has_configured_app = bool(sib_item.config_json.get("client_id"))
+        if not has_configured_app and svc in ["search_console", "google_analytics", "google_business"]:
+            for sib_svc in ["search_console", "google_analytics", "google_business"]:
+                if sib_svc != svc:
+                    sib_item = integrations.get(sib_svc)
+                    if sib_item and isinstance(sib_item.config_json, dict) and sib_item.config_json.get("client_id"):
+                        has_configured_app = True
+                        break
             if not has_configured_app:
                 has_configured_app = bool(os.getenv("GOOGLE_CLIENT_ID"))
 
         masked_key_str = None
         if connected:
-            masked_key_str = _mask_key(raw_key)
-            if not masked_key_str and selected_property:
-                masked_key_str = f"GA4: {selected_property.replace('properties/', '')}" if svc == "google_analytics" else f"GSC: {selected_property}"
+            if svc == "google_analytics" and (raw_key and (raw_key.startswith("properties/") or raw_key.isdigit()) or selected_property):
+                prop_val = selected_property or raw_key
+                masked_key_str = f"GA4: {prop_val.replace('properties/', '')}"
+            elif svc == "search_console" and (raw_key and (raw_key.startswith("sc-domain:") or raw_key.startswith("http")) or selected_property):
+                prop_val = selected_property or raw_key
+                masked_key_str = f"GSC: {prop_val}"
+            else:
+                masked_key_str = _mask_key(raw_key)
+                if not masked_key_str and selected_property:
+                    masked_key_str = f"GA4: {selected_property.replace('properties/', '')}" if svc == "google_analytics" else f"GSC: {selected_property}"
 
         selected_model = None
         available_models = None
@@ -564,6 +581,8 @@ async def save_api_key(
             if not integration:
                 integration = Integration(project_id=req.project_id, integration_type=service)
                 db.add(integration)
+            if user:
+                integration.user_id = user.id
             cfg = dict(integration.config_json or {})
             cfg["selected_property"] = clean_pid
             cfg.pop("last_auth_error", None)
@@ -1080,7 +1099,7 @@ async def test_connection(
     # 5. Google Business Profile / Places test
     elif service == "google_business":
         target_res = await db.execute(select(Integration).where(
-            Integration.project_id == project_id,
+            Integration.project_id == req.project_id,
             Integration.integration_type == "google_business"
         ))
 
@@ -2095,9 +2114,45 @@ async def get_google_properties(
         return {"connected": False, "properties": [], "message": f"{service.replace('_', ' ').title()} is not connected."}
         
     token = integration.access_token or integration.api_key
+
+    # Direct handling for manual numeric GA4 Property IDs (stored without OAuth token)
+    if service == "google_analytics" and token and (token.isdigit() or token.startswith("properties/")):
+        clean_pid = token if token.startswith("properties/") else f"properties/{token}"
+        num_id = clean_pid.replace("properties/", "")
+        return {
+            "connected": True,
+            "properties": [{
+                "siteUrl": clean_pid,
+                "name": clean_pid,
+                "id": clean_pid,
+                "property": clean_pid,
+                "propertyId": num_id,
+                "displayName": f"GA4 Property ({num_id})",
+                "account": "Manual Property ID"
+            }],
+            "selected_property": clean_pid,
+            "has_no_properties": False,
+            "message": f"Connected to GA4 Property {num_id}"
+        }
+
+    # Direct handling for manual Search Console domain/URL prefix
+    if service == "search_console" and token and (token.startswith("sc-domain:") or token.startswith("http://") or token.startswith("https://")):
+        return {
+            "connected": True,
+            "properties": [{
+                "siteUrl": token,
+                "displayName": token,
+                "name": token,
+                "id": token,
+                "permissionLevel": "siteOwner"
+            }],
+            "selected_property": token,
+            "has_no_properties": False,
+            "message": f"Connected to Search Console property {token}"
+        }
+
     if token and token.startswith("{"):
         try:
-            import json
             from google.oauth2 import service_account
             from google.auth.transport.requests import Request as GoogleRequest
             sa_info = json.loads(token)
@@ -2109,8 +2164,14 @@ async def get_google_properties(
             creds = service_account.Credentials.from_service_account_info(sa_info, scopes=scopes)
             creds.refresh(GoogleRequest())
             token = creds.token
-        except Exception:
-            pass
+        except Exception as sa_err:
+            return {
+                "connected": True,
+                "properties": [],
+                "selected_property": selected,
+                "error": f"Failed to refresh Service Account credentials: {str(sa_err)}",
+                "message": f"Service Account credential error: {str(sa_err)}"
+            }
 
     if not token or token.startswith("mock_") or token.startswith("oauth_token_"):
         return {
@@ -2131,26 +2192,48 @@ async def get_google_properties(
                 res = await client.get("https://analyticsadmin.googleapis.com/v1beta/accountSummaries", headers=headers)
                 
                 # Auto-refresh token if expired
-                if res.status_code == 401 and integration.refresh_token:
-                    new_token = await IntelligenceService.refresh_google_oauth_token(db, integration)
-                    if new_token:
-                        headers = {"Authorization": f"Bearer {new_token}"}
-                        res = await client.get("https://analyticsadmin.googleapis.com/v1beta/accountSummaries", headers=headers)
+                if res.status_code == 401:
+                    ref_tok = integration.refresh_token
+                    if not ref_tok:
+                        sib_res = await db.execute(select(Integration).where(
+                            Integration.project_id == target_project_id,
+                            Integration.integration_type == "search_console"
+                        ))
+                        sib_int = sib_res.scalars().first()
+                        if sib_int and sib_int.refresh_token:
+                            integration.refresh_token = sib_int.refresh_token
+                            ref_tok = sib_int.refresh_token
+                    if ref_tok:
+                        new_token = await IntelligenceService.refresh_google_oauth_token(db, integration)
+                        if new_token:
+                            headers = {"Authorization": f"Bearer {new_token}"}
+                            res = await client.get("https://analyticsadmin.googleapis.com/v1beta/accountSummaries", headers=headers)
 
                 if res.status_code == 200:
                     data = res.json()
                     summaries = data.get("accountSummaries", [])
                     properties = []
+                    seen_pids = set()
                     for acc in summaries:
                         acc_name = acc.get("displayName", "Account")
                         for p in acc.get("propertySummaries", []):
                             p_id = p.get("property", "")
+                            if not p_id or p_id in seen_pids:
+                                continue
+                            seen_pids.add(p_id)
                             p_name = p.get("displayName", p_id)
                             num_id = p_id.replace("properties/", "")
+                            clean_disp = p_name
+                            if num_id and f"({num_id})" not in clean_disp and num_id not in clean_disp:
+                                clean_disp = f"{p_name} ({num_id})"
                             properties.append({
                                 "siteUrl": p_id,
+                                "name": p_id,
+                                "id": p_id,
+                                "property": p_id,
                                 "propertyId": num_id,
-                                "displayName": f"{p_name} ({num_id})",
+                                "displayName": clean_disp,
+                                "propertyName": p_name,
                                 "account": acc_name
                             })
 
@@ -2216,19 +2299,40 @@ async def get_google_properties(
                 res = await client.get("https://www.googleapis.com/webmasters/v3/sites", headers=headers)
                 
                 # Auto-refresh token if expired
-                if res.status_code == 401 and integration.refresh_token:
-                    new_token = await IntelligenceService.refresh_google_oauth_token(db, integration)
-                    if new_token:
-                        headers = {"Authorization": f"Bearer {new_token}"}
-                        res = await client.get("https://www.googleapis.com/webmasters/v3/sites", headers=headers)
+                if res.status_code == 401:
+                    ref_tok = integration.refresh_token
+                    if not ref_tok:
+                        sib_res = await db.execute(select(Integration).where(
+                            Integration.project_id == target_project_id,
+                            Integration.integration_type == "google_analytics"
+                        ))
+                        sib_int = sib_res.scalars().first()
+                        if sib_int and sib_int.refresh_token:
+                            integration.refresh_token = sib_int.refresh_token
+                            ref_tok = sib_int.refresh_token
+                    if ref_tok:
+                        new_token = await IntelligenceService.refresh_google_oauth_token(db, integration)
+                        if new_token:
+                            headers = {"Authorization": f"Bearer {new_token}"}
+                            res = await client.get("https://www.googleapis.com/webmasters/v3/sites", headers=headers)
 
                 if res.status_code == 200:
                     data = res.json()
                     entries = data.get("siteEntry", [])
-                    properties = [
-                        {"siteUrl": s.get("siteUrl"), "displayName": s.get("siteUrl"), "permissionLevel": s.get("permissionLevel", "siteFullUser")}
-                        for s in entries if s.get("siteUrl")
-                    ]
+                    seen_urls = set()
+                    properties = []
+                    for s in entries:
+                        s_url = s.get("siteUrl")
+                        if s_url and s_url not in seen_urls:
+                            seen_urls.add(s_url)
+                            properties.append({
+                                "siteUrl": s_url,
+                                "displayName": s_url,
+                                "name": s_url,
+                                "id": s_url,
+                                "permissionLevel": s.get("permissionLevel", "siteFullUser")
+                            })
+
                     has_no_props = len(properties) == 0
                     acc_email = config.get("account_email")
                     if not acc_email:
@@ -2299,6 +2403,14 @@ async def select_google_property(
     if user:
         req.project_id = await get_or_create_user_project(db, user.id)
 
+    # Ensure parent project exists
+    proj_res = await db.execute(select(Project).where(Project.id == req.project_id))
+    proj = proj_res.scalars().first()
+    if not proj:
+        proj = Project(id=req.project_id, name="Default Project")
+        db.add(proj)
+        await db.flush()
+
     result = await db.execute(select(Integration).where(Integration.project_id == req.project_id, Integration.integration_type == req.service))
     integration = result.scalars().first()
     if not integration:
@@ -2316,6 +2428,9 @@ async def select_google_property(
             
     config["selected_property"] = clean_prop
     config.pop("last_auth_error", None)
+    config.pop("google_permission_error", None)
+    config.pop("no_properties_warning", None)
+    config["has_no_properties"] = False
     integration.config_json = config
     integration.connected = True
     if not integration.api_key:
@@ -2331,7 +2446,7 @@ async def select_google_property(
 
     return {
         "status": "success", 
-        "connected": True,
+        "connected": True, 
         "message": f"Selected property saved as {clean_prop} and connected successfully!", 
         "selected_property": clean_prop
     }
