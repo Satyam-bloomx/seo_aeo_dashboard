@@ -40,10 +40,25 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  // Sync Supabase auth state
+  // Sync Supabase auth state & Guest demo mode
   useEffect(() => {
     const initAuth = async () => {
       try {
+        const isDemo = typeof window !== 'undefined' && localStorage.getItem('audit_demo_session') === 'true';
+        if (isDemo) {
+          const demoUser = {
+            id: 'demo-guest-user',
+            email: 'demo@bloomxsolutions.com',
+            user_metadata: { name: 'Demo Guest' },
+            aud: 'authenticated',
+            role: 'authenticated'
+          };
+          setUser(demoUser);
+          setSession({ user: demoUser, access_token: 'demo-token' });
+          setLoading(false);
+          return;
+        }
+
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         if (error) {
           console.warn('Error fetching Supabase session:', error.message);
@@ -60,6 +75,11 @@ export const AuthProvider = ({ children }) => {
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      const isDemo = typeof window !== 'undefined' && localStorage.getItem('audit_demo_session') === 'true';
+      if (isDemo && !currentSession) {
+        // Keep guest demo mode active if user explicitly chose it
+        return;
+      }
       setSession(currentSession);
       setUser(currentSession?.user || null);
       setLoading(false);
@@ -147,8 +167,30 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  const signInAsGuest = useCallback(() => {
+    const demoUser = {
+      id: 'demo-guest-user',
+      email: 'demo@bloomxsolutions.com',
+      user_metadata: { name: 'Demo Guest' },
+      aud: 'authenticated',
+      role: 'authenticated'
+    };
+    setUser(demoUser);
+    setSession({ user: demoUser, access_token: 'demo-token' });
+    try {
+      localStorage.setItem('audit_demo_session', 'true');
+    } catch {}
+    toast.success('Welcome to AuditPro Demo!', {
+      description: 'Logged in as guest demo user.',
+    });
+    return { success: true };
+  }, []);
+
   const signOut = useCallback(async () => {
     try {
+      try {
+        localStorage.removeItem('audit_demo_session');
+      } catch {}
       await supabase.auth.signOut();
       setUser(null);
       setSession(null);
@@ -173,6 +215,7 @@ export const AuthProvider = ({ children }) => {
         signIn,
         signUp,
         signInWithGoogle,
+        signInAsGuest,
         signOut,
       }}
     >

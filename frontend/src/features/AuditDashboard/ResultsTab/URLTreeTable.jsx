@@ -205,22 +205,22 @@ export default function URLTreeTable({ pages, onRowClick, searchQuery = '' }) {
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl relative overflow-hidden shadow-xs">
       {/* Top Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 text-xs shrink-0">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 sm:px-4 py-2.5 bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800 text-xs shrink-0">
+        <div className="flex items-center justify-between sm:justify-start gap-2 flex-wrap">
           <span className="font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-            <FolderOpen size={14} className="text-emerald-600 dark:text-emerald-400" />
-            Site Architecture Tree (Screaming Frog Directory Trie)
+            <FolderOpen size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="truncate">Site Architecture Tree</span>
           </span>
-          <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800">
-            {pages?.length || 0} Total Endpoints
+          <span className="text-[10px] sm:text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800 shrink-0">
+            {pages?.length || 0} Endpoints
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 self-end sm:self-auto">
           <button
             type="button"
             onClick={handleExpandAll}
-            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors shadow-2xs"
+            className="flex items-center gap-1 px-2 sm:px-2.5 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors shadow-2xs"
             title="Expand All Folders"
           >
             <Maximize2 size={11} className="text-indigo-600 dark:text-indigo-400" />
@@ -229,7 +229,7 @@ export default function URLTreeTable({ pages, onRowClick, searchQuery = '' }) {
           <button
             type="button"
             onClick={handleCollapseAll}
-            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors shadow-2xs"
+            className="flex items-center gap-1 px-2 sm:px-2.5 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors shadow-2xs"
             title="Collapse All Folders"
           >
             <Minimize2 size={11} className="text-slate-600 dark:text-slate-400" />
@@ -238,9 +238,15 @@ export default function URLTreeTable({ pages, onRowClick, searchQuery = '' }) {
         </div>
       </div>
 
+      {/* Mobile Swipe Hint */}
+      <div className="md:hidden flex items-center justify-between px-3 py-1.5 bg-emerald-50/70 dark:bg-emerald-950/40 border-b border-emerald-100 dark:border-emerald-900/40 text-[11px] text-emerald-700 dark:text-emerald-300 font-medium shrink-0">
+        <span>↔ Swipe tree horizontally to inspect hierarchy</span>
+        <span className="text-[10px] font-mono text-emerald-600">Tap folders to expand</span>
+      </div>
+
       {/* Tree Data Grid */}
       <div className="flex-1 overflow-auto custom-scrollbar">
-        <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300 border-collapse min-w-[760px]">
+        <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300 border-collapse min-w-[700px]">
           <thead className="bg-slate-50 dark:bg-slate-950/80 sticky top-0 z-20 border-b border-slate-200 dark:border-slate-800">
             <tr>
               <th className="px-4 py-3 font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[420px] min-w-[320px]">

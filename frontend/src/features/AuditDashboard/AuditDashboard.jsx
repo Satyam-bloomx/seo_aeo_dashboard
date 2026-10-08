@@ -65,6 +65,9 @@ import {
   HelpCircle,
   ExternalLink,
   Layers,
+  LayoutDashboard,
+  ListTree,
+  Zap,
 } from 'lucide-react';
 
 const fireCelebrationCannons = () => {
@@ -500,6 +503,17 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
   // -------------------------------------------------------------------------
   const renderDrawer = () => (
     <AnimatePresence>
+      {selectedRow && (
+        <motion.div
+          key="url-inspector-scrim"
+          variants={fade}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          onClick={() => setSelectedRow(null)}
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
+        />
+      )}
       {selectedRow && (
         <motion.aside
           key="url-inspector"
@@ -1315,9 +1329,9 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
 
           <motion.div
             variants={staggerContainer(0.05)}
-            className="flex max-w-md flex-wrap items-center justify-center gap-2"
+            className="flex max-w-md w-full flex-wrap items-center justify-center gap-2 px-2"
           >
-            <motion.span variants={staggerItem} className="mb-1 w-full font-mono text-[11px] text-slate-400 dark:text-slate-500">
+            <motion.span variants={staggerItem} className="mb-1 w-full font-mono text-[11px] text-slate-400 dark:text-slate-500 text-center">
               Quick Launch Seed Targets:
             </motion.span>
             {QUICK_TARGETS.map((target) => (
@@ -1328,7 +1342,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                 whileHover={{ y: -2, scale: 1.02 }}
                 whileTap={tapPress}
                 transition={spring.press}
-                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 px-3 py-1.5 font-mono text-xs text-slate-700 dark:text-slate-200 shadow-xs transition-colors hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-slate-700 cursor-pointer"
+                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 px-3 py-1.5 font-mono text-xs text-slate-700 dark:text-slate-200 shadow-xs transition-colors hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-slate-700 cursor-pointer max-w-full truncate"
               >
                 {target.replace(/^https?:\/\//, '').replace(/\/$/, '')}
               </motion.button>
@@ -1456,29 +1470,29 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
             initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={tween(duration.panel, ease.outQuint)}
-            className="flex h-16 shrink-0 items-center justify-between gap-2.5 sm:gap-3.5 border-b border-slate-200 dark:border-white/[0.08] bg-white/90 dark:bg-[#07080B]/90 px-3 sm:px-6 shadow-xs backdrop-blur-md transition-colors"
+            className="flex h-16 shrink-0 items-center justify-between gap-2 sm:gap-3.5 border-b border-slate-200 dark:border-white/[0.08] bg-white/90 dark:bg-[#07080B]/90 px-2.5 sm:px-6 shadow-xs backdrop-blur-md transition-colors"
           >
             <motion.button
               onClick={() => setIsMobileSidebarOpen(true)}
               whileTap={tapPress}
               transition={spring.press}
-              className="flex items-center justify-center rounded-lg p-2 text-slate-600 dark:text-[#D6E5FC]/70 hover:bg-slate-100 dark:hover:bg-[#121620] hover:text-slate-900 dark:hover:text-white md:hidden shrink-0"
-              aria-label="Open navigation"
+              className="flex items-center justify-center rounded-xl p-2 text-slate-600 dark:text-[#D6E5FC]/70 hover:bg-slate-100 dark:hover:bg-[#121620] hover:text-slate-900 dark:hover:text-white md:hidden shrink-0 touch-target"
+              aria-label="Open navigation menu"
             >
               <Menu size={20} />
             </motion.button>
 
             <form
               onSubmit={startAudit}
-              className="group relative flex w-full max-w-2xl flex-1 items-center rounded-full border border-slate-300 dark:border-white/[0.1] bg-white dark:bg-[#0D0F15] p-1 pl-4 shadow-xs transition-all focus-within:border-[#CAE366] focus-within:ring-2 focus-within:ring-[#CAE366]/20 sm:max-w-3xl"
+              className="group relative flex w-full max-w-2xl flex-1 min-w-0 items-center rounded-full border border-slate-300 dark:border-white/[0.1] bg-white dark:bg-[#0D0F15] p-1 pl-3 sm:pl-4 shadow-xs transition-all focus-within:border-[#CAE366] focus-within:ring-2 focus-within:ring-[#CAE366]/20 sm:max-w-3xl"
             >
-              <div className="pointer-events-none flex shrink-0 items-center text-slate-400 dark:text-[#D6E5FC]/50 group-focus-within:text-[#CAE366] transition-colors mr-2">
-                <Globe size={16} />
+              <div className="pointer-events-none flex shrink-0 items-center text-slate-400 dark:text-[#D6E5FC]/50 group-focus-within:text-[#CAE366] transition-colors mr-1.5 sm:mr-2">
+                <Globe size={15} />
               </div>
               <input
                 type="url"
                 className="w-full min-w-0 flex-1 bg-transparent py-1 font-sans text-xs font-medium text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-[#D6E5FC]/40 outline-none border-0 focus:outline-none focus:ring-0"
-                placeholder="Enter seed URL to crawl (e.g. https://bloomxsolutions.com/)..."
+                placeholder="Enter website URL (e.g. https://bloomxsolutions.com/)..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 required
@@ -1488,7 +1502,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                 <button
                   type="button"
                   onClick={() => setUrl('')}
-                  className="p-1 mr-1 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors cursor-pointer"
+                  className="p-1 mr-1 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors cursor-pointer shrink-0"
                   title="Clear input"
                 >
                   <X size={14} />
@@ -1499,7 +1513,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                 disabled={isAuditing}
                 whileTap={isAuditing ? undefined : tapPress}
                 transition={spring.press}
-                className="btn-primary ml-1 h-9 shrink-0 rounded-full px-4 text-xs font-bold tracking-wide shadow-md sm:px-5 cursor-pointer"
+                className="btn-primary ml-1 h-9 shrink-0 rounded-full px-3 sm:px-5 text-xs font-bold tracking-wide shadow-md cursor-pointer"
               >
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.span
@@ -1516,25 +1530,28 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                         <span className="hidden xs:inline">Crawling...</span>
                       </>
                     ) : (
-                      'Run Audit'
+                      <>
+                        <span className="hidden sm:inline">Run </span>Audit
+                      </>
                     )}
                   </motion.span>
                 </AnimatePresence>
               </motion.button>
             </form>
 
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <motion.button
                 onClick={handleClearAudit}
                 whileHover={{ scale: 1.02 }}
                 whileTap={tapPress}
                 transition={spring.press}
                 disabled={isAuditing}
-                className="btn-secondary h-8 px-3 text-xs font-bold gap-1.5 text-slate-700 dark:text-slate-200 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-200 dark:hover:border-rose-800/60 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="btn-secondary h-9 px-2 sm:px-3 text-xs font-bold gap-1.5 text-slate-700 dark:text-slate-200 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-200 dark:hover:border-rose-800/60 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                 title="Clear audit data from dashboard"
+                aria-label="Clear audit data"
               >
-                <Trash2 size={13} className="text-rose-500" />
-                <span>Clear</span>
+                <Trash2 size={14} className="text-rose-500" />
+                <span className="hidden sm:inline">Clear</span>
               </motion.button>
             </div>
           </motion.header>
@@ -1636,8 +1653,8 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
             )}
           </AnimatePresence>
 
-          {/* Tab body */}
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6">
+          {/* Tab body with mobile safe area bottom clearance */}
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6 pb-20 md:pb-6">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={`${activeTab}-${pages.length > 0}`}
@@ -1652,6 +1669,56 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
             </AnimatePresence>
           </div>
         </main>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Mobile Bottom Navigation Bar (Tier-1 Native App Experience)     */}
+        {/* ---------------------------------------------------------------- */}
+        <nav
+          aria-label="Mobile Navigation"
+          className="fixed bottom-0 inset-x-0 z-30 md:hidden flex items-center justify-around border-t border-slate-200/90 dark:border-white/[0.08] bg-white/95 dark:bg-[#07080B]/95 backdrop-blur-xl px-1.5 py-1 pb-safe shadow-[0_-4px_24px_rgba(0,0,0,0.06)] dark:shadow-[0_-8px_32px_rgba(0,0,0,0.65)]"
+        >
+          {[
+            { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+            { id: 'issues', label: 'Issues', icon: AlertTriangle, badge: issuesReport.length },
+            { id: 'explorer', label: 'URLs', icon: ListTree, badge: pages.length },
+            { id: 'performance', label: 'Speed', icon: Zap },
+            { id: 'integrations', label: 'APIs', icon: Layers },
+          ].map((tab) => {
+            const isActive = activeTab === tab.id;
+            const Icon = tab.icon;
+            return (
+              <motion.button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                whileTap={tapPress}
+                className={`relative flex flex-1 flex-col items-center justify-center py-1 px-1 rounded-xl transition-colors cursor-pointer ${
+                  isActive
+                    ? 'text-indigo-600 dark:text-[#CAE366] font-bold'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium'
+                }`}
+              >
+                <div className="relative">
+                  <Icon size={18} className={isActive ? 'stroke-[2.5]' : 'stroke-2'} />
+                  {tab.badge > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold font-mono flex items-center justify-center leading-none">
+                      {tab.badge > 99 ? '99+' : tab.badge}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] tracking-tight mt-0.5">{tab.label}</span>
+                {isActive ? (
+                  <motion.div
+                    layoutId="mobile-bottom-active-dot"
+                    transition={spring.snap}
+                    className="mt-0.5 w-1 h-1 rounded-full bg-indigo-600 dark:bg-[#CAE366]"
+                  />
+                ) : (
+                  <div className="mt-0.5 w-1 h-1" />
+                )}
+              </motion.button>
+            );
+          })}
+        </nav>
 
         {renderDrawer()}
 

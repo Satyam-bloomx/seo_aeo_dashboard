@@ -854,22 +854,23 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
   };
 
   return (
-    <div className="flex flex-col h-full space-y-3 overflow-hidden">
+    <div className="flex flex-col min-h-full md:h-full space-y-3 md:overflow-hidden">
 
       {/* Top Header & Dual Export Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 shrink-0">
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">Screaming Frog URL Data Grid</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Explore full 32-parameter extracted data for all crawled website endpoints.</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
+        {/* Toolbar: Table/Tree Switcher & Export Buttons in a clean swipeable rail on mobile */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto no-scrollbar max-w-full pb-0.5 flex-nowrap self-start sm:self-auto">
           {/* Screaming Frog View Switcher: Table View vs Tree View */}
           <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0">
             <button
               type="button"
               onClick={() => setViewMode('table')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
                 viewMode === 'table'
                   ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 shadow-xs font-bold'
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -877,12 +878,13 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
               title="Flat Table View"
             >
               <TableProperties size={13} />
-              <span>Table View</span>
+              <span className="hidden xs:inline">Table View</span>
+              <span className="xs:hidden">Table</span>
             </button>
             <button
               type="button"
               onClick={() => setViewMode('tree')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
                 viewMode === 'tree'
                   ? 'bg-emerald-600 text-white shadow-xs font-bold'
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -890,7 +892,8 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
               title="Select tree table view (Screaming Frog Directory Trie)"
             >
               <FolderTree size={13} />
-              <span>Tree View</span>
+              <span className="hidden xs:inline">Tree View</span>
+              <span className="xs:hidden">Tree</span>
             </button>
           </div>
 
@@ -903,11 +906,12 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             whileHover="hover"
             animate="rest"
             transition={spring.press}
-            className="btn-primary py-2 px-3 sm:px-3.5 text-xs font-bold gap-1.5 sm:gap-2 disabled:opacity-50 shadow-xs"
+            className="btn-primary py-1.5 sm:py-2 px-2.5 sm:px-3.5 text-xs font-bold gap-1.5 sm:gap-2 disabled:opacity-50 shadow-xs shrink-0 whitespace-nowrap"
             title="Export full 3-sheet Excel (.xlsx) workbook"
           >
-            <FileSpreadsheet size={14} className="text-emerald-400" />
-            <span>Excel (.xlsx)</span>
+            <FileSpreadsheet size={14} className="text-emerald-400 shrink-0" />
+            <span className="hidden sm:inline">Excel (.xlsx)</span>
+            <span className="sm:hidden">Excel</span>
           </motion.button>
 
           {/* Master Full CSV Button */}
@@ -916,11 +920,12 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             disabled={!pages || pages.length === 0}
             whileTap={tapPress}
             transition={spring.press}
-            className="btn-secondary py-2 px-2.5 sm:px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs"
+            className="btn-secondary py-1.5 sm:py-2 px-2.5 sm:px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs shrink-0 whitespace-nowrap"
             title="Export 35+ technical parameters to universal CSV"
           >
-            <Download size={13} className="text-indigo-600 dark:text-indigo-400" />
-            <span>Master CSV</span>
+            <Download size={13} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <span className="hidden sm:inline">Master CSV</span>
+            <span className="sm:hidden">CSV</span>
           </motion.button>
 
           {/* Current Filtered View Export */}
@@ -929,45 +934,46 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             disabled={!filteredPages || filteredPages.length === 0}
             whileTap={tapPress}
             transition={spring.press}
-            className="btn-secondary py-2 px-2.5 sm:px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs"
+            className="btn-secondary py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs shrink-0 whitespace-nowrap"
             title="Export only currently filtered rows"
           >
-            <Filter size={13} className="text-slate-600 dark:text-slate-400" />
-            <span>Filtered View</span>
+            <Filter size={13} className="text-slate-600 dark:text-slate-400 shrink-0" />
+            <span className="hidden sm:inline">Filtered View</span>
+            <span className="sm:hidden">Filtered</span>
           </motion.button>
         </div>
       </div>
 
       {/* Scope Segment Control & Screaming Frog Compliance Indicator */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
-        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200/50 dark:border-slate-800 rounded-xl w-fit text-xs font-semibold">
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 pl-2 pr-1">Scope:</span>
+        <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200/50 dark:border-slate-800 rounded-xl w-full sm:w-fit text-xs font-semibold overflow-x-auto no-scrollbar flex-nowrap">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 pl-2 pr-1 shrink-0">Scope:</span>
           <button
             type="button"
             onClick={() => setPageScope('all')}
-            className={`px-3 py-1.5 rounded-lg transition-all text-xs ${
+            className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
               pageScope === 'all'
                 ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-bold'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            All Crawled URLs ({scopeCounts.all})
+            All URLs ({scopeCounts.all})
           </button>
           <button
             type="button"
             onClick={() => setPageScope('content')}
-            className={`px-3 py-1.5 rounded-lg transition-all text-xs ${
+            className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
               pageScope === 'content'
                 ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 shadow-xs font-bold'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            Content Pages Only ({scopeCounts.content})
+            Content Pages ({scopeCounts.content})
           </button>
           <button
             type="button"
             onClick={() => setPageScope('archives')}
-            className={`px-3 py-1.5 rounded-lg transition-all text-xs ${
+            className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
               pageScope === 'archives'
                 ? 'bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 shadow-xs font-bold'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -978,7 +984,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
           <button
             type="button"
             onClick={() => setPageScope('errors')}
-            className={`px-3 py-1.5 rounded-lg transition-all text-xs ${
+            className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
               pageScope === 'errors'
                 ? 'bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-400 shadow-xs font-bold'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -989,9 +995,9 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
         </div>
 
         {ON_PAGE_HTML_CATEGORIES.includes(activeCategory) && (
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-200/80 dark:border-slate-800">
+          <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-200/80 dark:border-slate-800 shrink-0">
             <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-            <span>Screaming Frog standard: 200 OK HTML pages evaluated</span>
+            <span>Screaming Frog standard: 200 OK HTML pages</span>
           </div>
         )}
       </div>
@@ -1092,7 +1098,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
 
       {/* Main View: Tree Table vs Flat Data Grid */}
       {viewMode === 'tree' ? (
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-[460px] md:min-h-0 overflow-hidden">
           <URLTreeTable
             pages={filteredPages}
             onRowClick={onRowClick}
@@ -1100,7 +1106,11 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
           />
         </div>
       ) : (
-        <div className="flex-1 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl relative overflow-hidden flex flex-col shadow-xs">
+        <div className="flex-1 min-h-[460px] md:min-h-0 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl relative overflow-hidden flex flex-col shadow-xs">
+          <div className="md:hidden flex items-center justify-between px-3 py-1.5 bg-indigo-50/70 dark:bg-indigo-950/40 border-b border-indigo-100 dark:border-indigo-900/40 text-[11px] text-indigo-700 dark:text-indigo-300 font-medium shrink-0">
+            <span>↔ Swipe horizontally for 32 parameters</span>
+            <span className="text-[10px] font-mono text-indigo-500">Tap row to inspect</span>
+          </div>
           <div className="flex-1 overflow-auto custom-scrollbar">
             <table className="w-full min-w-[700px] text-left text-xs text-slate-700 dark:text-slate-300 border-collapse">
             <thead className="bg-slate-50 dark:bg-slate-950/80 sticky top-0 z-20 border-b border-slate-200 dark:border-slate-800">

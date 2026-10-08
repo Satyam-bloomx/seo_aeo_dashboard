@@ -126,14 +126,14 @@ export default function AuditProLogo({
 
       {/* Brand Typography */}
       {showText && (
-        <div className="flex flex-col">
+        <div className="flex flex-col min-w-0">
           <div className="flex items-center gap-1 leading-none">
-            <span className="font-bold text-base tracking-tight text-slate-900 dark:text-white font-sans transition-colors">
+            <span className="font-bold text-base tracking-tight text-slate-900 dark:text-white font-sans transition-colors truncate">
               Audit<span className="text-[#CAE366]">Pro</span>
             </span>
           </div>
-          <span className="text-[10px] font-sans text-slate-400 dark:text-[#D6E5FC]/60 tracking-wider mt-0.5">
-            Performance SEO Architecture
+          <span className="text-[10px] font-sans text-slate-400 dark:text-[#D6E5FC]/60 tracking-wider mt-0.5 truncate max-w-[150px] sm:max-w-none">
+            Performance SEO Suite
           </span>
         </div>
       )}

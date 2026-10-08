@@ -702,7 +702,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
   }
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-2 gap-5 pb-6">
+    <div className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-1 sm:pr-2 gap-5 pb-20 md:pb-6">
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
@@ -824,7 +824,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       )}
 
       {/* Category Filter Navigation Bar */}
-      <div className="shrink-0 flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
+      <div className="shrink-0 flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pb-1 w-full flex-nowrap">
         <LayoutGroup id="integrations-category-filter">
           {CATEGORIES.map(category => {
             const isSelected = selectedCategory === category;

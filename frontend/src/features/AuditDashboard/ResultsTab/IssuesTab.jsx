@@ -30,6 +30,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import AiRemediationModal from '../AiRemediationModal';
+import IssueExpandedDetail from './IssueExpandedDetail';
 import { copyToClipboard } from '@/utils/clipboard';
 import { isDuplicateRule, buildDuplicateClusters } from '@/utils/duplicateDetector';
 
@@ -331,17 +332,17 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4 overflow-hidden">
+    <div className="flex flex-col min-h-full md:h-full space-y-3 sm:space-y-4 md:overflow-hidden">
 
       {/* Top Controls Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 shrink-0">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 sm:gap-4 shrink-0">
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">Audit Diagnostic Issues</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Prioritized diagnostic rules detected across all scanned pages with root-cause analysis.</p>
         </div>
 
         {/* Priority Filter Tabs */}
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900/80 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0 overflow-x-auto custom-scrollbar max-w-full">
+        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900/80 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0 overflow-x-auto no-scrollbar max-w-full flex-nowrap">
           <LayoutGroup id="issue-filters">
             {PRIORITY_FILTERS.map((f) => {
               const isActive = filterType === f.id;
@@ -386,8 +387,134 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
       </div>
 
       {/* Issues Table Container */}
-      <div className="flex-1 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 relative overflow-hidden flex flex-col shadow-xs rounded-2xl">
-        <div className="flex-1 overflow-auto custom-scrollbar">
+      <div className="flex-1 min-h-[460px] md:min-h-0 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 relative overflow-hidden flex flex-col shadow-xs rounded-2xl">
+        
+        {/* Mobile View: High-Density Interactive Cards (< 768px) */}
+        <div className="md:hidden flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+          <AnimatePresence initial={false} mode="popLayout">
+            {filteredIssues.length > 0 ? (
+              filteredIssues.map((issue) => {
+                const rowKey = `${issue.category}-${issue.name}`;
+                const isExpanded = expandedIssue === rowKey;
+                const affectedList = issue.affected_pages || [];
+
+                return (
+                  <motion.div
+                    key={rowKey}
+                    layout={!reduced}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={tween(duration.fast, ease.outQuart)}
+                    className={`rounded-xl border transition-colors overflow-hidden ${
+                      isExpanded
+                        ? 'bg-slate-50/90 dark:bg-slate-800/80 border-indigo-300 dark:border-indigo-600 shadow-sm'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    <div
+                      onClick={() => handleToggleExpand(rowKey, issue)}
+                      className="p-3.5 cursor-pointer space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {getPriorityBadge(issue.priority || (issue.type === 'Issue' ? 'High' : (issue.type === 'Warning' ? 'Medium' : 'Low')))}
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono text-[10px] text-slate-700 dark:text-slate-300 font-semibold">
+                            {issue.category.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] font-mono shrink-0">
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            {issue.count || affectedList.length || 1} URLs
+                          </span>
+                          <span className="text-slate-400">({issue.percentage}%)</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start justify-between gap-2">
+                        <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 leading-snug">
+                          {issue.name}
+                        </h4>
+                        <motion.span
+                          animate={{ rotate: isExpanded ? 180 : 0 }}
+                          transition={spring.snap}
+                          className="mt-0.5 text-slate-400 shrink-0"
+                        >
+                          <ChevronDown size={15} />
+                        </motion.span>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAiModalIssue(issue);
+                          }}
+                          className="flex-1 min-w-0 py-1.5 px-2 text-[11px] font-bold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white border border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800/60 dark:hover:bg-indigo-600 dark:hover:text-white transition-colors flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                        >
+                          <Sparkles size={11} className="text-amber-500 shrink-0" />
+                          <span className="truncate">Fix with AI</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onIssueClick({
+                              category: issue.category,
+                              name: issue.ruleName || issue.name
+                            });
+                          }}
+                          className="flex-1 min-w-0 py-1.5 px-2 text-[11px] font-bold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-colors flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                        >
+                          <span className="truncate">Explore in Grid</span>
+                          <ExternalLink size={11} className="shrink-0" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{
+                          height: tween(duration.base, ease.outQuart),
+                          opacity: tween(duration.fast, ease.outQuad),
+                        }}
+                        className="border-t border-slate-200 dark:border-slate-800 overflow-hidden"
+                      >
+                        <div className="p-3 sm:p-4 space-y-4 bg-slate-50/70 dark:bg-slate-950/60">
+                          <IssueExpandedDetail
+                            issue={issue}
+                            pages={pages}
+                            aiDiagnoses={aiDiagnoses}
+                            aiLoading={aiLoading}
+                            fetchAiDiagnosis={fetchAiDiagnosis}
+                            setAiModalIssue={setAiModalIssue}
+                            onIssueClick={onIssueClick}
+                            onSelectPage={onSelectPage}
+                            copiedUrl={copiedUrl}
+                            handleCopy={handleCopy}
+                          />
+                        </div>
+                      </motion.div>
+                    )}
+                  </motion.div>
+                );
+              })
+            ) : (
+              <div className="py-12 text-center text-slate-400">
+                <ShieldCheck size={32} className="text-emerald-600 mx-auto mb-2" />
+                <p className="font-bold text-slate-900 dark:text-white text-xs">No matching diagnostic issues.</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">All audit parameters satisfy clean health standards.</p>
+              </div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Desktop View: Full Diagnostic Table (>= 768px) */}
+        <div className="hidden md:block flex-1 overflow-auto custom-scrollbar">
           <table className="w-full min-w-[650px] text-left text-xs text-slate-700 dark:text-slate-300 border-collapse">
             <thead className="bg-slate-50 dark:bg-slate-950/80 sticky top-0 z-20 border-b border-slate-200 dark:border-slate-800">
               <tr>
@@ -498,493 +625,18 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
                               className="overflow-hidden"
                             >
                               <div className="px-6 py-5 space-y-4">
-                                {(() => {
-                                  const issueKey = issue.ruleName || issue.name;
-                                  const aiData = aiDiagnoses[issueKey];
-                                  const isAiLoading = Boolean(aiLoading[issueKey]);
-                                  const isAiEnriched = Boolean(aiData?.is_live_ai);
-                                  const displayIssue = aiData ? applyAiDiagnosis(issue, aiData) : issue;
-
-                                  return (
-                                    <>
-                                      {/* Top AI Remediation & Dynamic Synthesis Header */}
-                                      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 dark:from-slate-950 dark:via-indigo-950/80 dark:to-slate-950 p-3.5 rounded-2xl border border-indigo-800/40 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                                        <div className="flex items-center gap-3 text-white">
-                                          <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-amber-400 shrink-0">
-                                            {isAiLoading ? (
-                                              <Loader2 size={16} className="animate-spin text-indigo-400" />
-                                            ) : (
-                                              <Sparkles size={16} />
-                                            )}
-                                          </div>
-                                          <div>
-                                            <h5 className="text-xs font-bold text-white flex items-center gap-2">
-                                              <span>{isAiEnriched ? 'AI-Tailored Diagnostic Intelligence' : 'Automated Diagnostic Guidance'}</span>
-                                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold border ${
-                                                isAiEnriched
-                                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                                  : 'bg-indigo-500/30 text-indigo-300 border-indigo-400/30'
-                                              }`}>
-                                                {isAiLoading ? 'Synthesizing...' : isAiEnriched ? (aiData.powered_by || 'Live AI Engine') : 'Standard Baseline'}
-                                              </span>
-                                            </h5>
-                                            <p className="text-[11px] text-slate-300 mt-0.5">
-                                              {isAiEnriched
-                                                ? 'Diagnosis, traffic impact, and before/after fixes are customized specifically for this domain and page markup.'
-                                                : 'Synthesize production-ready markup, meta tags, and H1 restructuring directly for this error.'}
-                                            </p>
-                                          </div>
-                                        </div>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              fetchAiDiagnosis(issue, true);
-                                            }}
-                                            disabled={isAiLoading}
-                                            className="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
-                                            title="Generate fresh live AI diagnosis for this issue"
-                                          >
-                                            <RefreshCw size={12} className={isAiLoading ? 'animate-spin text-indigo-400' : ''} />
-                                            <span>{isAiEnriched ? 'Regenerate AI' : 'Analyze with AI'}</span>
-                                          </button>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setAiModalIssue(issue);
-                                            }}
-                                            className="px-3.5 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors shrink-0 cursor-pointer"
-                                          >
-                                            <Sparkles size={13} className="text-amber-300" /> Launch AI Fix Assistant
-                                          </button>
-                                        </div>
-                                      </div>
-
-                                {/* Human-Friendly 3-Pillar Diagnostic Analysis Bento */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-                                  
-                                  {/* 1. What's Happening */}
-                                  <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
-                                    <div>
-                                      <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-xs mb-1.5">
-                                        <Info size={15} className="shrink-0 text-indigo-500" />
-                                        <span>What’s Happening</span>
-                                        <span className="text-[10px] font-normal text-slate-400">· Plain English</span>
-                                      </div>
-                                      <p className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed font-sans">
-                                        {displayIssue.rootCause || 'Detected during automated DOM inspection against W3C and SEO standards.'}
-                                      </p>
-                                    </div>
-                                  </div>
-
-                                  {/* 2. Why It Matters For Rankings */}
-                                  <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-amber-200/70 dark:border-amber-900/30 shadow-xs flex flex-col justify-between">
-                                    <div>
-                                      <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-xs mb-1.5">
-                                        <TrendingUp size={15} className="shrink-0 text-amber-500" />
-                                        <span>Why It Matters</span>
-                                        <span className="text-[10px] font-normal text-slate-400">· Traffic & AI Impact</span>
-                                      </div>
-                                      <p className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed font-sans">
-                                        {displayIssue.impact || 'Causes crawl inefficiencies, diluted search relevancy, or snippet rendering errors.'}
-                                      </p>
-                                    </div>
-                                  </div>
-
-                                  {/* 3. Step-by-Step Fix Guide */}
-                                  <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-emerald-200/70 dark:border-emerald-900/30 shadow-xs flex flex-col justify-between">
-                                    <div>
-                                      <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-xs mb-1.5">
-                                        <CheckCircle2 size={15} className="shrink-0 text-emerald-500" />
-                                        <span>How to Fix This</span>
-                                        <span className="text-[10px] font-normal text-slate-400">· Action Steps</span>
-                                      </div>
-                                      <p className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed font-sans whitespace-pre-line">
-                                        {displayIssue.fixGuide || 'Review template code and update HTML structures according to webmaster guidelines.'}
-                                      </p>
-                                    </div>
-                                  </div>
-
-                                </div>
-
-                                {/* Best Practice Fix & Real-World Example Showcase */}
-                                {(displayIssue.exampleBefore || displayIssue.exampleAfter || displayIssue.tip) && (
-                                  <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/70 text-slate-100 p-4 rounded-xl border border-indigo-500/25 shadow-xs space-y-3">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-indigo-500/20">
-                                      <div className="flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-lg bg-amber-400/10 text-amber-300 flex items-center justify-center shrink-0 border border-amber-400/20">
-                                          <Lightbulb size={13} />
-                                        </div>
-                                        <h6 className="text-xs font-bold text-white tracking-wide">
-                                          Best Practice Fix & Real-World Example
-                                        </h6>
-                                      </div>
-                                      {displayIssue.tip && (
-                                        <span className="text-[10px] font-medium text-indigo-300 bg-indigo-900/50 px-2.5 py-0.5 rounded-full border border-indigo-700/40 w-fit">
-                                          💡 Pro Strategy Included
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    {(displayIssue.exampleBefore || displayIssue.exampleAfter) && (
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-0.5">
-                                        {displayIssue.exampleBefore && (
-                                          <div className="p-3 rounded-lg bg-rose-950/30 border border-rose-800/40 space-y-1.5">
-                                            <div className="flex items-center gap-1.5 text-rose-400 font-semibold text-[11px]">
-                                              <XCircle size={13} />
-                                              <span>What to Avoid (The Issue)</span>
-                                            </div>
-                                            <div className="p-2 rounded bg-black/50 border border-rose-900/30 text-[11px] font-mono text-slate-300 break-words leading-relaxed select-all">
-                                              {displayIssue.exampleBefore}
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {displayIssue.exampleAfter && (
-                                          <div className="p-3 rounded-lg bg-emerald-950/30 border border-emerald-800/40 space-y-1.5">
-                                            <div className="flex items-center gap-1.5 text-emerald-400 font-semibold text-[11px]">
-                                              <CheckCircle2 size={13} />
-                                              <span>Recommended Fix (Best Practice)</span>
-                                            </div>
-                                            <div className="p-2 rounded bg-black/50 border border-emerald-900/30 text-[11px] font-mono text-emerald-200 break-words leading-relaxed select-all">
-                                              {displayIssue.exampleAfter}
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-
-                                    {displayIssue.tip && (
-                                      <div className="p-2.5 rounded-lg bg-indigo-950/40 border border-indigo-800/30 flex items-start gap-2 text-[11px] text-slate-300 leading-relaxed">
-                                        <span className="font-bold text-indigo-300 shrink-0">💡 Strategy Tip:</span>
-                                        <span>{displayIssue.tip}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Affected URLs or Duplicate Clusters View */}
-                                {(() => {
-                                  const isDup = isDuplicateRule(issue.ruleName || issue.name);
-                                  if (isDup) {
-                                    const duplicateClusters = buildDuplicateClusters(affectedList, issue.ruleName || issue.name, pages);
-                                    return (
-                                      <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-amber-200/80 dark:border-amber-900/40 shadow-xs space-y-4">
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-                                          <div className="flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
-                                              <Layers size={13} />
-                                            </div>
-                                            <div>
-                                              <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase font-mono tracking-wider flex items-center gap-2">
-                                                <span>Duplicate URL Clusters & Counterpart Links</span>
-                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
-                                                  {duplicateClusters.length} {duplicateClusters.length === 1 ? 'Cluster' : 'Clusters'}
-                                                </span>
-                                              </h4>
-                                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                                Grouped by shared duplicate element. Primary/Main URL is paired with its duplicate page links.
-                                              </p>
-                                            </div>
-                                          </div>
-                                          <button
-                                            onClick={() => onIssueClick({
-                                              category: issue.category,
-                                              name: issue.ruleName || issue.name
-                                            })}
-                                            className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer self-start sm:self-auto shrink-0"
-                                          >
-                                            Open All in URL Grid <ExternalLink size={11} />
-                                          </button>
-                                        </div>
-
-                                        {/* Clusters List */}
-                                        <div className="space-y-3.5 max-h-96 overflow-y-auto custom-scrollbar pr-1">
-                                          {duplicateClusters.map((cluster, cIdx) => {
-                                            const main = cluster.mainPage;
-                                            const dups = cluster.duplicates || [];
-
-                                            return (
-                                              <div
-                                                key={cluster.clusterKey || cIdx}
-                                                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70 p-3.5 space-y-3 transition-colors hover:border-slate-300 dark:hover:border-slate-700"
-                                              >
-                                                {/* Cluster Header with Shared Value */}
-                                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-800/60 pb-2">
-                                                  <div className="flex items-center gap-2 min-w-0">
-                                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
-                                                      Cluster #{cIdx + 1}
-                                                    </span>
-                                                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate" title={cluster.sharedValue}>
-                                                      <strong className="text-slate-900 dark:text-white font-mono text-[11px]">{cluster.categoryLabel}:</strong> "{cluster.sharedValue}"
-                                                    </span>
-                                                  </div>
-                                                  <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 shrink-0 font-medium">
-                                                    {cluster.totalCount} URLs in cluster
-                                                  </span>
-                                                </div>
-
-                                                {/* Main / Primary URL Card */}
-                                                {main && (
-                                                  <div className="rounded-lg bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 p-2.5 space-y-1.5">
-                                                    <div className="flex items-center justify-between">
-                                                      <div className="flex items-center gap-1.5">
-                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                                                          <CheckCircle2 size={11} className="text-emerald-600 dark:text-emerald-400" />
-                                                          MAIN / PRIMARY URL
-                                                        </span>
-                                                        {main.canonical_link_element_1 && (
-                                                          <span className="text-[9px] font-mono text-emerald-700 dark:text-emerald-400 font-semibold" title={main.canonical_link_element_1}>
-                                                            {main.canonical_link_element_1 === main.url ? '(Self-Canonical)' : '(Has Canonical)'}
-                                                          </span>
-                                                        )}
-                                                      </div>
-                                                      <div className="flex items-center gap-1">
-                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-white dark:bg-slate-900 text-emerald-700 border border-emerald-200 dark:border-emerald-800">
-                                                          {main.status_code || 200}
-                                                        </span>
-                                                        {main.word_count && (
-                                                          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
-                                                            {main.word_count} words
-                                                          </span>
-                                                        )}
-                                                      </div>
-                                                    </div>
-
-                                                    <div className="flex items-center justify-between gap-2">
-                                                      <div className="min-w-0 flex-1 flex items-center gap-1.5">
-                                                        <a
-                                                          href={main.url}
-                                                          target="_blank"
-                                                          rel="noopener noreferrer"
-                                                          className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline truncate"
-                                                          title="Open live URL in browser"
-                                                        >
-                                                          {main.url}
-                                                        </a>
-                                                        <a
-                                                          href={main.url}
-                                                          target="_blank"
-                                                          rel="noopener noreferrer"
-                                                          className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors shrink-0"
-                                                          title="Open live website link"
-                                                        >
-                                                          <ExternalLink size={12} />
-                                                        </a>
-                                                      </div>
-                                                      <div className="flex items-center gap-1 shrink-0">
-                                                        {onSelectPage && (
-                                                          <button
-                                                            type="button"
-                                                            onClick={() => onSelectPage(main)}
-                                                            className="px-2 py-0.5 rounded text-[10px] font-bold bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
-                                                            title="Inspect telemetry in dashboard drawer"
-                                                          >
-                                                            Inspect
-                                                          </button>
-                                                        )}
-                                                        <button
-                                                          onClick={(e) => handleCopy(main.url, e)}
-                                                          className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded transition-colors"
-                                                          title="Copy URL"
-                                                        >
-                                                          {copiedUrl === main.url ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
-                                                        </button>
-                                                      </div>
-                                                    </div>
-                                                  </div>
-                                                )}
-
-                                                {/* Duplicate Instances List */}
-                                                <div className="space-y-2 pl-3 border-l-2 border-amber-300 dark:border-amber-700/60 ml-2">
-                                                  <span className="text-[10px] font-mono uppercase tracking-wider text-amber-800 dark:text-amber-400 font-bold block">
-                                                    ↳ Duplicate Page Link{dups.length > 1 ? 's' : ''} ({dups.length}):
-                                                  </span>
-
-                                                  {dups.map((dup, dIdx) => (
-                                                    <div
-                                                      key={dup.url || dIdx}
-                                                      className="rounded-lg bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40 p-2.5 space-y-1.5"
-                                                    >
-                                                      <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-1.5">
-                                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                                                            <AlertTriangle size={10} className="text-amber-600" />
-                                                            DUPLICATE OF MAIN
-                                                          </span>
-                                                          {dup.canonical_link_element_1 && dup.canonical_link_element_1 !== dup.url && (
-                                                            <span className="text-[9px] font-mono text-slate-500 truncate max-w-xs" title={`Canonical: ${dup.canonical_link_element_1}`}>
-                                                              → Canonical: {dup.canonical_link_element_1}
-                                                            </span>
-                                                          )}
-                                                        </div>
-                                                        <div className="flex items-center gap-1">
-                                                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                                                            {dup.status_code || 200}
-                                                          </span>
-                                                        </div>
-                                                      </div>
-
-                                                      <div className="flex items-center justify-between gap-2">
-                                                        <div className="min-w-0 flex-1 flex items-center gap-1.5">
-                                                          <a
-                                                            href={dup.url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="font-mono text-xs font-bold text-amber-700 dark:text-amber-400 hover:underline truncate"
-                                                            title="Open duplicate live link"
-                                                          >
-                                                            {dup.url}
-                                                          </a>
-                                                          <a
-                                                            href={dup.url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors shrink-0"
-                                                            title="Open live website link"
-                                                          >
-                                                            <ExternalLink size={12} />
-                                                          </a>
-                                                        </div>
-                                                        <div className="flex items-center gap-1 shrink-0">
-                                                          {onSelectPage && (
-                                                            <button
-                                                              type="button"
-                                                              onClick={() => onSelectPage(dup)}
-                                                              className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-50 hover:bg-slate-100 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
-                                                              title="Inspect telemetry in dashboard drawer"
-                                                            >
-                                                              Inspect
-                                                            </button>
-                                                          )}
-                                                          <button
-                                                            onClick={(e) => handleCopy(dup.url, e)}
-                                                            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded transition-colors"
-                                                            title="Copy Duplicate URL"
-                                                          >
-                                                            {copiedUrl === dup.url ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
-                                                          </button>
-                                                        </div>
-                                                      </div>
-                                                    </div>
-                                                  ))}
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    );
-                                  }
-
-                                  // Standard non-duplicate Affected URLs List
-                                  return (
-                                    <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
-                                      <div className="flex items-center justify-between mb-3">
-                                        <div className="flex items-center gap-2">
-                                          <ListTree size={14} className="text-indigo-600 dark:text-indigo-400" />
-                                          <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase font-mono tracking-wider">
-                                            Affected URLs ({affectedList.length})
-                                          </h4>
-                                        </div>
-                                        <button
-                                          onClick={() => onIssueClick({
-                                            category: issue.category,
-                                            name: issue.ruleName || issue.name
-                                          })}
-                                          className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer"
-                                        >
-                                          Open All in URL Grid <ExternalLink size={11} />
-                                        </button>
-                                      </div>
-
-                                      {affectedList.length > 0 ? (
-                                        <div className="max-h-80 overflow-y-auto custom-scrollbar divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded-lg">
-                                          {affectedList.slice(0, 50).map((page, pIdx) => {
-                                            const isCopied = copiedUrl === page.url;
-                                            const evidence = getPageEvidence(page, issue.ruleName || issue.name);
-                                            return (
-                                              <div key={page.id || page.url || pIdx} className="px-3.5 py-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors space-y-2">
-                                                <div className="flex items-center justify-between text-xs gap-3">
-                                                  <div className="flex items-center gap-2 truncate max-w-xl">
-                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 ${
-                                                      (page.status_code || 200) >= 400
-                                                        ? 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50'
-                                                        : (page.status_code || 200) >= 300
-                                                        ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50'
-                                                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50'
-                                                    }`}>
-                                                      {page.status_code || 200}
-                                                    </span>
-                                                    <span className="font-mono text-slate-800 dark:text-slate-200 font-medium truncate" title={page.url}>
-                                                      {page.url}
-                                                    </span>
-                                                  </div>
-                                                  <div className="flex items-center gap-1 shrink-0">
-                                                    <a
-                                                      href={page.url}
-                                                      target="_blank"
-                                                      rel="noopener noreferrer"
-                                                      className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded transition-colors"
-                                                      title="Open URL in browser"
-                                                    >
-                                                      <ExternalLink size={12} />
-                                                    </a>
-                                                    <button
-                                                      onClick={(e) => handleCopy(page.url, e)}
-                                                      className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded transition-colors"
-                                                      title="Copy URL"
-                                                    >
-                                                      {isCopied ? <Check size={12} className="text-emerald-600 dark:text-emerald-400" /> : <Copy size={12} />}
-                                                    </button>
-                                                  </div>
-                                                </div>
-
-                                                {/* Live Diagnostic Evidence on this URL */}
-                                                {evidence && evidence.items && evidence.items.length > 0 && (
-                                                  <div className="p-2.5 rounded-lg bg-slate-100/90 dark:bg-slate-950/70 border border-slate-200/70 dark:border-slate-800/80 text-[11px] space-y-1.5">
-                                                    <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                                                      <span className="font-semibold text-slate-600 dark:text-slate-300">Live On-Page Snapshot</span>
-                                                      {evidence.warning && (
-                                                        <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
-                                                          ⚠️ {evidence.warning}
-                                                        </span>
-                                                      )}
-                                                    </div>
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                      {evidence.items.map((it, idx) => (
-                                                        <div key={idx} className="p-1.5 rounded bg-white/80 dark:bg-slate-900/80 border border-slate-200/50 dark:border-slate-800/60 flex flex-col gap-0.5">
-                                                          <div className="flex items-center justify-between">
-                                                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">{it.label}</span>
-                                                            {it.note && <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-mono font-medium">{it.note}</span>}
-                                                          </div>
-                                                          <div className={`text-xs font-mono truncate select-all ${it.isError ? 'text-rose-600 dark:text-rose-400 font-semibold' : 'text-slate-800 dark:text-slate-200'}`} title={it.value}>
-                                                            {it.value}
-                                                          </div>
-                                                        </div>
-                                                      ))}
-                                                    </div>
-                                                  </div>
-                                                )}
-                                              </div>
-                                            );
-                                          })}
-                                          {affectedList.length > 50 && (
-                                            <div className="p-2 text-center text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-50 dark:bg-slate-950">
-                                              + {affectedList.length - 50} more affected URLs. Click "Open All in URL Grid" to inspect full list.
-                                            </div>
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">No specific URL records loaded.</p>
-                                      )}
-                                    </div>
-                                  );
-                                })()}
-                                </>
-                              );
-                            })()}
-
+                                <IssueExpandedDetail
+                                  issue={issue}
+                                  pages={pages}
+                                  aiDiagnoses={aiDiagnoses}
+                                  aiLoading={aiLoading}
+                                  fetchAiDiagnosis={fetchAiDiagnosis}
+                                  setAiModalIssue={setAiModalIssue}
+                                  onIssueClick={onIssueClick}
+                                  onSelectPage={onSelectPage}
+                                  copiedUrl={copiedUrl}
+                                  handleCopy={handleCopy}
+                                />
                               </div>
                             </motion.div>
                           </td>

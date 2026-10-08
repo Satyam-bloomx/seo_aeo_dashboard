@@ -205,7 +205,7 @@ export default function PerformanceTab({ pages }) {
   }, [metrics, targetOffset, circumference, strategy, inspectedUrl]);
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-2 space-y-5">
+    <div className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-2 space-y-5 pb-20 md:pb-6">
 
       {/* Header & Device Strategy Toggle */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 shrink-0">
@@ -395,7 +395,7 @@ export default function PerformanceTab({ pages }) {
               variants={staggerContainer(0.05, 0.1)}
               initial="initial"
               animate="animate"
-              className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3.5"
+              className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3.5"
             >
               {vitals.map((v, i) => (
                 <motion.div
@@ -403,12 +403,12 @@ export default function PerformanceTab({ pages }) {
                   variants={staggerItem}
                   whileHover={{ y: -3 }}
                   transition={spring.press}
-                  className="metric-card-item p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-colors"
+                  className="metric-card-item p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-colors"
                 >
-                  <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase">{v.label}</span>
-                  <div className="my-2">
-                    <div className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono">{v.value}</div>
-                    <p className={`text-[10px] font-semibold ${v.tone === 'indigo' ? 'text-indigo-700 dark:text-indigo-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
+                  <span className="text-[9px] sm:text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase truncate">{v.label}</span>
+                  <div className="my-1.5 sm:my-2">
+                    <div className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white font-mono truncate">{v.value}</div>
+                    <p className={`text-[9px] sm:text-[10px] font-semibold truncate ${v.tone === 'indigo' ? 'text-indigo-700 dark:text-indigo-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
                       Target: {v.target}
                     </p>
                   </div>

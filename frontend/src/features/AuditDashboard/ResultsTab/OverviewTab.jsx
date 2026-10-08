@@ -132,25 +132,25 @@ function SpringTiltBentoCard({
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       style={{ transform: to(props.xys, transTilt) }}
-      className={`gsap-metric-card spotlight-card p-5 rounded-3xl bg-gradient-to-br ${t.bg} border ${t.border} shadow-sm hover:shadow-xl transition-shadow duration-300 relative overflow-hidden will-change-transform flex flex-col justify-between`}
+      className={`gsap-metric-card spotlight-card p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-gradient-to-br ${t.bg} border ${t.border} shadow-xs hover:shadow-xl transition-shadow duration-300 relative overflow-hidden will-change-transform flex flex-col justify-between`}
     >
-      <div className="flex justify-between items-start mb-3 relative z-10">
+      <div className="flex justify-between items-start mb-2.5 sm:mb-3 relative z-10">
         <div>
           <p className={`text-[10px] font-mono font-bold ${t.text} uppercase tracking-widest`}>{subtitle}</p>
           {score !== null && score !== undefined && !isDisconnected ? (
-            <h3 className="text-4xl font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums">
+            <h3 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white mt-0.5 sm:mt-1 tabular-nums">
               <AnimatedNumber value={score} />
-              <span className="text-base text-slate-400 font-normal">/100</span>
+              <span className="text-sm sm:text-base text-slate-400 font-normal">/100</span>
             </h3>
           ) : (
-            <h3 className="text-4xl font-extrabold text-slate-400 dark:text-slate-500 mt-1 tabular-nums flex items-baseline gap-1">
+            <h3 className="text-3xl sm:text-4xl font-extrabold text-slate-400 dark:text-slate-500 mt-0.5 sm:mt-1 tabular-nums flex items-baseline gap-1">
               <span>--</span>
-              <span className="text-base text-slate-400 dark:text-slate-500 font-normal">/100</span>
+              <span className="text-sm sm:text-base text-slate-400 dark:text-slate-500 font-normal">/100</span>
             </h3>
           )}
         </div>
-        <div className={`w-10 h-10 rounded-2xl ${t.iconBg} border flex items-center justify-center shadow-xs`}>
-          <Icon size={20} />
+        <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl ${t.iconBg} border flex items-center justify-center shadow-xs shrink-0`}>
+          <Icon size={18} className="sm:w-5 sm:h-5" />
         </div>
       </div>
       <div className="flex items-center justify-between gap-1 text-xs text-slate-700 dark:text-slate-300 font-semibold pt-2 border-t border-slate-200/60 dark:border-slate-800/80 relative z-10">
@@ -497,9 +497,8 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
     currentTarget.style.setProperty('--mouse-x', `${clientX - left}px`);
     currentTarget.style.setProperty('--mouse-y', `${clientY - top}px`);
   };
-
   return (
-    <div ref={containerRef} className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-1 sm:pr-2 space-y-5 sm:space-y-6">
+    <div ref={containerRef} className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-1 sm:pr-2 space-y-5 sm:space-y-6 pb-20 md:pb-6">
 
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
@@ -738,28 +737,28 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
             </div>
 
             {/* 3 KPI metric gauges */}
-            <div className="grid grid-cols-3 gap-2 mb-3">
-              <div className="p-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-center">
-                <span className="text-[10px] font-mono text-blue-800 dark:text-blue-300 font-bold block uppercase">Clicks (30d)</span>
-                <span className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mb-3">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-center">
+                <span className="text-[8px] xs:text-[9px] sm:text-[10px] font-mono text-blue-800 dark:text-blue-300 font-bold block uppercase truncate">Clicks (30d)</span>
+                <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block truncate">
                   {gscSummary?.isLive ? gscSummary.totalClicks.toLocaleString() : '0'}
                 </span>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">{gscSummary?.isLive ? 'Organic' : 'Disconnected'}</span>
+                <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-semibold truncate block">{gscSummary?.isLive ? 'Organic' : 'Offline'}</span>
               </div>
-              <div className="p-2.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 text-center">
-                <span className="text-[10px] font-mono text-indigo-800 dark:text-indigo-300 font-bold block uppercase">Impressions</span>
-                <span className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 text-center">
+                <span className="text-[8px] xs:text-[9px] sm:text-[10px] font-mono text-indigo-800 dark:text-indigo-300 font-bold block uppercase truncate">Impressions</span>
+                <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block truncate">
                   {gscSummary?.isLive ? gscSummary.totalImpressions.toLocaleString() : '0'}
                 </span>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">{gscSummary?.isLive ? 'SERP Views' : 'Disconnected'}</span>
+                <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-semibold truncate block">{gscSummary?.isLive ? 'SERP Views' : 'Offline'}</span>
               </div>
-              <div className="p-2.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40 text-center">
-                <span className="text-[10px] font-mono text-purple-800 dark:text-purple-300 font-bold block uppercase">GA4 Sessions</span>
-                <span className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40 text-center">
+                <span className="text-[8px] xs:text-[9px] sm:text-[10px] font-mono text-purple-800 dark:text-purple-300 font-bold block uppercase truncate">GA4 Sessions</span>
+                <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block truncate">
                   {ga4Summary?.totalSessions ? ga4Summary.totalSessions.toLocaleString() : (gscSummary?.isLive ? `${gscSummary?.avgCtr || '0.0'}%` : '0')}
                 </span>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
-                  {ga4Summary?.totalSessions ? 'Visitors' : 'Click Rate'}
+                <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-semibold truncate block">
+                  {ga4Summary?.totalSessions ? 'Visitors' : 'CTR'}
                 </span>
               </div>
             </div>
@@ -953,28 +952,28 @@ export default function OverviewTab({ pages, onNavigateToExplorer, onNavigateToT
             {pageSpeedData?.isConnected ? (
               <>
                 {/* 3 Key Metric Gauges */}
-                <div className="grid grid-cols-3 gap-2.5 mb-4">
-                  <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center">
-                    <span className="text-[10px] font-mono text-emerald-800 font-bold block uppercase">LCP (Speed)</span>
-                    <span className="text-base font-extrabold text-emerald-700 mt-0.5 block">{pageSpeedData?.metrics?.lcp || 'N/A'}</span>
-                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-center gap-0.5 mt-0.5">
-                      {parseFloat(pageSpeedData?.metrics?.lcp) < 2.5 ? <><Check size={11} /> Pass (&lt;2.5s)</> : <span className="text-amber-700 font-medium">Needs Review</span>}
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 mb-4">
+                  <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-center">
+                    <span className="text-[8px] xs:text-[9px] sm:text-[10px] font-mono text-emerald-800 dark:text-emerald-300 font-bold block uppercase truncate">LCP (Speed)</span>
+                    <span className="text-sm sm:text-base font-extrabold text-emerald-700 dark:text-emerald-400 mt-0.5 block truncate">{pageSpeedData?.metrics?.lcp || 'N/A'}</span>
+                    <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-0.5 mt-0.5 truncate">
+                      {parseFloat(pageSpeedData?.metrics?.lcp) < 2.5 ? <><Check size={10} /> Pass</> : <span className="text-amber-700 dark:text-amber-400 font-medium">Review</span>}
                     </span>
                   </div>
 
-                  <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center">
-                    <span className="text-[10px] font-mono text-emerald-800 font-bold block uppercase">INP (Response)</span>
-                    <span className="text-base font-extrabold text-emerald-700 mt-0.5 block">{pageSpeedData?.metrics?.inp || 'N/A'}</span>
-                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-center gap-0.5 mt-0.5">
-                      {parseFloat(pageSpeedData?.metrics?.inp) < 200 ? <><Check size={11} /> Pass (&lt;200ms)</> : <span className="text-amber-700 font-medium">Needs Review</span>}
+                  <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-center">
+                    <span className="text-[8px] xs:text-[9px] sm:text-[10px] font-mono text-emerald-800 dark:text-emerald-300 font-bold block uppercase truncate">INP (Response)</span>
+                    <span className="text-sm sm:text-base font-extrabold text-emerald-700 dark:text-emerald-400 mt-0.5 block truncate">{pageSpeedData?.metrics?.inp || 'N/A'}</span>
+                    <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-0.5 mt-0.5 truncate">
+                      {parseFloat(pageSpeedData?.metrics?.inp) < 200 ? <><Check size={10} /> Pass</> : <span className="text-amber-700 dark:text-amber-400 font-medium">Review</span>}
                     </span>
                   </div>
 
-                  <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center">
-                    <span className="text-[10px] font-mono text-emerald-800 font-bold block uppercase">CLS (Stability)</span>
-                    <span className="text-base font-extrabold text-emerald-700 mt-0.5 block">{pageSpeedData?.metrics?.cls || 'N/A'}</span>
-                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-center gap-0.5 mt-0.5">
-                      {parseFloat(pageSpeedData?.metrics?.cls) < 0.1 ? <><Check size={11} /> Pass (&lt;0.1)</> : <span className="text-amber-700 font-medium">Needs Review</span>}
+                  <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-center">
+                    <span className="text-[8px] xs:text-[9px] sm:text-[10px] font-mono text-emerald-800 dark:text-emerald-300 font-bold block uppercase truncate">CLS (Stability)</span>
+                    <span className="text-sm sm:text-base font-extrabold text-emerald-700 dark:text-emerald-400 mt-0.5 block truncate">{pageSpeedData?.metrics?.cls || 'N/A'}</span>
+                    <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-0.5 mt-0.5 truncate">
+                      {parseFloat(pageSpeedData?.metrics?.cls) < 0.1 ? <><Check size={10} /> Pass</> : <span className="text-amber-700 dark:text-amber-400 font-medium">Review</span>}
                     </span>
                   </div>
                 </div>

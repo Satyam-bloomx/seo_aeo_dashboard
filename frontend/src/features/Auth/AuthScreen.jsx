@@ -12,7 +12,8 @@ import {
   EyeOff,
   User,
   ShieldCheck,
-  Check
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
@@ -25,7 +26,7 @@ export default function AuthScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  const { signIn, signUp, signInWithGoogle } = useAuth();
+  const { signIn, signUp, signInWithGoogle, signInAsGuest } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -85,7 +86,7 @@ export default function AuthScreen() {
           <h1 className="text-2xl font-bold tracking-tight text-white mt-1">
             {mode === 'signin' ? 'Sign in to AuditPro' : 'Create your workspace'}
           </h1>
-          <p className="mt-1.5 text-xs text-[#D6E5FC]/75 font-normal">
+          <p className="mt-1.5 text-xs text-[#D6E5FC]/75 font-normal max-w-xs mx-auto">
             {mode === 'signin'
               ? 'Enter your credentials to access your private SEO & crawl engine'
               : 'Deploy autonomous technical SEO, AEO & GEO spider telemetry'}
@@ -93,7 +94,7 @@ export default function AuthScreen() {
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl border border-white/[0.08] bg-[#0D0F15]/90 backdrop-blur-xl p-6 sm:p-7 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+        <div className="rounded-2xl border border-white/[0.08] bg-[#0D0F15]/90 backdrop-blur-xl p-4 xs:p-5 sm:p-7 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
           {/* Segmented Mode Selector */}
           <div className="grid grid-cols-2 p-1 bg-[#07080B] rounded-xl mb-5 border border-white/[0.06]">
             <button
@@ -247,6 +248,18 @@ export default function AuthScreen() {
             </button>
           </form>
 
+          {/* Instant Guest / Demo Mode Button */}
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={signInAsGuest}
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] text-[#D6E5FC]/80 hover:text-white text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+            >
+              <Sparkles size={13} className="text-[#CAE366]" />
+              <span>Explore Demo Workspace (Guest Mode)</span>
+            </button>
+          </div>
+
           {/* Footer toggle prompt */}
           <div className="mt-5 pt-4 border-t border-white/[0.06] text-center">
             <p className="text-xs text-[#D6E5FC]/60">
@@ -264,9 +277,10 @@ export default function AuthScreen() {
 
         {/* Security & Workspace Trust Micro-Footer */}
         <div className="mt-6 flex items-center justify-center gap-2">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#CAE366]/5 border border-[#CAE366]/20 text-[11px] font-medium text-[#CAE366]">
-            <ShieldCheck size={13} className="text-[#CAE366]" />
-            <span>Multi-tenant workspace isolation • Supabase Auth</span>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#CAE366]/5 border border-[#CAE366]/20 text-[10px] sm:text-[11px] font-medium text-[#CAE366] max-w-full text-center">
+            <ShieldCheck size={13} className="text-[#CAE366] shrink-0" />
+            <span className="hidden xs:inline">Multi-tenant workspace isolation • Supabase Auth</span>
+            <span className="xs:hidden">Workspace isolation • Supabase Auth</span>
           </div>
         </div>
       </div>

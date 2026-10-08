@@ -83,20 +83,20 @@ export default function Sidebar({
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={tween(duration.panel, ease.outQuint)}
-        className="mb-7 flex items-center justify-between px-2 shrink-0"
+        className="mb-6 flex items-center justify-between px-1.5 shrink-0 min-w-0"
       >
         <motion.div
-          className="group flex cursor-pointer items-center"
+          className="group flex cursor-pointer items-center min-w-0 flex-1 mr-2"
           whileHover="hover"
           initial="rest"
           animate="rest"
         >
-          <AuditProLogo size={38} animated={true} showText={true} />
+          <AuditProLogo size={36} animated={true} showText={true} />
         </motion.div>
         {isMobile && onCloseMobile && (
           <button
             onClick={onCloseMobile}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-[#121620] hover:text-slate-700 dark:hover:text-[#D6E5FC] md:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 dark:bg-[#121620] text-slate-500 dark:text-[#D6E5FC]/70 hover:bg-slate-200 dark:hover:bg-[#181d2a] hover:text-slate-900 dark:hover:text-white md:hidden shrink-0 transition-colors"
             aria-label="Close navigation"
           >
             <X size={18} />

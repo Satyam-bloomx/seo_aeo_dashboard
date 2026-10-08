@@ -1265,14 +1265,14 @@ export default function ApiKeyModal({
               )}
 
               {/* Modal Action Buttons */}
-              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-2">
                 <motion.button
                   type="button"
                   onClick={handleTestConnection}
                   disabled={isTesting || !apiKey.trim()}
                   whileTap={isTesting ? undefined : tapPress}
                   transition={spring.press}
-                  className="btn-secondary py-2 px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs cursor-pointer"
+                  className="btn-secondary py-2 px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs cursor-pointer justify-center w-full sm:w-auto"
                 >
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.span
@@ -1281,7 +1281,7 @@ export default function ApiKeyModal({
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -5 }}
                       transition={tween(duration.micro, ease.outQuart)}
-                      className="flex items-center gap-1.5"
+                      className="flex items-center justify-center gap-1.5"
                     >
                       {isTesting ? (
                         <>
@@ -1296,13 +1296,13 @@ export default function ApiKeyModal({
                   </AnimatePresence>
                 </motion.button>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
                   <motion.button
                     type="button"
                     onClick={onClose}
                     whileTap={tapPress}
                     transition={spring.press}
-                    className="px-3.5 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                    className="flex-1 sm:flex-none text-center px-3.5 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
                   >
                     Cancel
                   </motion.button>
@@ -1311,7 +1311,7 @@ export default function ApiKeyModal({
                     disabled={isLoading}
                     whileTap={isLoading ? undefined : tapPress}
                     transition={spring.press}
-                    className="btn-primary py-2 px-4 text-xs font-bold gap-2 disabled:opacity-50 shadow-xs cursor-pointer"
+                    className="flex-1 sm:flex-none justify-center btn-primary py-2 px-4 text-xs font-bold gap-2 disabled:opacity-50 shadow-xs cursor-pointer"
                   >
                     <AnimatePresence mode="wait" initial={false}>
                       <motion.span
@@ -1320,11 +1320,11 @@ export default function ApiKeyModal({
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -5 }}
                         transition={tween(duration.micro, ease.outQuart)}
-                        className="flex items-center gap-2"
+                        className="flex items-center justify-center gap-2"
                       >
                         {isLoading ? (
                           <>
-                            <Loader2 size={14} className="animate-spin" /> Verifying API Key...
+                            <Loader2 size={14} className="animate-spin" /> Verifying...
                           </>
                         ) : (
                           <>

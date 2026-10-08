@@ -194,7 +194,7 @@ export default function NarutoSamplePanel({ onExit }) {
       {/* =================================================================== */}
       {/* 1. LEFT SIDEBAR (Dark Sumi-e Translucent Glass + Pure SVG Tree)     */}
       {/* =================================================================== */}
-      <aside className="relative z-20 w-64 h-full flex flex-col justify-between p-5 bg-[#060a12]/85 border-r border-amber-900/35 backdrop-blur-md shrink-0">
+      <aside className="relative z-20 hidden md:flex w-64 h-full flex-col justify-between p-5 bg-[#060a12]/85 border-r border-amber-900/35 backdrop-blur-md shrink-0">
         
         <div className="relative z-10">
           {/* Brand Logo: Enso Circle with Mountain Silhouette */}
@@ -270,7 +270,7 @@ export default function NarutoSamplePanel({ onExit }) {
       {/* =================================================================== */}
       {/* 2. MAIN VIEWPORT (Top Search Bar, Scroll Banner, Cards Grid)        */}
       {/* =================================================================== */}
-      <main className="relative z-10 flex-1 h-full overflow-y-auto p-6 md:p-8 flex flex-col justify-between">
+      <main className="relative z-10 flex-1 h-full overflow-y-auto p-3.5 sm:p-6 md:p-8 flex flex-col justify-between pb-12 sm:pb-4">
         
         <div className="flex flex-col gap-5 max-w-6xl w-full mx-auto pb-4">
           
@@ -278,8 +278,8 @@ export default function NarutoSamplePanel({ onExit }) {
           <header className="flex flex-wrap items-center gap-3">
             
             {/* Hand-Inked Search Bar */}
-            <div className="flex-1 min-w-[340px] flex items-center bg-[#070d16f2] border-2 border-[#d49948]/60 rounded-full pl-4 pr-1.5 py-1 shadow-2xl backdrop-blur-md focus-within:border-[#f26a1b] focus-within:ring-2 focus-within:ring-[#f26a1b]/30 transition-all">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e59a38" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="mr-2.5 shrink-0 opacity-90">
+            <div className="flex-1 min-w-0 w-full sm:min-w-[300px] flex items-center bg-[#070d16f2] border-2 border-[#d49948]/60 rounded-full pl-3.5 sm:pl-4 pr-1.5 py-1 shadow-2xl backdrop-blur-md focus-within:border-[#f26a1b] focus-within:ring-2 focus-within:ring-[#f26a1b]/30 transition-all">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e59a38" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="mr-2 sm:mr-2.5 shrink-0 opacity-90">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
               </svg>
@@ -287,8 +287,8 @@ export default function NarutoSamplePanel({ onExit }) {
               <input
                 type="text"
                 defaultValue="https://bloomxsolutions.com/"
-                placeholder="Enter seed URL to crawl (e.g. https://bloomxsolutions.com/)..."
-                className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-500 outline-none border-none py-1.5 font-mono"
+                placeholder="Enter seed URL to crawl..."
+                className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 outline-none border-none py-1.5 font-mono"
               />
 
               {/* Exact Pure SVG Orange Dry-Brush "Run Audit" Button */}
@@ -296,11 +296,11 @@ export default function NarutoSamplePanel({ onExit }) {
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={handleTestLive}
-                className="relative flex items-center justify-center px-8 py-2 cursor-pointer shrink-0 select-none group"
-                style={{ minWidth: '150px', height: '40px' }}
+                className="relative flex items-center justify-center px-4 sm:px-8 py-2 cursor-pointer shrink-0 select-none group"
+                style={{ minWidth: '120px', height: '40px' }}
               >
                 <BrushOrangeBtnSVG />
-                <span className="relative z-10 flex items-center gap-2 font-black text-[13px] text-[#060a12] drop-shadow-xs tracking-wide">
+                <span className="relative z-10 flex items-center gap-1.5 sm:gap-2 font-black text-xs sm:text-[13px] text-[#060a12] drop-shadow-xs tracking-wide">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="#060a12">
                     <polygon points="5 3 19 12 5 21 5 3"/>
                   </svg>
@@ -427,7 +427,7 @@ export default function NarutoSamplePanel({ onExit }) {
           {/* =============================================================== */}
           {/* FILTER TABS ROW: Interactive Pure SVG Orange Brush Pill         */}
           {/* =============================================================== */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto no-scrollbar flex-nowrap w-full pb-1">
             {filterTabs.map((tab) => {
               const isActive = activeFilter === tab.id;
               return (
