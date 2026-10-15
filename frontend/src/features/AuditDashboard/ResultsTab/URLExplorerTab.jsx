@@ -11,6 +11,10 @@ import {
   FileSpreadsheet,
   FileText,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Maximize2,
+  Minimize2,
   Copy,
   Check,
   TableProperties,
@@ -312,6 +316,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedUrl, setCopiedUrl] = useState(null);
   const [copiedCellId, setCopiedCellId] = useState(null);
+  const [isCompact, setIsCompact] = useState(false);
 
   const handleCopyTextCell = async (text, id, label = 'Text') => {
     const ok = await copyToClipboard(text, label);
@@ -854,259 +859,285 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
   };
 
   return (
-    <div className="flex flex-col min-h-full md:h-full space-y-3 md:overflow-hidden">
+    <div className={`flex flex-col min-h-full md:h-full md:overflow-hidden ${isCompact ? 'space-y-0' : 'space-y-3'}`}>
 
-      {/* Top Header & Dual Export Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 shrink-0">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">Screaming Frog URL Data Grid</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Explore full 32-parameter extracted data for all crawled website endpoints.</p>
-        </div>
+      {/* Top Header Line & Dual Export Actions - Collapsed when isCompact is true */}
+      <AnimatePresence initial={false}>
+        {!isCompact && (
+          <motion.div
+            key="top-header-line"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 shrink-0 overflow-hidden"
+          >
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">Screaming Frog URL Data Grid</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Explore full 32-parameter extracted data for all crawled website endpoints.</p>
+            </div>
 
-        {/* Toolbar: Table/Tree Switcher & Export Buttons in a clean swipeable rail on mobile */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto no-scrollbar max-w-full pb-0.5 flex-nowrap self-start sm:self-auto">
-          {/* Screaming Frog View Switcher: Table View vs Tree View */}
-          <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0">
-            <button
-              type="button"
-              onClick={() => setViewMode('table')}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-                viewMode === 'table'
-                  ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 shadow-xs font-bold'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-              title="Flat Table View"
-            >
-              <TableProperties size={13} />
-              <span className="hidden xs:inline">Table View</span>
-              <span className="xs:hidden">Table</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('tree')}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-                viewMode === 'tree'
-                  ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-              title="Select tree table view (Screaming Frog Directory Trie)"
-            >
-              <FolderTree size={13} />
-              <span className="hidden xs:inline">Tree View</span>
-              <span className="xs:hidden">Tree</span>
-            </button>
-          </div>
+            {/* Toolbar: Table/Tree Switcher & Export Buttons in a clean swipeable rail on mobile */}
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto no-scrollbar max-w-full pb-0.5 flex-nowrap self-start sm:self-auto">
+              {/* Screaming Frog View Switcher: Table View vs Tree View */}
+              <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('table')}
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                    viewMode === 'table'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 shadow-xs font-bold'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Flat Table View"
+                >
+                  <TableProperties size={13} />
+                  <span className="hidden xs:inline">Table View</span>
+                  <span className="xs:hidden">Table</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('tree')}
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                    viewMode === 'tree'
+                      ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Select tree table view (Screaming Frog Directory Trie)"
+                >
+                  <FolderTree size={13} />
+                  <span className="hidden xs:inline">Tree View</span>
+                  <span className="xs:hidden">Tree</span>
+                </button>
+              </div>
 
-          {/* Master Full Export Button (.xlsx) */}
-          <motion.button
-            onClick={handleExportExcel}
-            disabled={!pages || pages.length === 0}
-            whileTap={tapPress}
-            initial="rest"
-            whileHover="hover"
-            animate="rest"
-            transition={spring.press}
-            className="btn-primary py-1.5 sm:py-2 px-2.5 sm:px-3.5 text-xs font-bold gap-1.5 sm:gap-2 disabled:opacity-50 shadow-xs shrink-0 whitespace-nowrap"
-            title="Export full 3-sheet Excel (.xlsx) workbook"
-          >
-            <FileSpreadsheet size={14} className="text-emerald-400 shrink-0" />
-            <span className="hidden sm:inline">Excel (.xlsx)</span>
-            <span className="sm:hidden">Excel</span>
-          </motion.button>
+              {/* Master Full Export Button (.xlsx) */}
+              <motion.button
+                onClick={handleExportExcel}
+                disabled={!pages || pages.length === 0}
+                whileTap={tapPress}
+                initial="rest"
+                whileHover="hover"
+                animate="rest"
+                transition={spring.press}
+                className="btn-primary py-1.5 sm:py-2 px-2.5 sm:px-3.5 text-xs font-bold gap-1.5 sm:gap-2 disabled:opacity-50 shadow-xs shrink-0 whitespace-nowrap"
+                title="Export full 3-sheet Excel (.xlsx) workbook"
+              >
+                <FileSpreadsheet size={14} className="text-emerald-400 shrink-0" />
+                <span className="hidden sm:inline">Excel (.xlsx)</span>
+                <span className="sm:hidden">Excel</span>
+              </motion.button>
 
-          {/* Master Full CSV Button */}
-          <motion.button
-            onClick={handleExportMasterCSV}
-            disabled={!pages || pages.length === 0}
-            whileTap={tapPress}
-            transition={spring.press}
-            className="btn-secondary py-1.5 sm:py-2 px-2.5 sm:px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs shrink-0 whitespace-nowrap"
-            title="Export 35+ technical parameters to universal CSV"
-          >
-            <Download size={13} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
-            <span className="hidden sm:inline">Master CSV</span>
-            <span className="sm:hidden">CSV</span>
-          </motion.button>
+              {/* Master Full CSV Button */}
+              <motion.button
+                onClick={handleExportMasterCSV}
+                disabled={!pages || pages.length === 0}
+                whileTap={tapPress}
+                transition={spring.press}
+                className="btn-secondary py-1.5 sm:py-2 px-2.5 sm:px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs shrink-0 whitespace-nowrap"
+                title="Export 35+ technical parameters to universal CSV"
+              >
+                <Download size={13} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <span className="hidden sm:inline">Master CSV</span>
+                <span className="sm:hidden">CSV</span>
+              </motion.button>
 
-          {/* Current Filtered View Export */}
-          <motion.button
-            onClick={exportCurrentViewToCSV}
-            disabled={!filteredPages || filteredPages.length === 0}
-            whileTap={tapPress}
-            transition={spring.press}
-            className="btn-secondary py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs shrink-0 whitespace-nowrap"
-            title="Export only currently filtered rows"
-          >
-            <Filter size={13} className="text-slate-600 dark:text-slate-400 shrink-0" />
-            <span className="hidden sm:inline">Filtered View</span>
-            <span className="sm:hidden">Filtered</span>
-          </motion.button>
-        </div>
-      </div>
-
-      {/* Scope Segment Control & Screaming Frog Compliance Indicator */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200/50 dark:border-slate-800 rounded-xl w-full sm:w-fit text-xs font-semibold overflow-x-auto no-scrollbar flex-nowrap">
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 pl-2 pr-1 shrink-0">Scope:</span>
-          <button
-            type="button"
-            onClick={() => setPageScope('all')}
-            className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
-              pageScope === 'all'
-                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-bold'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            All URLs ({scopeCounts.all})
-          </button>
-          <button
-            type="button"
-            onClick={() => setPageScope('content')}
-            className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
-              pageScope === 'content'
-                ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 shadow-xs font-bold'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            Content Pages ({scopeCounts.content})
-          </button>
-          <button
-            type="button"
-            onClick={() => setPageScope('archives')}
-            className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
-              pageScope === 'archives'
-                ? 'bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 shadow-xs font-bold'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            Author & Archives ({scopeCounts.archives})
-          </button>
-          <button
-            type="button"
-            onClick={() => setPageScope('errors')}
-            className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
-              pageScope === 'errors'
-                ? 'bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-400 shadow-xs font-bold'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            Errors & Redirects ({scopeCounts.errors})
-          </button>
-        </div>
-
-        {ON_PAGE_HTML_CATEGORIES.includes(activeCategory) && (
-          <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-200/80 dark:border-slate-800 shrink-0">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-            <span>Screaming Frog standard: 200 OK HTML pages</span>
-          </div>
+              {/* Current Filtered View Export */}
+              <motion.button
+                onClick={exportCurrentViewToCSV}
+                disabled={!filteredPages || filteredPages.length === 0}
+                whileTap={tapPress}
+                transition={spring.press}
+                className="btn-secondary py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs shrink-0 whitespace-nowrap"
+                title="Export only currently filtered rows"
+              >
+                <Filter size={13} className="text-slate-600 dark:text-slate-400 shrink-0" />
+                <span className="hidden sm:inline">Filtered View</span>
+                <span className="sm:hidden">Filtered</span>
+              </motion.button>
+            </div>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
 
-      {/* Controls Bar: Category Picker + Sub-view filter + Search */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3 shrink-0">
-
-        {/* Category Selector */}
-        <CustomSelect
-          label="Category:"
-          value={activeCategory}
-          options={CATEGORIES}
-          onChange={(newCat) => {
-            setActiveCategory(newCat);
-            setActiveView('All');
-            toast.info(`Switched category to ${newCat.replace(/_/g, ' ')}`);
-          }}
-          valueClassName="text-indigo-600 dark:text-indigo-400 font-bold"
-          searchPlaceholder="Search 30+ categories..."
-          showSearch={true}
-        />
-
-        {/* Sub-view Selector with exact counts */}
-        <CustomSelect
-          label="View Filter:"
-          value={activeView}
-          options={availableViewsWithBadges}
-          onChange={(newView) => setActiveView(newView)}
-          valueClassName="text-emerald-700 dark:text-emerald-400 font-bold"
-          searchPlaceholder="Filter views & columns..."
-        />
-
-        {/* Live Search */}
-        <div className="relative sm:col-span-2 md:col-span-1">
-          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search URLs or titles..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full glass-input pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 rounded-xl"
-          />
-        </div>
-      </div>
-
-      {/* Category Metric Strip & Missing URLs Counter */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl text-xs shrink-0 shadow-2xs">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-400">
-            <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] uppercase tracking-wider">Audited URLs:</span>
-            <span className="font-mono font-bold text-slate-900 dark:text-white">{categoryStats.total}</span>
-          </div>
-
-          <div className="h-3 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
-
-          {/* Explicit missing count counter with 1-click filter */}
-          <button
-            type="button"
-            onClick={() => setActiveView(activeView === 'Missing' ? 'All' : 'Missing')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer ${
-              categoryStats.missing > 0
-                ? activeView === 'Missing'
-                  ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
-                  : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-900/60'
-                : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50'
-            }`}
-            title={categoryStats.missing > 0 ? "Click to view missing URLs" : "All URLs have this element"}
+      {/* Top Controls & Category Metric Strip - Collapses cleanly when isCompact is true */}
+      <AnimatePresence initial={false}>
+        {!isCompact && (
+          <motion.div
+            key="top-controls-and-metrics"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="space-y-3 shrink-0 overflow-hidden"
           >
-            {categoryStats.missing > 0 ? (
-              <>
-                <span className={`w-1.5 h-1.5 rounded-full ${activeView === 'Missing' ? 'bg-white' : 'bg-rose-600 animate-pulse'}`} />
-                <span>{categoryStats.missing} Missing {activeCategory.replace(/_/g, ' ')}</span>
-              </>
-            ) : (
-              <>
-                <Check size={12} className="stroke-[3]" />
-                <span>0 Missing (100% Present)</span>
-              </>
-            )}
-          </button>
+            {/* Scope Segment Control & Screaming Frog Compliance Indicator */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200/50 dark:border-slate-800 rounded-xl w-full sm:w-fit text-xs font-semibold overflow-x-auto no-scrollbar flex-nowrap">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 pl-2 pr-1 shrink-0">Scope:</span>
+                <button
+                  type="button"
+                  onClick={() => setPageScope('all')}
+                  className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
+                    pageScope === 'all'
+                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  All URLs ({scopeCounts.all})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPageScope('content')}
+                  className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
+                    pageScope === 'content'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 shadow-xs font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Content Pages ({scopeCounts.content})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPageScope('archives')}
+                  className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
+                    pageScope === 'archives'
+                      ? 'bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 shadow-xs font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Author & Archives ({scopeCounts.archives})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPageScope('errors')}
+                  className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
+                    pageScope === 'errors'
+                      ? 'bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-400 shadow-xs font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Errors & Redirects ({scopeCounts.errors})
+                </button>
+              </div>
 
-          <div className="h-3 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
+              {ON_PAGE_HTML_CATEGORIES.includes(activeCategory) && (
+                <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-200/80 dark:border-slate-800 shrink-0">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span>Screaming Frog standard: 200 OK HTML pages</span>
+                </div>
+              )}
+            </div>
 
-          <div className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-400">
-            <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] uppercase tracking-wider">Present:</span>
-            <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">{categoryStats.present}</span>
-          </div>
-        </div>
+            {/* Controls Bar: Category Picker + Sub-view filter + Search */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3 shrink-0">
+              {/* Category Selector */}
+              <CustomSelect
+                label="Category:"
+                value={activeCategory}
+                options={CATEGORIES}
+                onChange={(newCat) => {
+                  setActiveCategory(newCat);
+                  setActiveView('All');
+                  toast.info(`Switched category to ${newCat.replace(/_/g, ' ')}`);
+                }}
+                valueClassName="text-indigo-600 dark:text-indigo-400 font-bold"
+                searchPlaceholder="Search 30+ categories..."
+                showSearch={true}
+              />
 
-        {/* Active filter notification pill */}
-        {activeView === 'Missing' && (
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-rose-700 dark:text-rose-300 font-bold bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/50">
-            <span>Filter Active:</span>
-            <span>Showing {filteredPages.length} {filteredPages.length === 1 ? 'URL' : 'URLs'} with Missing {activeCategory.replace(/_/g, ' ')}</span>
-          </div>
+              {/* Sub-view Selector with exact counts */}
+              <CustomSelect
+                label="View Filter:"
+                value={activeView}
+                options={availableViewsWithBadges}
+                onChange={(newView) => setActiveView(newView)}
+                valueClassName="text-emerald-700 dark:text-emerald-400 font-bold"
+                searchPlaceholder="Filter views & columns..."
+              />
+
+              {/* Live Search */}
+              <div className="relative sm:col-span-2 md:col-span-1">
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search URLs or titles..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full glass-input pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 rounded-xl"
+                />
+              </div>
+            </div>
+
+            {/* Category Metric Strip & Missing URLs Counter */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl text-xs shrink-0 shadow-2xs">
+              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+                <div className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-400">
+                  <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] uppercase tracking-wider">Audited URLs:</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{categoryStats.total}</span>
+                </div>
+
+                <div className="h-3 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
+
+                {/* Explicit missing count counter with 1-click filter */}
+                <button
+                  type="button"
+                  onClick={() => setActiveView(activeView === 'Missing' ? 'All' : 'Missing')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer ${
+                    categoryStats.missing > 0
+                      ? activeView === 'Missing'
+                        ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                        : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-900/60'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50'
+                  }`}
+                  title={categoryStats.missing > 0 ? "Click to view missing URLs" : "All URLs have this element"}
+                >
+                  {categoryStats.missing > 0 ? (
+                    <>
+                      <span className={`w-1.5 h-1.5 rounded-full ${activeView === 'Missing' ? 'bg-white' : 'bg-rose-600 animate-pulse'}`} />
+                      <span>{categoryStats.missing} Missing {activeCategory.replace(/_/g, ' ')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={12} className="stroke-[3]" />
+                      <span>0 Missing (100% Present)</span>
+                    </>
+                  )}
+                </button>
+
+                <div className="h-3 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
+
+                <div className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-400">
+                  <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] uppercase tracking-wider">Present:</span>
+                  <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">{categoryStats.present}</span>
+                </div>
+              </div>
+
+              {/* Active filter notification pill */}
+              {activeView === 'Missing' && (
+                <div className="flex items-center gap-1.5 text-[11px] font-mono text-rose-700 dark:text-rose-300 font-bold bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/50">
+                  <span>Filter:</span>
+                  <span>{filteredPages.length} {filteredPages.length === 1 ? 'URL' : 'URLs'}</span>
+                </div>
+              )}
+            </div>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
 
       {/* Main View: Tree Table vs Flat Data Grid */}
       {viewMode === 'tree' ? (
-        <div className="flex-1 min-h-[460px] md:min-h-0 overflow-hidden">
+        <div className="flex-1 overflow-hidden min-h-0">
           <URLTreeTable
             pages={filteredPages}
             onRowClick={onRowClick}
             searchQuery={searchQuery}
+            isCompact={isCompact}
+            onToggleCompact={() => setIsCompact(prev => !prev)}
           />
         </div>
       ) : (
-        <div className="flex-1 min-h-[460px] md:min-h-0 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl relative overflow-hidden flex flex-col shadow-xs">
+        <div className="flex-1 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl relative overflow-hidden flex flex-col shadow-xs min-h-0">
           <div className="md:hidden flex items-center justify-between px-3 py-1.5 bg-indigo-50/70 dark:bg-indigo-950/40 border-b border-indigo-100 dark:border-indigo-900/40 text-[11px] text-indigo-700 dark:text-indigo-300 font-medium shrink-0">
             <span>↔ Swipe horizontally for 32 parameters</span>
             <span className="text-[10px] font-mono text-indigo-500">Tap row to inspect</span>
@@ -1116,7 +1147,23 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             <thead className="bg-slate-50 dark:bg-slate-950/80 sticky top-0 z-20 border-b border-slate-200 dark:border-slate-800">
               <tr>
                 <th className="px-4 py-3.5 font-bold font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider w-80 min-w-[280px]">
-                  URL Endpoint
+                  <div className="flex items-center gap-2">
+                    <span>URL Endpoint</span>
+                    <motion.button
+                      type="button"
+                      onClick={() => setIsCompact(prev => !prev)}
+                      whileTap={tapPress}
+                      transition={spring.press}
+                      className={`inline-flex items-center justify-center p-1 rounded-md border transition-all cursor-pointer ${
+                        isCompact
+                          ? 'bg-indigo-600 text-white border-indigo-500 hover:bg-indigo-700 shadow-2xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:text-indigo-600 dark:hover:text-[#CAE366] hover:border-indigo-400'
+                      }`}
+                      title={isCompact ? "Restore full header & filters" : "Compact table (hide header & filters for full screen view)"}
+                    >
+                      {isCompact ? <Minimize2 size={12} className="text-white" /> : <Maximize2 size={12} />}
+                    </motion.button>
+                  </div>
                 </th>
                 <th className="px-4 py-3.5 font-bold font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider w-24">
                   Status
@@ -1254,9 +1301,58 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
         </div>
 
         {/* Footer Meta */}
-        <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-500 dark:text-slate-400 flex justify-between items-center shrink-0">
-          <span>Showing <strong className="text-slate-900 dark:text-white">{filteredPages.length}</strong> of <strong className="text-slate-900 dark:text-white">{pages?.length || 0}</strong> URLs</span>
-          <span>Category: <strong className="text-indigo-600 dark:text-indigo-400">{activeCategory}</strong> | View: <strong className="text-emerald-600 dark:text-emerald-400">{activeView}</strong></span>
+        <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-500 dark:text-slate-400 flex flex-wrap justify-between items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span>
+              Showing <strong className="text-slate-900 dark:text-white">{filteredPages.length}</strong> URLs {filteredPages.length !== (pages?.length || 0) && <span className="text-slate-400">({pages?.length || 0} total)</span>}
+            </span>
+            {isCompact && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                Compact Mode
+              </span>
+            )}
+            {/* Quick Actions in Compact Mode */}
+            {isCompact && (
+              <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setViewMode(viewMode === 'table' ? 'tree' : 'table')}
+                  className="px-2 py-0.5 rounded text-[10px] font-semibold bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-1 cursor-pointer"
+                  title="Switch View"
+                >
+                  {viewMode === 'table' ? <FolderTree size={11} className="text-emerald-500" /> : <TableProperties size={11} className="text-indigo-500" />}
+                  <span>{viewMode === 'table' ? 'Tree' : 'Table'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="p-1 text-slate-500 hover:text-emerald-600 dark:hover:text-[#CAE366] transition-colors cursor-pointer"
+                  title="Export Excel (.xlsx)"
+                >
+                  <FileSpreadsheet size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportMasterCSV}
+                  className="p-1 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
+                  title="Export Master CSV"
+                >
+                  <Download size={13} />
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span>Category: <strong className="text-indigo-600 dark:text-indigo-400">{activeCategory.replace(/_/g, ' ')}</strong></span>
+            <span>|</span>
+            <span>View: <strong className="text-emerald-600 dark:text-emerald-400">{activeView}</strong></span>
+            {searchQuery && (
+              <>
+                <span>|</span>
+                <span>Search: <strong className="text-indigo-600 dark:text-indigo-400">"{searchQuery}"</strong></span>
+              </>
+            )}
+          </div>
         </div>
       </div>
       )}

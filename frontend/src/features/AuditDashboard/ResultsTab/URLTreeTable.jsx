@@ -132,7 +132,7 @@ function flattenTree(node, expandedIds, depth = 0, searchQuery = '', result = []
   return result;
 }
 
-export default function URLTreeTable({ pages, onRowClick, searchQuery = '' }) {
+export default function URLTreeTable({ pages, onRowClick, searchQuery = '', isCompact = false, onToggleCompact }) {
   const [copiedUrl, setCopiedUrl] = useState(null);
 
   // Build the hierarchical tree
@@ -250,7 +250,23 @@ export default function URLTreeTable({ pages, onRowClick, searchQuery = '' }) {
           <thead className="bg-slate-50 dark:bg-slate-950/80 sticky top-0 z-20 border-b border-slate-200 dark:border-slate-800">
             <tr>
               <th className="px-4 py-3 font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[420px] min-w-[320px]">
-                Path Hierarchy
+                <div className="flex items-center gap-2">
+                  <span>Path Hierarchy</span>
+                  {onToggleCompact && (
+                    <button
+                      type="button"
+                      onClick={onToggleCompact}
+                      className={`inline-flex items-center justify-center p-1 rounded-md border transition-all cursor-pointer ${
+                        isCompact
+                          ? 'bg-indigo-600 text-white border-indigo-500 hover:bg-indigo-700 shadow-2xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:text-indigo-600 dark:hover:text-[#CAE366] hover:border-indigo-400'
+                      }`}
+                      title={isCompact ? "Restore full header & filters" : "Compact table (hide header & filters for full screen view)"}
+                    >
+                      {isCompact ? <Minimize2 size={12} className="text-white" /> : <Maximize2 size={12} />}
+                    </button>
+                  )}
+                </div>
               </th>
               <th className="px-3 py-3 font-mono font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-20 text-center">
                 URLs
