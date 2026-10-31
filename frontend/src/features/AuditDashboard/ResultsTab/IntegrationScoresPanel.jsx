@@ -88,16 +88,34 @@ function buildCards(integrations, aiCrawlers) {
       reason: ga.reason,
     },
     {
-      id: 'serpapi', title: 'Keyword rankings', source: 'SerpAPI', icon: ListOrdered, status: serp.status,
-      headline: serp.rank ? `#${serp.rank}` : '—', headlineLabel: serp.query ? `Rank for “${serp.query}”` : 'Tracked keyword rank',
-      lines: serp.status === 'insufficient' ? [`${serp.tracked_keywords} keyword tracked`] : [],
+      id: 'serpapi', title: 'Keyword rankings', icon: ListOrdered, status: serp.status,
+      source: serp.position_source === 'google_live' ? 'Google (live) + Search Console' : 'Search Console + Gemini',
+      headline: serp.score != null ? `${serp.score}/100` : '—',
+      headlineLabel: `Visibility across ${serp.tracked_keywords || 0} non-branded searches`,
+      lines: serp.status && serp.status !== 'no_data' ? [
+        serp.positioned_items ? `Top 3: ${fmt(serp.top3)} · top 10: ${fmt(serp.top10)} of ${fmt(serp.positioned_items)}` : 'No Google positions (connect Search Console)',
+        serp.ai_questions ? `AI answers: Gemini cites you in ${serp.ai_cited_questions} of ${serp.ai_questions} questions` : null,
+        serp.aio_shown ? `AI Overviews: cited in ${serp.aio_cited} of ${serp.aio_shown}` : null,
+      ].filter(Boolean) : [],
       reason: serp.reason,
+      opensTab: 'keywords',
+      actionLabel: 'Open Keywords & AI answers',
     },
     {
-      id: 'perplexity', title: 'AI answer visibility', source: 'Perplexity / AI engines', icon: Bot, status: ai.status,
-      headline: ai.cited === true ? 'Cited' : ai.cited === false ? 'Not cited' : '—',
-      headlineLabel: 'Branded test query (1 prompt)',
-      lines: [], reason: ai.reason,
+      id: 'perplexity', title: 'AI answer visibility',
+      source: ai.engine === 'gemini_google_search' ? 'Gemini with Google Search' : ai.engine === 'google_ai_overview' ? 'Google AI Overviews' : 'Perplexity / AI engines',
+      icon: Bot, status: ai.status,
+      headline: ai.score != null ? `${ai.score}%` : ai.cited === true ? 'Cited' : ai.cited === false ? 'Not cited' : '—',
+      headlineLabel: ai.engine === 'gemini_google_search'
+        ? `Cited in ${fmt(ai.ai_cited_questions)} of ${fmt(ai.ai_questions)} questions (3 runs each)`
+        : ai.engine === 'google_ai_overview'
+          ? `Cited in ${fmt(ai.aio_cited)} of ${fmt(ai.aio_shown)} AI Overviews`
+          : 'Branded test query (1 prompt)',
+      lines: ai.engine === 'gemini_google_search' && ai.ai_mentioned_questions != null
+        ? [`Mentioned by name in ${ai.ai_mentioned_questions} of ${ai.ai_questions}`] : [],
+      reason: ai.reason,
+      opensTab: 'keywords',
+      actionLabel: 'Open Keywords & AI answers',
     },
     {
       id: 'google_business', title: 'Local presence', source: 'Google Business Profile', icon: MapPin, status: gbp.status,
@@ -108,7 +126,7 @@ function buildCards(integrations, aiCrawlers) {
   ];
 }
 
-export default function IntegrationScoresPanel({ onConnect }) {
+export default function IntegrationScoresPanel({ onConnect, onOpenTab }) {
   const summary = useCrawlSummary();
   if (!summary?.integrations) return null;
   const allCards = buildCards(summary.integrations, summary.crawl?.ai_crawlers);
@@ -148,6 +166,15 @@ export default function IntegrationScoresPanel({ onConnect }) {
                 <p key={i} className="text-xs text-slate-700 dark:text-slate-300">{line}</p>
               ))}
               {card.reason && <p className="text-xs text-slate-600 dark:text-slate-400 italic">{card.reason}</p>}
+              {card.opensTab && card.status !== 'no_data' && onOpenTab && (
+                <button
+                  type="button"
+                  onClick={() => onOpenTab(card.opensTab)}
+                  className="mt-auto self-start rounded-full border border-indigo-200 dark:border-indigo-800 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+                >
+                  {card.actionLabel}
+                </button>
+              )}
               {card.status === 'no_data' && onConnect && !card.noConnect && (
                 <button
                   type="button"
@@ -168,8 +195,8 @@ export default function IntegrationScoresPanel({ onConnect }) {
             <button
               key={card.id}
               type="button"
-              onClick={() => onConnect?.(card.id)}
-              disabled={!onConnect}
+              onClick={() => (card.opensTab && onOpenTab ? onOpenTab(card.opensTab) : onConnect?.(card.id))}
+              disabled={!onConnect && !onOpenTab}
               title={card.reason || undefined}
               className="rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:border-indigo-300 hover:text-indigo-700 dark:hover:text-indigo-300 disabled:cursor-default"
             >

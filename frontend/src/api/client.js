@@ -99,3 +99,11 @@ export const getCrawlSummary = async (crawlId) => {
   const response = await api.get(`/crawls/${crawlId}/summary`);
   return response.data;
 };
+
+// Keywords & AI answers
+export const getKeywords = async () => (await api.get('/keywords')).data;
+export const saveKeywords = async (body) => (await api.put('/keywords', body)).data;
+export const suggestKeywords = async (body) => (await api.post('/keywords/suggest', body)).data;
+export const checkKeywords = async (opts) => (await api.post('/keywords/check', opts)).data;
+export const searchKeywordLocations = async (q) => (await api.get('/keywords/locations', { params: { q } })).data;
+export const getKeywordIdeas = async (body) => (await api.post('/keywords/ideas', body)).data;

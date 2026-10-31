@@ -17,6 +17,7 @@ const VALID_SLUGS = {
   performance: 'performance',
   'speed-vitals': 'performance',
   vitals: 'performance',
+  keywords: 'keywords',
   integrations: 'integrations',
   settings: 'overview',
 };
