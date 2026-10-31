@@ -49,3 +49,7 @@ new-frontend/
 .pagespeed_cache.json
 
 !.env.example
+
+# Internal only: user-testing sessions/findings and security audit notes (repo is public)
+docs/user-testing/
+docs/SECURITY_AUDIT_AND_ROADMAP.md
