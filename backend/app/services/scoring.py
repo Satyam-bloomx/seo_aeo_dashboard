@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 from app.services.fetch_outcome import is_uncounted
 
-SCORING_VERSION = "2026.10-4"
+SCORING_VERSION = "2026.10-5"
 WEIGHTS = {"critical": 5, "warning": 3, "notice": 1}
 BANDS = [(91, "Excellent"), (71, "Good"), (31, "Fair"), (0, "Weak")]  # Ahrefs Health Score bands
 MIN_URLS_FOR_CONFIDENCE = 5
@@ -625,15 +625,10 @@ def integration_scores(pages: List[dict], integration_data: dict) -> Dict[str, A
     else:
         out["google_analytics"] = {"status": "no_data", "reason": "GA4 not connected or no synced data."}
 
-    # SERP visibility: needs a tracked keyword set
-    serp = next(((p.get("audit_data") or {}).get("SERP_Data") for p in pages
-                 if ((p.get("audit_data") or {}).get("SERP_Data") or {}).get("is_live_verified")), None)
-    out["serp"] = (
-        {"status": "insufficient", "tracked_keywords": 1, "query": serp.get("query"),
-         "rank": serp.get("top_ranking_position"),
-         "reason": "Visibility score needs at least 10 tracked keywords."}
-        if serp else {"status": "no_data", "reason": "SerpAPI not connected."}
-    )
+    # SERP visibility comes from the Keywords & AI answers checks (kept outside the crawl); the summary endpoint
+    # fills it in at read time so a new check shows without re-scoring the crawl.
+    out["serp"] = {"status": "no_data", "tracked_keywords": 0,
+                   "reason": "Add keywords and questions in Keywords & AI answers."}
 
     # AI answer engines: a single branded probe is not a visibility measurement
     aeo = next(((p.get("audit_data") or {}).get("AEO_Audit") for p in pages

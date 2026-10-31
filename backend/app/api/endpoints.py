@@ -408,7 +408,7 @@ async def get_crawl_summary(
     crawl = await _owned_crawl(db, crawl_id, user)
     cached = (crawl.summary or {}).get("scores")
     if crawl.status == "completed" and cached and cached.get("scoring_version") == SCORING_VERSION:
-        return {**cached, "crawl": _crawl_facts(crawl, cached)}
+        return {**await _with_keyword_cards(db, crawl, cached), "crawl": _crawl_facts(crawl, cached)}
 
     rows = (await db.execute(
         select(Page.id, Page.url, Page.status_code, Page.content_type, Page.indexability,
@@ -431,7 +431,21 @@ async def get_crawl_summary(
         crawl.summary = {**(crawl.summary or {}), "scores": scores}
         flag_modified(crawl, "summary")
         await db.commit()
-    return {**scores, "crawl": _crawl_facts(crawl, scores)}
+    return {**await _with_keyword_cards(db, crawl, scores), "crawl": _crawl_facts(crawl, scores)}
+
+
+async def _with_keyword_cards(db: AsyncSession, crawl: Crawl, scores: Dict[str, Any]) -> Dict[str, Any]:
+    """The keyword and AI-answer cards come from the latest keyword check for this site, which changes
+    independently of the crawl, so they are added at read time and never cached with the scores."""
+    from app.services import keyword_tracking as kt
+    _, cfg = await kt.load_state(db, crawl.project_id)
+    state = kt.site_state(cfg, kt.site_host(crawl.seed_url or ""))
+    integrations = dict(scores.get("integrations") or {})
+    integrations["serp"] = kt.summary_card(state)
+    ai_card = kt.ai_visibility_card(state)
+    if ai_card:
+        integrations["ai_visibility"] = ai_card
+    return {**scores, "integrations": integrations}
 
 
 def _crawl_facts(crawl: Crawl, scores: Optional[dict] = None) -> dict:

@@ -17,6 +17,8 @@ DEFAULT_LIMITS: Dict[str, Tuple[int, int]] = {
     "crawl": (30, 3600),
     "ai": (60, 3600),
     "integration_sync": (60, 3600),
+    # Each keyword check is ~20-80 paid SerpAPI searches.
+    "serp": (10, 3600),
 }
 
 _hits: Dict[Tuple[str, str], Deque[float]] = defaultdict(deque)

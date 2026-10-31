@@ -148,8 +148,9 @@ class EnrichmentService:
             # 4. Domain-level Perplexity AI citation research (1 query per crawl to preserve token budget)
             pplx_key = getattr(integrations.get("perplexity"), "api_key", None) if "perplexity" in integrations else None
 
-            # 5. Domain-level SerpAPI SERP & Google AI Overviews probe (1 query per crawl)
-            serp_key = getattr(integrations.get("serpapi"), "api_key", None) if "serpapi" in integrations else None
+            # 5. Google rankings and AI Overviews are checked on demand in Keywords & AI answers
+            #    (app/services/keyword_tracking.py), not with one branded query per crawl.
+            serp_key = None
 
             # 6. Domain-level Google Search Console (GSC) Search Analytics Query
             gsc_intel = None
@@ -169,7 +170,7 @@ class EnrichmentService:
                 return None
             perplexity_domain_cache, serpapi_domain_cache, gsc_intel = await asyncio.gather(
                 self._probe_perplexity_citation(pages[0], clean_domain, pplx_key) if (seed_domain and pplx_key) else _no_result(),
-                self._probe_serpapi_intelligence(clean_domain, serp_key),
+                _no_result(),
                 self._fetch_gsc_site_analytics(clean_domain, gsc_token, explicit_property=explicit_gsc_property)
                 if (gsc_token and clean_domain) else _no_result(),
             )
@@ -225,11 +226,7 @@ class EnrichmentService:
                 # AI probes, PageSpeed and URL inspection do not depend on each other.
                 ad["AEO_Audit"], vitals, inspection_data = await asyncio.gather(aeo(), speed(), inspect())
                 ad["GEO_Audit"] = await self._compute_geo_metrics(page, serp_key, gbp_key, serpapi_domain_cache)
-                # Domain-level SERP data is stored once (on the top page), not duplicated into every row.
-                if rank == 0:
-                    ad["SERP_Data"] = serpapi_domain_cache or {}
-                else:
-                    ad.pop("SERP_Data", None)
+                ad.pop("SERP_Data", None)  # replaced by Keywords & AI answers
 
                 if vitals:
                     ad["PageSpeed"] = vitals
@@ -355,66 +352,6 @@ class EnrichmentService:
         except Exception as e:
             print(f"OpenAI live probing warning: {e}")
         return {"live_verified": False}
-
-    async def _probe_serpapi_intelligence(self, domain: str, serp_key: Optional[str]) -> Dict[str, Any]:
-        """Queries SerpAPI for live Google SERP features, AI Overviews, and People Also Ask questions."""
-        clean_dom = domain.lower().replace("www.", "")
-        if serp_key:
-            try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    res = await client.get(
-                        "https://serpapi.com/search.json",
-                        params={
-                            "engine": "google",
-                            "q": f"{clean_dom} services and reviews",
-                            "api_key": serp_key,
-                            "num": 10
-                        }
-                    )
-                    if res.status_code == 200:
-                        data = res.json()
-                        paa_list = [
-                            q.get("question", "") for q in data.get("related_questions", []) if q.get("question")
-                        ]
-                        answer_box = data.get("answer_box", {})
-                        ai_overview = data.get("ai_overview", {})
-                        has_ai_overview = bool(ai_overview or "Generative AI" in str(data))
-                        
-                        sources = ai_overview.get("sources", []) if isinstance(ai_overview, dict) else []
-                        is_cited_in_ai = any(clean_dom in str(s).lower() for s in sources)
-                        
-                        organic = data.get("organic_results", [])
-                        rank = None
-                        for item in organic:
-                            if clean_dom in item.get("link", "").lower():
-                                rank = item.get("position")
-                                break
-
-                        return {
-                            "is_live_verified": True,
-                            "has_ai_overview": has_ai_overview,
-                            "ai_overview_cited": is_cited_in_ai,
-                            "featured_snippet_present": bool(answer_box),
-                            "paa_questions": paa_list[:6],
-                            "top_ranking_position": rank,  # None when the domain was not found in the results
-                            "local_pack_present": "local_results" in data,
-                            "query": f"{clean_dom} services and reviews"
-                        }
-            except Exception as e:
-                print(f"SerpAPI live query warning: {e}")
-
-        # Fallback realistic intelligence
-        return {
-            "is_live_verified": False,
-            "has_ai_overview": False,
-            "ai_overview_cited": False,
-            "featured_snippet_present": False,
-            "paa_questions": [],
-            "top_ranking_position": None,
-            "local_pack_present": False,
-            "query": f"{clean_dom} services and reviews",
-            "status": "SerpAPI Not Connected"
-        }
 
     async def _probe_gemini_synthesis(self, page: Page, gemini_key: str, gemini_model: Optional[str] = None) -> Dict[str, Any]:
         """Answer-engine readiness: the model judges named pass/fail criteria from the page's own copy.
