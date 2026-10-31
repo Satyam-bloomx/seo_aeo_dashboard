@@ -1,0 +1,15 @@
+# Never bake secrets, local data or host environments into the image.
+.env
+.env.*
+!.env.example
+*.db
+*.db-*
+*.sqlite3
+.pagespeed_cache.json
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/
+test_*.py
+src/

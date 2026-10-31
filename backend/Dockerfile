@@ -1,59 +1,45 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Etc/UTC
-ENV PYTHONUNBUFFERED=1
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Etc/UTC \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    APP_ENV=production
 
 WORKDIR /app
 
-# Install system dependencies, C-extensions tools, sudo, and Chromium OS libraries
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    gcc \
-    g++ \
-    git \
-    sudo \
-    libxml2-dev \
-    libxslt-dev \
-    ca-certificates \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcairo2 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libglib2.0-0 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libpango-1.0-0 \
-    libx11-6 \
-    libxcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxkbcommon0 \
-    libxrandr2 \
-    xdg-utils \
+COPY requirements.txt .
+
+# Build tools are only needed while compiling wheels; they are purged in the same layer.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc g++ libxml2-dev libxslt-dev curl ca-certificates \
+    && pip install -r requirements.txt \
+    && python -m playwright install --with-deps chromium \
+    && apt-get purge -y --auto-remove gcc g++ libxml2-dev libxslt-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN useradd --create-home --uid 10001 app \
+    && mkdir -p /app/data \
+    && chown -R app:app /app /ms-playwright
 
-# Download Chromium binary only (all OS libraries already installed cleanly above)
-RUN python -m playwright install chromium
+COPY --chown=app:app . .
 
-COPY . .
+# Strip Windows line endings (a CRLF checkout breaks the shebang) and make the entrypoint executable.
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && chmod 0755 /app/docker-entrypoint.sh
 
-# Ensure data directory exists for SQLite persistent volume
-RUN mkdir -p /app/data
+USER app
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# API healthcheck. The worker service overrides it in docker-compose.yml (the worker serves no HTTP).
+# start-period covers the migration that runs before uvicorn when RUN_MIGRATIONS=true.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD curl -fsS http://localhost:8000/health || exit 1
+
+# RUN_MIGRATIONS=true runs `alembic upgrade head` (advisory-locked) before the command; see docker-entrypoint.sh.
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+
+# API by default; the worker service runs `python -m app.worker` from this same image.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

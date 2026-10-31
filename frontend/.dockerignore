@@ -1,0 +1,6 @@
+# Host node_modules (Windows binaries) and env files must not overwrite the image's own.
+node_modules
+.next
+.env*
+!.env.example
+npm-debug.log*

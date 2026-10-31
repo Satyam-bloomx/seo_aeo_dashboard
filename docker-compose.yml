@@ -1,4 +1,15 @@
-version: '3.8'
+# Deployed by Coolify on the Hostinger VPS. See docs/DEPLOY_COOLIFY.md.
+#
+# Resource limits are sized for Hostinger KVM 4 (4 vCPU / 16 GB; ~13 GB left after the OS and Coolify).
+# KVM 2 (2 vCPU / 8 GB; ~5.5 GB left) values are in the comments and the *_CPUS / *_MEMORY variables, so a plan change
+# is an environment change in Coolify, not a code change. CPU limits may add up to more than the host (they are
+# ceilings). Memory ceilings of the services doing real work must fit; an idle worker (inline mode) uses ~150 MB.
+#
+# Crawl runner (CRAWL_RUNNER, same value on backend and worker):
+#   inline (default): the backend (API) runs crawls in-process; the worker service idles.
+#   worker:           the backend only queues crawls; the worker service claims and runs them.
+#   Do NOT switch to "worker" before the API changes listed in docs/DEPLOY_COOLIFY.md are deployed,
+#   or a crawl can run twice.
 
 services:
   frontend:
@@ -6,31 +17,66 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-/api}
         - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+        - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:?set NEXT_PUBLIC_SUPABASE_URL}
+        - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set NEXT_PUBLIC_SUPABASE_ANON_KEY}
     restart: unless-stopped
-    expose:
-      - 3000
+    ports:
+      - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}
-      - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
       - NODE_ENV=production
+      # Server-side rewrite target for /api/* (same-origin API: no CORS, no mixed content).
+      - INTERNAL_API_URL=http://backend:8000
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      # Any non-5xx answer means the Next.js server is up (the home page may redirect to sign-in).
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/',{redirect:'manual'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks: [edge]
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    deploy:
+      resources:
+        # KVM 2: 0.75 CPU / 768m
+        limits: { cpus: "${FRONTEND_CPUS:-1.0}", memory: "${FRONTEND_MEMORY:-1g}", pids: 512 }
 
+  # The API. Kept under the name "backend" so existing Coolify domain settings and INTERNAL_API_URL keep working.
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    init: true  # reaps Chromium child processes while crawls still run here (inline mode)
     expose:
       - 8000
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@postgres:5432/seo_audit}
-      - REDIS_URL=redis://redis:6379/0
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://frontend:3000}
-      - SUPABASE_URL=${SUPABASE_URL:-}
-      - SUPABASE_KEY=${SUPABASE_KEY:-}
+      - APP_ENV=production
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Only the API migrates (docker-entrypoint.sh, advisory-locked). The worker never does.
+      - RUN_MIGRATIONS=${RUN_MIGRATIONS:-true}
+      - MIGRATIONS_BASELINE=${MIGRATIONS_BASELINE:-}
+      - CRAWL_RUNNER=${CRAWL_RUNNER:-inline}
+      - CRAWL_SLOTS=${CRAWL_SLOTS:-3}
+      - JS_CRAWL_SLOTS=${JS_CRAWL_SLOTS:-1}
+      - MAX_CRAWL_PAGES=${MAX_CRAWL_PAGES:-1000}
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-seo_audit}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seo_audit}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+      - CORS_ORIGINS=${CORS_ORIGINS:?set CORS_ORIGINS}
+      - FRONTEND_URL=${FRONTEND_URL:?set FRONTEND_URL}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
+      - ENCRYPTION_KEYS_PREVIOUS=${ENCRYPTION_KEYS_PREVIOUS:-}
+      - SUPABASE_URL=${SUPABASE_URL:?set SUPABASE_URL}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET:-}
+      - CRAWLER_USER_AGENT=${CRAWLER_USER_AGENT:-AuditProBot/1.0 (+https://auditpro.ai/bot)}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - PAGESPEED_API_KEY=${PAGESPEED_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -38,33 +84,148 @@ services:
       - SERPAPI_API_KEY=${SERPAPI_API_KEY:-}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-    volumes:
-      - backend_data:/app/data
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started  # Redis is optional today (reserved for the future shared queue)
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s  # includes `alembic upgrade head` on deploy
+    networks: [edge, internal]
+    # Chromium needs more than the 64 MB default. Needed here only while CRAWL_RUNNER=inline.
+    shm_size: ${API_SHM_SIZE:-1gb}
+    stop_grace_period: 30s
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    deploy:
+      resources:
+        # Inline mode (crawls run here): 2 CPU / 3g on KVM 4, 1.5 CPU / 2560m on KVM 2.
+        # Worker mode (API only):         1 CPU / 1536m on KVM 4, 0.75 CPU / 1g on KVM 2; API_SHM_SIZE=64mb.
+        limits: { cpus: "${API_CPUS:-2.0}", memory: "${API_MEMORY:-3g}", pids: 1024 }
+
+  # Runs crawls when CRAWL_RUNNER=worker (idles otherwise). Same image as the API; never migrates.
+  # More capacity: raise CRAWL_SLOTS / JS_CRAWL_SLOTS (per worker) or add a second worker service
+  # (crawls are claimed with FOR UPDATE SKIP LOCKED, so workers never take the same crawl).
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    init: true  # reaps Chromium child processes
+    environment:
+      - APP_ENV=production
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - RUN_MIGRATIONS=false
+      - CRAWL_RUNNER=${CRAWL_RUNNER:-inline}
+      - CRAWL_SLOTS=${CRAWL_SLOTS:-3}         # KVM 2: 2
+      - JS_CRAWL_SLOTS=${JS_CRAWL_SLOTS:-1}   # KVM 2: 1
+      - MAX_CRAWL_PAGES=${MAX_CRAWL_PAGES:-1000}
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
+      - WORKER_GRACE_SECONDS=${WORKER_GRACE_SECONDS:-100}   # keep below stop_grace_period
+      - WORKER_MAX_MEMORY_PCT=${WORKER_MAX_MEMORY_PCT:-75}
+      - WORKER_HEALTH_FILE=/tmp/worker-heartbeat
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-seo_audit}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seo_audit}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+      - CORS_ORIGINS=${CORS_ORIGINS:?set CORS_ORIGINS}
+      - FRONTEND_URL=${FRONTEND_URL:?set FRONTEND_URL}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
+      - ENCRYPTION_KEYS_PREVIOUS=${ENCRYPTION_KEYS_PREVIOUS:-}
+      - SUPABASE_URL=${SUPABASE_URL:?set SUPABASE_URL}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET:-}
+      - CRAWLER_USER_AGENT=${CRAWLER_USER_AGENT:-AuditProBot/1.0 (+https://auditpro.ai/bot)}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - PAGESPEED_API_KEY=${PAGESPEED_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
+      - SERPAPI_API_KEY=${SERPAPI_API_KEY:-}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy  # the API has finished migrating before the worker touches the database
+    healthcheck:
+      # The worker writes the time to this file after every successful database poll (idle mode: every 30 s).
+      test: ["CMD", "python", "-c", "import sys,time; sys.exit(0 if time.time()-float(open('/tmp/worker-heartbeat').read()) < 90 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks: [edge, internal]   # edge: outbound internet for crawling; nothing is exposed
+    shm_size: 1gb                # Chromium needs more than the 64 MB default
+    stop_grace_period: 120s      # running crawls get WORKER_GRACE_SECONDS to finish on redeploy
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    deploy:
+      resources:
+        # KVM 4: 3 CPU / 6g (3 normal + 1 JS crawl). KVM 2: 1.5 CPU / 3g with CRAWL_SLOTS=2.
+        limits: { cpus: "${WORKER_CPUS:-3.0}", memory: "${WORKER_MEMORY:-6g}", pids: 2048 }
 
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=seo_audit
-    expose:
-      - 5432
+      - POSTGRES_USER=${POSTGRES_USER:-seo_audit}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-seo_audit}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+    shm_size: 256mb  # the 64 MB default can fail parallel queries
+    stop_grace_period: 60s
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    deploy:
+      resources:
+        # KVM 2: 1 CPU / 1g
+        limits: { cpus: "${POSTGRES_CPUS:-1.5}", memory: "${POSTGRES_MEMORY:-2g}" }
 
+  # Optional today (connected at start-up, not yet used for the crawl queue). Kept for the future shared queue.
   redis:
-    image: redis:alpine
+    image: redis:7.4-alpine
     restart: unless-stopped
-    expose:
-      - 6379
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}", "--appendonly", "yes"]
+    environment:
+      - REDISCLI_AUTH=${REDIS_PASSWORD:?set REDIS_PASSWORD}
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256m }
+
+networks:
+  edge: {}
+  # Database and cache are unreachable from anything except the backend and worker.
+  internal:
+    internal: true
 
 volumes:
-  backend_data:
   postgres_data:
   redis_data:
