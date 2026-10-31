@@ -9,11 +9,5 @@ export default function sitemap() {
       changeFrequency: 'daily',
       priority: 1.0,
     },
-    {
-      url: `${baseUrl}/loading-demo`,
-      lastModified: lastModified,
-      changeFrequency: 'weekly',
-      priority: 0.8,
-    },
   ];
 }

@@ -19,21 +19,31 @@ import {
   Check,
   TableProperties,
   FolderTree,
+  Layers,
   List,
   AlertCircle,
   AlertTriangle,
   CheckCircle,
-  Info
+  Info,
+  Sparkles
 } from 'lucide-react';
 import URLTreeTable from './URLTreeTable';
+import DuplicateGroupsView from './DuplicateGroupsView';
 import { copyToClipboard } from '@/utils/clipboard';
 import { getDiagnosticDetail } from '@/utils/diagnosticDetails';
 import {
   MASTER_EXPORT_FIELDS,
   exportMasterAuditToExcel,
-  exportMasterAuditToCSV
+  exportMasterAuditToCSV,
+  exportFilteredViewToCSV
 } from '@/utils/exportUtils';
+import { buildPageTypeScopes, PAGE_TYPE_SCOPES } from '@/utils/pageTypes';
 import { generateIssuesReport } from '@/utils/IssuesEngine';
+import { gscIndexState } from '@/utils/gscStatus';
+import { useCrawlSummary } from '@/context/CrawlSummaryContext';
+
+// "PageSpeed" holds the Core Web Vitals, so it is listed under the name users search for.
+const CATEGORY_OPTIONS_LABELS = { PageSpeed: 'Core Web Vitals (PageSpeed)' };
 
 const CATEGORIES = [
   'Internal', 'External', 'Security', 'Response_Codes', 'URI', 'Page_Titles',
@@ -48,34 +58,43 @@ export function getLengthNoSpaces(text) {
   return String(text).replace(/\s+/g, '').length;
 }
 
+const CATEGORY_OPTIONS = CATEGORIES.map((c) => (CATEGORY_OPTIONS_LABELS[c] ? { value: c, label: CATEGORY_OPTIONS_LABELS[c] } : c));
+
+// Keys that are internal plumbing, never useful as a column or a filter.
+const INTERNAL_KEY_RE = /(^|_)(urls|count)$|^link_score$|^inlinks$|^outlinks$/i;
+const isInternalKey = (k) => INTERNAL_KEY_RE.test(k) || /_urls$/i.test(k) || k === 'near_duplicate_urls';
+const normKey = (k) => String(k).toLowerCase().replace(/[_\s]/g, '');
+
 const CATEGORY_PRIMARY_COLUMNS = {
+  PageSpeed: [
+    { key: 'cwv_score', label: 'Performance Score' },
+    { key: 'cwv_lcp', label: 'LCP' },
+    { key: 'cwv_inp', label: 'INP' },
+    { key: 'cwv_cls', label: 'CLS' },
+    { key: 'cwv_ttfb', label: 'TTFB' },
+  ],
   Page_Titles: [
     { key: 'title_1', label: 'Title 1' },
     { key: 'title_1_length', label: 'Length' },
-    { key: 'title_1_length_no_spaces', label: 'Length (No Spaces)' },
     { key: 'title_1_pixel_width', label: 'Pixel Width' },
     { key: 'title_count', label: 'Occurrences' },
   ],
   Meta_Description: [
     { key: 'meta_desc_1', label: 'Meta Description 1' },
     { key: 'meta_desc_1_length', label: 'Length' },
-    { key: 'meta_desc_1_length_no_spaces', label: 'Length (No Spaces)' },
     { key: 'meta_desc_1_pixel_width', label: 'Pixel Width' },
     { key: 'meta_desc_count', label: 'Occurrences' },
   ],
   H1: [
     { key: 'h1_1', label: 'H1-1' },
     { key: 'h1_1_length', label: 'H1-1 Length' },
-    { key: 'h1_1_length_no_spaces', label: 'H1-1 (No Spaces)' },
     { key: 'h1_2', label: 'H1-2' },
     { key: 'h1_2_length', label: 'H1-2 Length' },
-    { key: 'h1_2_length_no_spaces', label: 'H1-2 (No Spaces)' },
     { key: 'h1_count', label: 'H1 Count' },
   ],
   H2: [
     { key: 'h2_1', label: 'H2-1' },
     { key: 'h2_1_length', label: 'H2-1 Length' },
-    { key: 'h2_1_length_no_spaces', label: 'H2-1 (No Spaces)' },
     { key: 'h2_2', label: 'H2-2' },
     { key: 'h2_2_length', label: 'H2-2 Length' },
     { key: 'h2_2_length_no_spaces', label: 'H2-2 (No Spaces)' },
@@ -84,6 +103,8 @@ const CATEGORY_PRIMARY_COLUMNS = {
   Canonicals: [
     { key: 'canonical_link_element_1', label: 'Canonical Link Element 1' },
     { key: 'canonical_count', label: 'Occurrences' },
+    { key: 'indexability', label: 'Indexability' },
+    { key: 'indexability_status', label: 'Indexability Status' },
   ],
   Directives: [
     { key: 'meta_robots_1', label: 'Meta Robots 1' },
@@ -117,6 +138,14 @@ const CATEGORY_PRIMARY_COLUMNS = {
     { key: 'non_indexable_sitemap', label: 'Non-Indexable' },
     { key: 'orphan_status', label: 'Orphan URL' },
   ],
+  AEO_Audit: [
+    { key: 'aeo_score', label: 'AEO Score' },
+    { key: 'ai_engine_status', label: 'AI Engine Status' },
+    { key: 'search_intent', label: 'Search Intent' },
+    { key: 'llm_extractability', label: 'LLM Extractability' },
+    { key: 'voice_search_readiness', label: 'Voice Readiness' },
+    { key: 'ai_summary', label: 'AI Key Takeaway' },
+  ],
 };
 
 const ON_PAGE_HTML_CATEGORIES = [
@@ -145,6 +174,17 @@ export function getPageCellValue(page, colKey, activeCategory) {
   if (colKey === 'h2_1_length') return page.h2_1_length ?? (page.h2_1 ? page.h2_1.length : 0);
   if (colKey === 'h2_2_length') return page.h2_2_length ?? (page.h2_2 ? page.h2_2.length : 0);
 
+  // Core Web Vitals (mobile lab data, falling back to desktop)
+  if (colKey.startsWith('cwv_')) {
+    const ps = page.audit_data?.PageSpeed;
+    const m = ps?.mobile?.metrics || ps?.desktop?.metrics;
+    if (colKey === 'cwv_score') return ps?.mobile?.performance_score ?? ps?.desktop?.performance_score ?? '';
+    return m?.[colKey.slice(4)] ?? '';
+  }
+
+  // Page type & pagination
+  if (colKey === 'Page_Type') return page.audit_data?.Page_Type?.Type || '';
+
   // Link Score & Graph
   if (colKey === 'link_score') {
     const score = page.audit_data?.Links?.Link_Score ?? page.audit_data?.Internal?.Link_Score;
@@ -171,7 +211,7 @@ export function getPageCellValue(page, colKey, activeCategory) {
   if (colKey === 'non_indexable_sitemap') return catData['Non-Indexable URLs in Sitemap'] ? 'Non-Indexable' : 'Indexable';
   if (colKey === 'orphan_status') return catData['Orphan URLs'] ? 'Yes' : 'No';
 
-  // Screaming Frog Occurrence Counts (0 for missing, 1, 2, etc.)
+  // Occurrence Counts (0 for missing, 1, 2, etc.)
   if (colKey === 'title_count') return (page.title_1 && String(page.title_1).trim() !== '') ? 1 : 0;
   if (colKey === 'meta_desc_count') return (page.meta_desc_1 && String(page.meta_desc_1).trim() !== '') ? 1 : 0;
   if (colKey === 'canonical_count') return (page.canonical_link_element_1 && String(page.canonical_link_element_1).trim() !== '') ? 1 : 0;
@@ -190,6 +230,32 @@ export function getPageCellValue(page, colKey, activeCategory) {
     return 1;
   }
 
+  // AEO Audit Cell Values
+  if (colKey === 'aeo_score') {
+    const aeo = page.audit_data?.AEO_Audit;
+    return aeo?.aeo_score ?? aeo?.Gemini_Synthesis_Score ?? aeo?.OpenAI_Synthesis_Score ?? '';
+  }
+  if (colKey === 'ai_engine_status') {
+    const aeo = page.audit_data?.AEO_Audit;
+    return aeo?.Gemini_Live_Status || aeo?.Perplexity_Citation_Status || aeo?.OpenAI_Live_Status || (aeo?.is_ai_connected ? 'Connected' : 'Offline');
+  }
+  if (colKey === 'search_intent') {
+    const aeo = page.audit_data?.AEO_Audit;
+    return aeo?.Gemini_Search_Intent || aeo?.Search_Intent || 'Informational';
+  }
+  if (colKey === 'llm_extractability') {
+    const aeo = page.audit_data?.AEO_Audit;
+    return aeo?.LLM_Extractability || aeo?.['LLM Extractability'] || 'High';
+  }
+  if (colKey === 'voice_search_readiness') {
+    const aeo = page.audit_data?.AEO_Audit;
+    return aeo?.Voice_Search_Readiness || aeo?.['Voice Search Readiness'] || 'Optimized';
+  }
+  if (colKey === 'ai_summary') {
+    const aeo = page.audit_data?.AEO_Audit;
+    return aeo?.Gemini_Key_Takeaway || aeo?.Perplexity_AI_Summary || '';
+  }
+
   if (catData[colKey] !== undefined) return catData[colKey];
   if (page[colKey] !== undefined) return page[colKey];
   return undefined;
@@ -200,19 +266,26 @@ export function checkPageMatchesView(p, activeCategory, viewName) {
 
   if (activeCategory === 'Response_Codes') {
     if (viewName === 'Client Error (4xx)' || viewName === '4xx' || viewName === 'Errors') {
-      return (p.status_code || 200) >= 400 && (p.status_code || 200) < 500;
+      return (p.status_code ?? 0) >= 400 && (p.status_code ?? 0) < 500;
     }
     if (viewName === 'Redirection (3xx)' || viewName === '3xx') {
-      return (p.status_code || 200) >= 300 && (p.status_code || 200) < 400;
+      return (p.status_code ?? 0) >= 300 && (p.status_code ?? 0) < 400;
     }
     if (viewName === 'Server Error (5xx)' || viewName === '5xx') {
-      return (p.status_code || 200) >= 500;
+      return (p.status_code ?? 0) >= 500;
     }
     if (viewName === 'Success (2xx)' || viewName === '2xx') {
-      return (p.status_code || 200) >= 200 && (p.status_code || 200) < 300;
+      return (p.status_code ?? 0) >= 200 && (p.status_code ?? 0) < 300;
     }
     if (viewName === 'Blocked') {
       return p.status_code === 0 || Boolean(p.audit_data?.Response_Codes?.Blocked);
+    }
+    if (viewName === 'Could not check') {
+      const fetch = p.audit_data?.Fetch;
+      return Boolean(fetch && fetch.outcome !== 'ok' && fetch.side !== 'site');
+    }
+    if (viewName === 'Redirection (Meta Refresh)') {
+      return Boolean(p.audit_data?.Response_Codes?.['Redirection (Meta Refresh)']);
     }
     return true;
   }
@@ -221,13 +294,13 @@ export function checkPageMatchesView(p, activeCategory, viewName) {
     return p.audit_data?.Google_Analytics?.Is_Zombie_Page === true;
   }
   if (viewName === 'High Traffic at Risk') {
-    return (p.status_code || 200) >= 400 && Boolean(p.audit_data?.Google_Analytics?.Revenue_At_Risk?.includes('P0'));
+    return Boolean(p.audit_data?.Google_Analytics?.Revenue_At_Risk?.startsWith('High'));
   }
   if (viewName === 'Indexed & Rank Eligible') {
-    return Boolean(p.audit_data?.Search_Console?.Google_Index_Status?.toLowerCase().includes('indexed'));
+    return gscIndexState(p.audit_data?.Search_Console) === 'indexed';
   }
   if (viewName === 'Crawled - Not Indexed') {
-    return Boolean(p.audit_data?.Search_Console?.Index_Coverage_State?.toLowerCase().includes('not indexed'));
+    return gscIndexState(p.audit_data?.Search_Console) === 'not_indexed';
   }
   if (viewName === 'Excluded by Google') {
     const gsc = p.audit_data?.Search_Console;
@@ -273,10 +346,15 @@ export function checkPageMatchesView(p, activeCategory, viewName) {
   if (viewName === 'Errors') {
     const catData = p.audit_data?.[activeCategory];
     if (activeCategory === 'Response_Codes') {
-      return (p.status_code || 200) >= 400;
+      return (p.status_code ?? 0) >= 400;
     }
     if (!catData) return false;
-    return Object.values(catData).some(val => val === true);
+    // "Any issue": a real check failed (respects checks where true is the healthy state).
+    return Object.entries(catData).some(([k, val]) => {
+      if (isInternalKey(k) || k === 'Paginated') return false;
+      if (val !== true && val !== 'true') return false;
+      return getDiagnosticDetail(activeCategory, k, true, p).isIssue;
+    });
   }
 
   const cleanViewQuery = viewName.includes(':')
@@ -307,12 +385,35 @@ export function checkPageMatchesView(p, activeCategory, viewName) {
   });
 }
 
-export default function URLExplorerTab({ pages, initialCategory, initialView, onRowClick }) {
+// Views passed from Issues may carry a prefix ("Validation: Multiple <body> Tags" -> "Multiple <body> Tags").
+function cleanViewName(view) {
+  return view.includes(':') ? view.split(':').slice(1).join(':').trim() : view;
+}
+
+function isArchiveUrl(p) {
+  const u = (p.url || '').toLowerCase();
+  return u.includes('/author/') || u.includes('/category/') || u.includes('/tag/') || Boolean(u.match(/\/page\/\d+/));
+}
+
+function pageMatchesScope(p, scope, hasPageTypes) {
+  if (scope === 'all') return true;
+  if (scope === 'errors') return (p.status_code ?? 0) >= 300;
+  if (hasPageTypes) {
+    const def = PAGE_TYPE_SCOPES.find((sc) => sc.key === scope);
+    return Boolean(def) && def.types.includes(p.audit_data?.Page_Type?.Type);
+  }
+  if (scope === 'content') return !isArchiveUrl(p) && (p.status_code ?? 0) < 300;
+  if (scope === 'archives') return isArchiveUrl(p);
+  return true;
+}
+
+export default function URLExplorerTab({ pages, initialCategory, initialView, onRowClick, onOpenAiCopilot }) {
   const reduced = useReducedMotion();
+  const crawlSummary = useCrawlSummary();
   const [activeCategory, setActiveCategory] = useState(initialCategory || 'Page_Titles');
-  const [activeView, setActiveView] = useState(initialView || 'All');
-  const [pageScope, setPageScope] = useState('all'); // 'all' | 'content' | 'archives' | 'errors'
-  const [viewMode, setViewMode] = useState('table'); // 'table' | 'tree'
+  const [activeView, setActiveView] = useState(initialView ? cleanViewName(initialView) : 'All');
+  const [pageScope, setPageScope] = useState('all'); // 'all' | 'errors' | page-type key | legacy 'content' | 'archives'
+  const [viewMode, setViewMode] = useState('table'); // 'table' | 'tree' | 'groups'
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedUrl, setCopiedUrl] = useState(null);
   const [copiedCellId, setCopiedCellId] = useState(null);
@@ -326,41 +427,42 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     }
   };
 
-  const scopeCounts = useMemo(() => {
-    let contentCount = 0;
-    let archivesCount = 0;
-    let errorsCount = 0;
-    for (const p of pages || []) {
-      const u = (p.url || '').toLowerCase();
-      const isArch = u.includes('/author/') || u.includes('/category/') || u.includes('/tag/') || Boolean(u.match(/\/page\/\d+/));
-      const isErr = (p.status_code || 200) >= 300;
-      if (isErr) errorsCount++;
-      if (isArch) archivesCount++;
-      if (!isArch && !isErr) contentCount++;
-    }
-    return {
-      all: pages?.length || 0,
-      content: contentCount,
-      archives: archivesCount,
-      errors: errorsCount,
-    };
-  }, [pages]);
+  // Scopes: by Page_Type when the backend classified the crawl, else the URL-pattern fallback.
+  const pageTypeScopes = useMemo(() => buildPageTypeScopes(pages), [pages]);
+  const hasPageTypes = pageTypeScopes.length > 0;
 
-  React.useEffect(() => {
-    if (initialCategory) {
-      setActiveCategory(initialCategory);
+  const scopeButtons = useMemo(() => {
+    const list = pages || [];
+    const errors = list.filter((p) => (p.status_code ?? 0) >= 300).length;
+    const all = { key: 'all', label: 'All URLs', count: list.length, active: 'text-slate-900 dark:text-white' };
+    const err = { key: 'errors', label: 'Errors & Redirects', count: errors, active: 'text-rose-700 dark:text-rose-400' };
+    if (hasPageTypes) {
+      return [all, ...pageTypeScopes.map((sc) => ({ key: sc.key, label: sc.label, count: sc.count, active: 'text-indigo-700 dark:text-indigo-400' })), err];
     }
-  }, [initialCategory]);
+    let content = 0;
+    let archives = 0;
+    for (const p of list) {
+      if (isArchiveUrl(p)) archives++;
+      else if ((p.status_code ?? 0) < 300) content++;
+    }
+    return [
+      all,
+      { key: 'content', label: 'Content Pages', count: content, active: 'text-indigo-700 dark:text-indigo-400' },
+      { key: 'archives', label: 'Author & Archives', count: archives, active: 'text-amber-700 dark:text-amber-400' },
+      err,
+    ];
+  }, [pages, hasPageTypes, pageTypeScopes]);
 
-  React.useEffect(() => {
-    if (initialView) {
-      // Clean prefix if passed from issues (e.g. "Validation: Multiple <body> Tags" -> "Multiple <body> Tags")
-      const cleanView = initialView.includes(':')
-        ? initialView.split(':').slice(1).join(':').trim()
-        : initialView;
-      setActiveView(cleanView);
-    }
-  }, [initialView]);
+  // A saved scope that no longer exists in this crawl falls back to All.
+  const effectiveScope = scopeButtons.some((b) => b.key === pageScope) ? pageScope : 'all';
+
+  // Follow category/view requests from the parent (e.g. clicking an issue) during render.
+  const [syncedInitial, setSyncedInitial] = useState({ initialCategory, initialView });
+  if (syncedInitial.initialCategory !== initialCategory || syncedInitial.initialView !== initialView) {
+    setSyncedInitial({ initialCategory, initialView });
+    if (initialCategory && initialCategory !== syncedInitial.initialCategory) setActiveCategory(initialCategory);
+    if (initialView && initialView !== syncedInitial.initialView) setActiveView(cleanViewName(initialView));
+  }
 
   const dynamicColumns = useMemo(() => {
     if (!pages || pages.length === 0) return [];
@@ -371,6 +473,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
 
     const primary = CATEGORY_PRIMARY_COLUMNS[activeCategory] || [];
     const primaryKeys = primary.map(p => p.key);
+    if (activeCategory === 'PageSpeed') return primaryKeys;
 
     let diagnosticKeys = [];
     for (const page of pages) {
@@ -381,38 +484,29 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       }
     }
 
-    const filteredDiagnostic = diagnosticKeys.filter(k => !primaryKeys.includes(k));
+    const primaryNorm = new Set(primaryKeys.map(normKey));
+    const filteredDiagnostic = diagnosticKeys.filter(k => !primaryKeys.includes(k) && !isInternalKey(k) && !primaryNorm.has(normKey(k)));
     return [...primaryKeys, ...filteredDiagnostic];
   }, [pages, activeCategory]);
 
   const scopedAndCategoryPages = useMemo(() => {
     let result = pages || [];
 
-    // 1. Page Scope Filter (Content Pages vs Archives vs Errors)
-    if (pageScope === 'content') {
-      result = result.filter(p => {
-        const u = (p.url || '').toLowerCase();
-        return !u.includes('/author/') && !u.includes('/category/') && !u.includes('/tag/') && !u.match(/\/page\/\d+/);
-      });
-    } else if (pageScope === 'archives') {
-      result = result.filter(p => {
-        const u = (p.url || '').toLowerCase();
-        return u.includes('/author/') || u.includes('/category/') || u.includes('/tag/') || Boolean(u.match(/\/page\/\d+/));
-      });
-    } else if (pageScope === 'errors') {
-      result = result.filter(p => (p.status_code || 200) >= 300);
+    // 1. Page scope filter (page type, or content/archives/errors fallback)
+    if (effectiveScope !== 'all') {
+      result = result.filter(p => pageMatchesScope(p, effectiveScope, hasPageTypes));
     }
 
-    // 2. Screaming Frog Standard: On-page SEO categories evaluate HTTP 200 text/html pages ONLY.
+    // 2. Standard SEO practice: On-page SEO categories evaluate HTTP 200 text/html pages ONLY.
     if (ON_PAGE_HTML_CATEGORIES.includes(activeCategory)) {
       result = result.filter(p => {
-        const code = p.status_code || 200;
+        const code = p.status_code ?? 0;
         return code === 200 && (!p.content_type || p.content_type.includes('text/html'));
       });
     }
 
     return result;
-  }, [pages, pageScope, activeCategory]);
+  }, [pages, effectiveScope, hasPageTypes, activeCategory]);
 
   // Overall category health stats: Total Audited, Number of Missing, and Present
   const categoryStats = useMemo(() => {
@@ -432,7 +526,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
 
   const rawAvailableViews = useMemo(() => {
     if (activeCategory === 'Response_Codes') {
-      return ['All', 'Client Error (4xx)', 'Redirection (3xx)', 'Success (2xx)', 'Server Error (5xx)', 'Blocked'];
+      return ['All', 'Client Error (4xx)', 'Redirection (3xx)', 'Redirection (Meta Refresh)', 'Success (2xx)', 'Server Error (5xx)', 'Blocked', 'Could not check'];
     }
 
     let diagnosticKeys = [];
@@ -444,12 +538,25 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       }
     }
 
+    // Only true/false checks make a meaningful filter; skip internal and non-boolean keys.
+    const booleanKeys = new Set();
+    for (const page of pages || []) {
+      const cd = page.audit_data?.[activeCategory];
+      if (!cd || typeof cd !== 'object') continue;
+      for (const k of diagnosticKeys) {
+        if (booleanKeys.has(k)) continue;
+        const v = cd[k];
+        if (typeof v === 'boolean' || v === 'true' || v === 'false') booleanKeys.add(k);
+      }
+      if (booleanKeys.size === diagnosticKeys.length) break;
+    }
+
     const base = ['All'];
     if (['Page_Titles', 'Meta_Description', 'H1', 'H2', 'Canonicals', 'Directives', 'Content'].includes(activeCategory) || diagnosticKeys.includes('Missing')) {
       base.push('Missing');
     }
     base.push('Errors');
-    base.push(...diagnosticKeys);
+    base.push(...diagnosticKeys.filter((k) => isInternalKey(k) ? false : booleanKeys.has(k)));
 
     if (activeCategory === 'Google_Analytics' || activeCategory === 'Internal') {
       base.push('Zombie Pages (0 Visits)');
@@ -477,11 +584,20 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       }
       return {
         value: viewKey,
-        label: viewKey,
+        label: viewKey === 'Errors' ? 'Any issue' : viewKey.replace(/_/g, ' '),
         badge: String(count),
       };
     });
   }, [rawAvailableViews, scopedAndCategoryPages, activeCategory]);
+
+  // Duplicate groups use the page scope only (not the category's HTML-200 filter, which the view applies itself).
+  const scopedPagesForGroups = useMemo(
+    () => (effectiveScope === 'all' ? (pages || []) : (pages || []).filter((p) => pageMatchesScope(p, effectiveScope, hasPageTypes))),
+    [pages, effectiveScope, hasPageTypes]
+  );
+
+  const ROWS_PER_PAGE = 100;
+  const [tablePage, setTablePage] = useState(0);
 
   const filteredPages = useMemo(() => {
     let result = scopedAndCategoryPages;
@@ -500,13 +616,27 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     return result;
   }, [scopedAndCategoryPages, searchQuery, activeCategory, activeView]);
 
+  // Back to the first page whenever the filter or search changes (render-phase reset, no extra effect).
+  const filterKey = `${activeCategory}|${activeView}|${searchQuery}`;
+  const [pagedFilterKey, setPagedFilterKey] = useState(filterKey);
+  if (pagedFilterKey !== filterKey) {
+    setPagedFilterKey(filterKey);
+    setTablePage(0);
+  }
+  const pageCount = Math.max(1, Math.ceil(filteredPages.length / ROWS_PER_PAGE));
+  const safeTablePage = Math.min(tablePage, pageCount - 1);
+  const visibleRows = useMemo(
+    () => filteredPages.slice(safeTablePage * ROWS_PER_PAGE, (safeTablePage + 1) * ROWS_PER_PAGE),
+    [filteredPages, safeTablePage]
+  );
+
   // Master Full Audit Exporter (Excel .xlsx with multi-tab structure)
   const handleExportExcel = () => {
     if (!pages || pages.length === 0) {
       toast.error('No crawl data available to export.');
       return;
     }
-    const issuesReport = generateIssuesReport(pages);
+    const issuesReport = generateIssuesReport(pages, crawlSummary);
     const targetUrl = pages[0]?.url || '';
     exportMasterAuditToExcel(pages, targetUrl, issuesReport);
   };
@@ -521,47 +651,27 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     exportMasterAuditToCSV(pages, targetUrl);
   };
 
-  // Export current filtered view
+  // Export current filtered view with the same human labels and TRUE/FALSE style as the Master CSV.
   const exportCurrentViewToCSV = () => {
     if (!filteredPages || filteredPages.length === 0) {
       toast.error('No URLs match the current filter.');
       return;
     }
-
-    const baseCols = ['URL', 'Status_Code', 'Indexability', 'Content_Type', 'Word_Count'];
-    const extraCols = dynamicColumns.filter(c => !baseCols.map(b => b.toLowerCase()).includes(c.toLowerCase()));
-    const allHeaders = [...baseCols, ...extraCols];
-
-    const rows = filteredPages.map(page => {
-      const pageUrl = `"${(page.url || '').replace(/"/g, '""')}"`;
-      const statusCode = `"${page.status_code || 200}"`;
-      const indexability = `"${page.indexability || 'Indexable'}"`;
-      const contentType = `"${page.content_type || 'text/html'}"`;
-      const wordCount = `"${page.word_count ?? ''}"`;
-
-      const extraValues = extraCols.map(col => {
-        const val = getPageCellValue(page, col, activeCategory);
-        if (val === null || val === undefined) return '""';
-        if (typeof val === 'object') return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
-        return `"${String(val).replace(/"/g, '""')}"`;
-      });
-
-      return [pageUrl, statusCode, indexability, contentType, wordCount, ...extraValues].join(',');
-    });
-
-    const csvContent = '\uFEFF' + [allHeaders.map(h => `"${h}"`).join(','), ...rows].join('\r\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `auditpro_${activeCategory.toLowerCase()}_view_export.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    toast.success('Filtered View Exported', {
-      description: `Exported ${filteredPages.length} rows for category ${activeCategory.replace(/_/g, ' ')}.`
+    const baseCols = [
+      { header: 'URL', getter: (p) => p.url },
+      { header: 'Status Code', getter: (p) => p.status_code ?? 0 },
+      { header: 'Indexability', getter: (p) => p.indexability || 'Indexable' },
+      { header: 'Content Type', getter: (p) => p.content_type || 'text/html' },
+      { header: 'Word Count', getter: (p) => p.word_count ?? '' },
+    ];
+    const baseNorm = new Set(['url', 'statuscode', 'indexability', 'contenttype', 'wordcount']);
+    const extraCols = dynamicColumns
+      .filter((c) => !baseNorm.has(normKey(c)))
+      .map((c) => ({ header: getColumnLabel(c), getter: (p) => getPageCellValue(p, c, activeCategory) }));
+    exportFilteredViewToCSV(filteredPages, [...baseCols, ...extraCols], {
+      targetUrl: pages?.[0]?.url || '',
+      category: activeCategory,
+      filter: activeView,
     });
   };
 
@@ -653,7 +763,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       );
     }
 
-    // 1. Screaming Frog Occurrence & Count Columns (0 Missing, 1, 2 Multiple)
+    // 1. Occurrence & Count Columns (0 Missing, 1, 2 Multiple)
     if (colKey.endsWith('_count') || colKey === 'Occurrences') {
       const count = typeof value === 'number' ? value : parseInt(value, 10) || 0;
       if (count === 0) {
@@ -677,7 +787,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       );
     }
 
-    // 2. Screaming Frog Missing column (instead of True/False, show 0 Missing vs 1 Present)
+    // 2. Missing column (instead of True/False, show 0 Missing vs 1 Present)
     if (colKey === 'Missing') {
       const isMissing = value === true || value === 'true' || value === 'TRUE';
       return isMissing ? (
@@ -873,13 +983,13 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 shrink-0 overflow-hidden"
           >
             <div>
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">Screaming Frog URL Data Grid</h2>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">URL Data Grid</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Explore full 32-parameter extracted data for all crawled website endpoints.</p>
             </div>
 
             {/* Toolbar: Table/Tree Switcher & Export Buttons in a clean swipeable rail on mobile */}
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto no-scrollbar max-w-full pb-0.5 flex-nowrap self-start sm:self-auto">
-              {/* Screaming Frog View Switcher: Table View vs Tree View */}
+              {/* View switcher: Table, Tree, Duplicate groups */}
               <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0">
                 <button
                   type="button"
@@ -903,11 +1013,24 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                       ? 'bg-emerald-600 text-white shadow-xs font-bold'
                       : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
-                  title="Select tree table view (Screaming Frog Directory Trie)"
+                  title="Directory tree view"
                 >
                   <FolderTree size={13} />
                   <span className="hidden xs:inline">Tree View</span>
                   <span className="xs:hidden">Tree</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('groups')}
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                    viewMode === 'groups'
+                      ? 'bg-amber-600 text-white shadow-xs font-bold'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="Duplicate titles, descriptions, H1s and content grouped by value"
+                >
+                  <Layers size={13} />
+                  <span>Duplicate groups</span>
                 </button>
               </div>
 
@@ -945,14 +1068,14 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
               {/* Current Filtered View Export */}
               <motion.button
                 onClick={exportCurrentViewToCSV}
-                disabled={!filteredPages || filteredPages.length === 0}
+                disabled={!filteredPages || filteredPages.length === 0 || activeView === 'All'}
                 whileTap={tapPress}
                 transition={spring.press}
                 className="btn-secondary py-1.5 sm:py-2 px-2 sm:px-3 text-xs font-bold gap-1.5 disabled:opacity-50 shadow-xs shrink-0 whitespace-nowrap"
-                title="Export only currently filtered rows"
+                title={activeView === 'All' ? 'Pick a View Filter first (use Master CSV for everything)' : `Export only the ${filteredPages.length} rows matching ${activeCategory.replace(/_/g, ' ')}: ${activeView}`}
               >
                 <Filter size={13} className="text-slate-600 dark:text-slate-400 shrink-0" />
-                <span className="hidden sm:inline">Filtered View</span>
+                <span className="hidden sm:inline">Export filtered rows</span>
                 <span className="sm:hidden">Filtered</span>
               </motion.button>
             </div>
@@ -971,60 +1094,30 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             transition={{ duration: 0.18, ease: 'easeOut' }}
             className="space-y-3 shrink-0 overflow-hidden"
           >
-            {/* Scope Segment Control & Screaming Frog Compliance Indicator */}
+            {/* Scope Segment Control & compliance indicator */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
               <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200/50 dark:border-slate-800 rounded-xl w-full sm:w-fit text-xs font-semibold overflow-x-auto no-scrollbar flex-nowrap">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 pl-2 pr-1 shrink-0">Scope:</span>
-                <button
-                  type="button"
-                  onClick={() => setPageScope('all')}
-                  className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
-                    pageScope === 'all'
-                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-bold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  All URLs ({scopeCounts.all})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPageScope('content')}
-                  className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
-                    pageScope === 'content'
-                      ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-400 shadow-xs font-bold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Content Pages ({scopeCounts.content})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPageScope('archives')}
-                  className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
-                    pageScope === 'archives'
-                      ? 'bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-400 shadow-xs font-bold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Author & Archives ({scopeCounts.archives})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPageScope('errors')}
-                  className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
-                    pageScope === 'errors'
-                      ? 'bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-400 shadow-xs font-bold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Errors & Redirects ({scopeCounts.errors})
-                </button>
+                {scopeButtons.map((b) => (
+                  <button
+                    key={b.key}
+                    type="button"
+                    onClick={() => setPageScope(b.key)}
+                    className={`px-3 py-1.5 rounded-lg transition-all text-xs shrink-0 whitespace-nowrap ${
+                      effectiveScope === b.key
+                        ? `bg-white dark:bg-slate-800 ${b.active} shadow-xs font-bold`
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {b.label} ({b.count})
+                  </button>
+                ))}
               </div>
 
               {ON_PAGE_HTML_CATEGORIES.includes(activeCategory) && (
                 <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-200/80 dark:border-slate-800 shrink-0">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                  <span>Screaming Frog standard: 200 OK HTML pages</span>
+                  <span>Standard SEO practice: 200 OK HTML pages</span>
                 </div>
               )}
             </div>
@@ -1035,7 +1128,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
               <CustomSelect
                 label="Category:"
                 value={activeCategory}
-                options={CATEGORIES}
+                options={CATEGORY_OPTIONS}
                 onChange={(newCat) => {
                   setActiveCategory(newCat);
                   setActiveView('All');
@@ -1073,8 +1166,15 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl text-xs shrink-0 shadow-2xs">
               <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                 <div className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-400">
-                  <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] uppercase tracking-wider">Audited URLs:</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{categoryStats.total}</span>
+                  <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] uppercase tracking-wider">
+                    {ON_PAGE_HTML_CATEGORIES.includes(activeCategory) ? 'Audited HTML Pages:' : 'Audited URLs:'}
+                  </span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">
+                    {categoryStats.total}
+                    {pages?.length && categoryStats.total !== pages.length ? (
+                      <span className="text-slate-400 dark:text-slate-500 font-normal ml-1 text-[11px]">/ {pages.length} total crawled</span>
+                    ) : null}
+                  </span>
                 </div>
 
                 <div className="h-3 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
@@ -1126,7 +1226,15 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
       </AnimatePresence>
 
       {/* Main View: Tree Table vs Flat Data Grid */}
-      {viewMode === 'tree' ? (
+      {viewMode === 'groups' ? (
+        <DuplicateGroupsView
+          key={activeCategory}
+          pages={scopedPagesForGroups}
+          crawlSummary={crawlSummary}
+          targetUrl={pages?.[0]?.url || ''}
+          initialCategory={activeCategory}
+        />
+      ) : viewMode === 'tree' ? (
         <div className="flex-1 overflow-hidden min-h-0">
           <URLTreeTable
             pages={filteredPages}
@@ -1187,31 +1295,35 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              <AnimatePresence initial={false} mode="popLayout">
               {filteredPages.length > 0 ? (
-                filteredPages.map((page, idx) => {
-                  const statusCode = page.status_code || 200;
+                visibleRows.map((page, idx) => {
+                  const statusCode = page.status_code ?? 0;
                   const isCopied = copiedUrl === page.url;
 
                   return (
-                    <motion.tr
+                    <tr
                       key={page.id || page.url || idx}
-                      layout={!reduced}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
-                      transition={{
-                        ...tween(duration.fast, ease.outQuart),
-                        delay: Math.min(idx, 12) * 0.015,
-                      }}
+                      tabIndex={0}
+                      aria-label={`Inspect ${page.url}`}
                       onClick={() => onRowClick && onRowClick(page)}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group"
+                      onKeyDown={(e) => {
+                        if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+                          e.preventDefault();
+                          onRowClick && onRowClick(page);
+                        }
+                      }}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 focus-visible:bg-indigo-50 dark:focus-visible:bg-indigo-950/40 focus-visible:outline-2 focus-visible:outline-indigo-500 transition-colors cursor-pointer group"
                     >
                       <td className="px-4 py-3 text-xs font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                         <div className="flex items-center gap-1.5 truncate max-w-sm">
                           <ChevronRight size={13} className="text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5" />
                           <span className="truncate" title={page.url}>{page.url}</span>
-                          {page.url?.includes('/author/') && (
+                          {hasPageTypes && page.audit_data?.Page_Type?.Type && page.audit_data.Page_Type.Type !== 'Other' && (
+                            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
+                              {page.audit_data.Page_Type.Type}
+                            </span>
+                          )}
+                          {!hasPageTypes && page.url?.includes('/author/') && (
                             <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
                               Author
                             </span>
@@ -1233,6 +1345,19 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                           >
                             {isCopied ? <Check size={11} className="text-emerald-600 dark:text-emerald-400" /> : <Copy size={11} />}
                           </button>
+                          {onOpenAiCopilot && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenAiCopilot(page.url);
+                              }}
+                              className="p-1 text-amber-500 hover:text-amber-600 dark:hover:text-[#CAE366] rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                              title="Audit this URL with AI (page audit)"
+                            >
+                              <Sparkles size={11} />
+                            </button>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -1269,17 +1394,11 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                           </td>
                         );
                       })}
-                    </motion.tr>
+                    </tr>
                   );
                 })
               ) : (
-                <motion.tr
-                  key="empty"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={tween(duration.base, ease.outQuart)}
-                >
+                <tr key="empty">
                   <td colSpan={dynamicColumns.length + 3} className="px-6 py-16 text-center text-slate-400">
                     <p className="font-bold text-slate-900 dark:text-white text-sm">No URLs match the selected filter ({activeCategory} : {activeView}).</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-3">Try switching category, resetting search query, or viewing all URLs.</p>
@@ -1293,12 +1412,35 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                       Show All {pages?.length || 0} URLs
                     </button>
                   </td>
-                </motion.tr>
+                </tr>
               )}
-              </AnimatePresence>
             </tbody>
           </table>
         </div>
+
+        {pageCount > 1 && (
+          <nav aria-label="URL table pages" className="px-4 py-2 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setTablePage(p => Math.max(0, p - 1))}
+              disabled={safeTablePage === 0}
+              className="btn-secondary px-3 py-1.5 font-bold disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="font-mono text-slate-600 dark:text-slate-300" aria-live="polite">
+              Rows {safeTablePage * ROWS_PER_PAGE + 1}–{Math.min((safeTablePage + 1) * ROWS_PER_PAGE, filteredPages.length)} of {filteredPages.length}
+            </span>
+            <button
+              type="button"
+              onClick={() => setTablePage(p => Math.min(pageCount - 1, p + 1))}
+              disabled={safeTablePage >= pageCount - 1}
+              className="btn-secondary px-3 py-1.5 font-bold disabled:opacity-40"
+            >
+              Next
+            </button>
+          </nav>
+        )}
 
         {/* Footer Meta */}
         <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-500 dark:text-slate-400 flex flex-wrap justify-between items-center gap-2 shrink-0">
@@ -1349,7 +1491,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             {searchQuery && (
               <>
                 <span>|</span>
-                <span>Search: <strong className="text-indigo-600 dark:text-indigo-400">"{searchQuery}"</strong></span>
+                <span>Search: <strong className="text-indigo-600 dark:text-indigo-400">&quot;{searchQuery}&quot;</strong></span>
               </>
             )}
           </div>

@@ -23,26 +23,30 @@ import {
 } from 'lucide-react';
 
 export default function AiRemediationModal({ isOpen, onClose, issue, pages }) {
-  const [loading, setLoading] = useState(false);
-  const [remediationData, setRemediationData] = useState(null);
-  const [copied, setCopied] = useState(false);
   const [selectedUrlIndex, setSelectedUrlIndex] = useState(0);
+  // Results and the copied flag are tagged with the request they belong to, so switching issue or URL
+  // shows loading (and resets "copied") without clearing state inside the effect.
+  const requestKey = isOpen && issue ? `${issue.ruleName || issue.name}|${selectedUrlIndex}` : null;
+  const [result, setResult] = useState({ key: null, data: null });
+  const [copiedKey, setCopiedKey] = useState(null);
+  const loading = Boolean(requestKey) && result.key !== requestKey;
+  const remediationData = result.key === requestKey ? result.data : null;
+  const copied = Boolean(requestKey) && copiedKey === requestKey;
 
   const affectedPages = issue?.affected_pages || [];
   const activePage = affectedPages[selectedUrlIndex] || pages?.[0] || {};
 
   useEffect(() => {
-    if (!isOpen || !issue) return;
+    if (!requestKey) return;
 
     let isMounted = true;
-    setLoading(true);
-    setRemediationData(null);
-    setCopied(false);
 
     const fetchFix = async () => {
+      let res = null;
       try {
+        const projId = issue.project_id || activePage.project_id || pages?.[0]?.project_id || (typeof window !== 'undefined' ? parseInt(localStorage.getItem('active_project_id') || '1', 10) : 1);
         const payload = {
-          project_id: 1,
+          project_id: projId || 1,
           issue_name: issue.ruleName || issue.name,
           url: activePage.url || 'https://example.com/target-page',
           current_value: issue.currentValue || '',
@@ -52,17 +56,15 @@ export default function AiRemediationModal({ isOpen, onClose, issue, pages }) {
           word_count: activePage.word_count || 0
         };
 
-        const res = await getAiRemediation(payload);
-        if (isMounted && res && res.data) {
-          setRemediationData(res);
-        }
+        const response = await getAiRemediation(payload);
+        if (response && response.data) res = response;
       } catch (err) {
         console.error('AI Remediation fetch error:', err);
         if (isMounted) {
           toast.error('Failed to generate AI remediation. Using standard rule diagnostics.');
         }
       } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted) setResult({ key: requestKey, data: res });
       }
     };
 
@@ -71,15 +73,18 @@ export default function AiRemediationModal({ isOpen, onClose, issue, pages }) {
     return () => {
       isMounted = false;
     };
-  }, [isOpen, issue, selectedUrlIndex]);
+    // activePage/pages are read when the request starts; requestKey captures issue + selected URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestKey]);
 
   const handleCopyCode = async () => {
     const code = remediationData?.data?.code_snippet || '';
     if (!code) return;
     const ok = await copyToClipboard(code, 'Code fix');
     if (ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2200);
+      const key = requestKey;
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 2200);
     }
   };
 
@@ -103,7 +108,7 @@ export default function AiRemediationModal({ isOpen, onClose, issue, pages }) {
                   1-Click AI Technical Remediation
                 </DialogTitle>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/40">
-                  {remediationData?.powered_by || 'OpenAI GPT-4o-mini'}
+                  {remediationData?.powered_by || 'AI Engineering Engine'}
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
@@ -155,7 +160,7 @@ export default function AiRemediationModal({ isOpen, onClose, issue, pages }) {
               </div>
               <div className="text-center">
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">Synthesizing Technical SEO Fix...</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-mono">Querying GPT-4o-mini & W3C validation models for production fix</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-mono">Querying AI diagnostic & W3C validation models for production fix</p>
               </div>
             </div>
           ) : (

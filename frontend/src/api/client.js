@@ -86,5 +86,16 @@ export const analyzePerformance = async (url, projectId = 1) => {
   return response.data;
 };
 
+export const getAiPageDeepdive = async (params) => {
+  const response = await api.post('/audits/ai-page-deepdive', params);
+  return response.data;
+};
+
+
 export default api;
 
+
+export const getCrawlSummary = async (crawlId) => {
+  const response = await api.get(`/crawls/${crawlId}/summary`);
+  return response.data;
+};

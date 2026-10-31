@@ -505,6 +505,14 @@ export const DIAGNOSTIC_DEFINITIONS = {
   }
 };
 
+const POSITIVE_CHECK_KEYS = new Set([
+  'Contains Canonical', 'Self Referencing', 'Index', 'Follow', 'HTTPS URLs', 'Indexable',
+  'URLs In Sitemap', 'Structured_Schema_Present', 'FAQ_Or_HowTo_Schema', 'Direct_Answer_Snippet_Ready',
+  'has_local_schema', 'Local_Pack_Present',
+]);
+const STATUS_FLAG_KEYS = new Set([
+  'Is_Live_GSC', 'is_ai_connected', 'is_geo_connected', 'Perplexity_Citation_Win', 'Canonicalised',
+]);
 /**
  * Helper to fetch a comprehensive diagnostic explanation for any check.
  *
@@ -519,8 +527,12 @@ export function getDiagnosticDetail(category, key, value, page = {}) {
   const compositeKey = `${category}: ${key}`;
   const def = DIAGNOSTIC_DEFINITIONS[compositeKey] || DIAGNOSTIC_DEFINITIONS[key] || null;
 
-  const isPositiveCheck = ['Contains Canonical', 'Self Referencing', 'Index', 'Follow'].includes(key);
-  const isIssue = isPositiveCheck ? (value === false || value === 'false') : (value === true || value === 'true');
+  // Keys where true is the healthy state, and keys that are connection/status flags rather than checks.
+  const isPositiveCheck = POSITIVE_CHECK_KEYS.has(key);
+  const isStatusFlag = STATUS_FLAG_KEYS.has(key);
+  const isIssue = isStatusFlag || value === null || value === undefined
+    ? false
+    : isPositiveCheck ? (value === false || value === 'false') : (value === true || value === 'true');
 
   if (def) {
     let contextualWhy = '';

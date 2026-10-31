@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown, Check, Search, X } from 'lucide-react';
 import { duration, ease, spring, tween, tweenOut } from '@/lib/motion';
@@ -37,7 +38,37 @@ export default function CustomSelect({
   const containerRef = useRef(null);
   const searchInputRef = useRef(null);
   const listRef = useRef(null);
+  const menuRef = useRef(null);
+  const [menuPos, setMenuPos] = useState(null);
   const reduced = useReducedMotion();
+
+  // The menu is portalled to <body> so scrolling/overflow-hidden parents cannot clip it.
+  // Position it against the trigger, flipping upward when there is not enough room below.
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const place = () => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUp = spaceBelow < 320 && rect.top > spaceBelow;
+      const menuWidth = Math.max(rect.width, 200);
+      const anchorLeft = align === 'right' ? rect.right - menuWidth : rect.left;
+      setMenuPos({
+        left: Math.max(8, Math.min(anchorLeft, window.innerWidth - menuWidth - 8)),
+        width: rect.width,
+        top: openUp ? undefined : rect.bottom + 6,
+        bottom: openUp ? window.innerHeight - rect.top + 6 : undefined,
+        maxHeight: Math.max(160, (openUp ? rect.top : spaceBelow) - 24),
+      });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [isOpen, align]);
 
   // Normalize options to { value, label, badge, icon } objects
   const normalizedOptions = useMemo(() => {
@@ -84,7 +115,10 @@ export default function CustomSelect({
   // Handle outside clicks to close the dropdown
   useEffect(() => {
     const handleOutsideClick = (e) => {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
+      if (
+        containerRef.current && !containerRef.current.contains(e.target) &&
+        !(menuRef.current && menuRef.current.contains(e.target))
+      ) {
         setIsOpen(false);
         setSearchQuery('');
       }
@@ -218,18 +252,24 @@ export default function CustomSelect({
       </button>
 
       {/* Floating Popover Menu */}
+      {typeof document !== 'undefined' && createPortal(
       <AnimatePresence>
-        {isOpen && (
+        {isOpen && menuPos && (
           <motion.div
+            ref={menuRef}
             variants={reduced ? undefined : menuVariants}
             initial="initial"
             animate="animate"
             exit="exit"
-            className={`absolute top-full mt-1.5 z-50 min-w-[200px] w-full ${
-              menuClassName?.includes('max-w-') ? '' : 'max-w-sm'
-            } rounded-2xl bg-white/98 dark:bg-slate-900/98 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-xl ring-1 ring-slate-900/5 dark:ring-white/10 p-1.5 flex flex-col ${
-              align === 'right' ? 'right-0' : 'left-0'
-            } ${menuClassName}`}
+            style={{
+              position: 'fixed',
+              left: menuPos.left,
+              top: menuPos.top,
+              bottom: menuPos.bottom,
+              width: Math.max(menuPos.width, 200),
+              maxHeight: menuPos.maxHeight,
+            }}
+            className={`z-[1000] rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl ring-1 ring-slate-900/5 dark:ring-white/10 p-1.5 flex flex-col overflow-hidden ${menuClassName}`}
             role="listbox"
             tabIndex={-1}
           >
@@ -265,7 +305,7 @@ export default function CustomSelect({
             {/* Options List */}
             <div
               ref={listRef}
-              className="max-h-60 overflow-y-auto custom-scrollbar flex flex-col gap-0.5"
+              className="max-h-72 min-h-0 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-0.5"
             >
               {filteredOptions.length > 0 ? (
                 filteredOptions.map((opt, index) => {
@@ -322,7 +362,9 @@ export default function CustomSelect({
             </div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body
+      )}
     </div>
   );
 }

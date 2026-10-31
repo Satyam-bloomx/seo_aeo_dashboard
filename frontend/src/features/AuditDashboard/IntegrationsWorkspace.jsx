@@ -56,6 +56,19 @@ const WORKSPACE_SERVICES = [
   { id: 'synergy', name: 'SEO Audit Synergy', icon: Sparkles, color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-900/60' },
 ];
 
+// Bare hostname from a URL or Search Console property ("sc-domain:example.com", "https://www.example.com/").
+function cleanDomain(val) {
+  if (!val) return '';
+  let str = String(val).trim().toLowerCase();
+  str = str.replace(/^sc-domain:/i, '');
+  str = str.replace(/^https?:\/\//i, '');
+  str = str.replace(/^www\./i, '');
+  str = str.split('/')[0];
+  str = str.split('?')[0];
+  str = str.split(':')[0];
+  return str;
+}
+
 export default function IntegrationsWorkspace({
   projectId = 1,
   crawlId = null,
@@ -161,56 +174,31 @@ export default function IntegrationsWorkspace({
     }
   };
 
-  // Keep selectedService in sync if initialService changes from parent
-  useEffect(() => {
-    if (initialService) {
-      setSelectedService(initialService);
-    }
-  }, [initialService]);
+  // Keep selectedService in sync if initialService changes from parent (render-time update).
+  const [syncedInitialService, setSyncedInitialService] = useState(initialService);
+  if (initialService !== syncedInitialService) {
+    setSyncedInitialService(initialService);
+    if (initialService) setSelectedService(initialService);
+  }
 
-  // Clean domain helper
-  const cleanDomain = useCallback((val) => {
-    if (!val) return '';
-    let str = String(val).trim().toLowerCase();
-    str = str.replace(/^sc-domain:/i, '');
-    str = str.replace(/^https?:\/\//i, '');
-    str = str.replace(/^www\./i, '');
-    str = str.split('/')[0];
-    str = str.split('?')[0];
-    str = str.split(':')[0];
-    return str;
-  }, []);
+  // Cheap string comparisons: computed directly (the React Compiler memoizes them where useful).
+  const cleanSeedDomain = cleanDomain(seedUrl || (pages && pages[0]?.url) || '');
+  const cleanGscDomain = cleanDomain(selectedPropertyUrl || data?.property || integrationsStatus?.search_console?.selected_property || '');
+  const cleanGa4Domain = cleanDomain(selectedPropertyUrl || data?.property_name || data?.property || integrationsStatus?.google_analytics?.selected_property || '');
 
-  const cleanSeedDomain = useMemo(() => {
-    return cleanDomain(seedUrl || (pages && pages[0]?.url) || '');
-  }, [seedUrl, pages, cleanDomain]);
+  const isGscDomainMatched = Boolean(cleanSeedDomain && cleanGscDomain) &&
+    (cleanSeedDomain.includes(cleanGscDomain) || cleanGscDomain.includes(cleanSeedDomain));
 
-  const cleanGscDomain = useMemo(() => {
-    return cleanDomain(selectedPropertyUrl || data?.property || integrationsStatus?.search_console?.selected_property || '');
-  }, [selectedPropertyUrl, data, integrationsStatus, cleanDomain]);
+  const isGa4DomainMatched = Boolean(cleanSeedDomain) && (
+    Boolean(cleanGa4Domain && (cleanSeedDomain.includes(cleanGa4Domain) || cleanGa4Domain.includes(cleanSeedDomain))) ||
+    Boolean(data?.top_landing_pages && data.top_landing_pages.length > 0)
+  );
 
-  const cleanGa4Domain = useMemo(() => {
-    return cleanDomain(selectedPropertyUrl || data?.property_name || data?.property || integrationsStatus?.google_analytics?.selected_property || '');
-  }, [selectedPropertyUrl, data, integrationsStatus, cleanDomain]);
-
-  const isGscDomainMatched = useMemo(() => {
-    if (!cleanSeedDomain || !cleanGscDomain) return false;
-    return cleanSeedDomain.includes(cleanGscDomain) || cleanGscDomain.includes(cleanSeedDomain);
-  }, [cleanSeedDomain, cleanGscDomain]);
-
-  const isGa4DomainMatched = useMemo(() => {
-    if (!cleanSeedDomain) return false;
-    if (cleanGa4Domain && (cleanSeedDomain.includes(cleanGa4Domain) || cleanGa4Domain.includes(cleanSeedDomain))) return true;
-    if (data?.top_landing_pages && data.top_landing_pages.length > 0) return true;
-    return false;
-  }, [cleanSeedDomain, cleanGa4Domain, data]);
-
-  const isCurrentDomainMatched = useMemo(() => {
-    if (selectedService === 'search_console') return isGscDomainMatched;
-    if (selectedService === 'google_analytics') return isGa4DomainMatched;
-    if (selectedService === 'synergy') return isGscDomainMatched || isGa4DomainMatched;
-    return true;
-  }, [selectedService, isGscDomainMatched, isGa4DomainMatched]);
+  const isCurrentDomainMatched =
+    selectedService === 'search_console' ? isGscDomainMatched
+    : selectedService === 'google_analytics' ? isGa4DomainMatched
+    : selectedService === 'synergy' ? (isGscDomainMatched || isGa4DomainMatched)
+    : true;
 
   const handleCopyUrl = (urlToCopy) => {
     if (!urlToCopy) return;
@@ -251,7 +239,7 @@ export default function IntegrationsWorkspace({
         id: p.id || idx,
         url: p.url,
         title: p.title_1 || 'Untitled Page',
-        statusCode: p.status_code || 200,
+        statusCode: p.status_code ?? 0,
         clicks: rawClicks,
         impressions: rawImpressions,
         ctr,
@@ -264,7 +252,7 @@ export default function IntegrationsWorkspace({
         lastCrawl: gsc.Last_Googlebot_Crawl
       };
     });
-  }, [pages, cleanDomain]);
+  }, [pages]);
 
   // Filtered GSC pages
   const filteredGscPages = useMemo(() => {
@@ -300,20 +288,21 @@ export default function IntegrationsWorkspace({
       const sessions30d = ga4.Sessions_30d !== undefined && ga4.Sessions_30d !== 'Not Connected'
         ? parseInt(String(ga4.Sessions_30d).replace(/,/g, ''), 10) || 0
         : 0;
-      const sessions90d = ga4.Sessions_90d !== undefined && ga4.Sessions_90d !== 'Not Connected'
-        ? parseInt(String(ga4.Sessions_90d).replace(/,/g, ''), 10) || 0
-        : 0;
+      const sessions90d = ga4.Sessions_90d != null && ga4.Sessions_90d !== 'Not Connected'
+        ? parseInt(String(ga4.Sessions_90d).replace(/,/g, ''), 10)
+        : null;
       const bounceRate = ga4.Bounce_Rate && ga4.Bounce_Rate !== 'Not Connected' ? ga4.Bounce_Rate : '0.0%';
       const avgTime = ga4.Avg_Engagement_Time && ga4.Avg_Engagement_Time !== 'Not Connected' ? ga4.Avg_Engagement_Time : '0s';
-      const isZombie = Boolean(ga4.Is_Zombie_Page) || (sessions90d === 0 && idx > 0);
-      const zombieAction = ga4.Zombie_Recommended_Action || (isZombie ? '301 Redirect to parent or refresh content' : 'Active Traffic Source');
-      const revenueRisk = ga4.Revenue_At_Risk || ((p.status_code || 200) >= 400 && sessions30d > 0 ? 'Critical P0' : 'Nominal P4');
+      // Only flagged when GA4 actually reports it; unknown traffic is never treated as zero traffic.
+      const isZombie = ga4.Is_Zombie_Page === true;
+      const zombieAction = ga4.Zombie_Recommended_Action || (isZombie ? '301 Redirect to parent or refresh content' : null);
+      const revenueRisk = ga4.Revenue_At_Risk || null;
 
       return {
         id: p.id || idx,
         url: p.url,
         title: p.title_1 || 'Untitled Page',
-        statusCode: p.status_code || 200,
+        statusCode: p.status_code ?? 0,
         sessions30d,
         sessions90d,
         bounceRate,
@@ -382,9 +371,14 @@ export default function IntegrationsWorkspace({
   }, [projectId]);
 
   // Fetch integration data from backend
-  const loadServiceData = useCallback(async (serviceId) => {
+  const [loadingFor, setLoadingFor] = useState(selectedService);
+  if (loadingFor !== selectedService) {
+    setLoadingFor(selectedService);
     setIsLoading(true);
     setErrorMessage(null);
+  }
+
+  const loadServiceData = useCallback(async (serviceId) => {
     try {
       if (serviceId === 'synergy') {
         const targetCrawl = crawlId || 2;
@@ -417,7 +411,8 @@ export default function IntegrationsWorkspace({
   }, [projectId, crawlId, loadProperties]);
 
   useEffect(() => {
-    loadServiceData(selectedService);
+    const load = async () => { await Promise.resolve(); await loadServiceData(selectedService); };
+    load();
   }, [selectedService, loadServiceData]);
 
   // Handle on-demand live refetch / sync
@@ -446,7 +441,7 @@ export default function IntegrationsWorkspace({
           });
         } else {
           toast.success(`Synchronized ${selectedService.replace(/_/g, ' ').toUpperCase()}!`, {
-            description: `Live latency: ${res.data.latency_ms || 28}ms. Telemetry active.`
+            description: res.data.latency_ms ? `Live latency: ${res.data.latency_ms}ms.` : 'Connection verified.'
           });
         }
         if (onRefreshStatus) onRefreshStatus();
@@ -478,6 +473,8 @@ export default function IntegrationsWorkspace({
       setShowPropertyDrawer(false);
       setManualPropertyId('');
       // Reload live data immediately
+      setIsLoading(true);
+      setErrorMessage(null);
       await loadServiceData(selectedService);
       if (onRefreshStatus) onRefreshStatus();
     } catch (err) {
@@ -932,7 +929,7 @@ export default function IntegrationsWorkspace({
                       </div>
                       <p className="text-xs text-amber-800 dark:text-amber-300 mt-1 leading-relaxed">
                         Account: <strong className="font-mono">{data?.auth_account || integrationsStatus['search_console']?.account_email || 'Authenticated Account'}</strong>. 
-                        Google returned: <em>"{errorMessage}"</em>.
+                        Google returned: <em>&quot;{errorMessage}&quot;</em>.
                       </p>
                       <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-1 leading-relaxed">
                         To view live search keywords and clicks, make sure this Google account has been added to the Search Console property, or switch to the property selector above.
@@ -1138,7 +1135,7 @@ export default function IntegrationsWorkspace({
                       </span>
                     </div>
                     <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-                      Verifies that Googlebot's indexed canonical matches your declared on-page <code className="font-mono text-slate-900 dark:text-white">&lt;link rel="canonical"&gt;</code> tag to avoid duplicate content penalties.
+                      Verifies that Googlebot&apos;s indexed canonical matches your declared on-page <code className="font-mono text-slate-900 dark:text-white">&lt;link rel=&quot;canonical&quot;&gt;</code> tag to avoid duplicate content penalties.
                     </p>
                   </div>
 
@@ -1677,7 +1674,7 @@ export default function IntegrationsWorkspace({
                       </div>
                       <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 text-xs font-mono">
                         {[
-                          { id: 'all', label: `All (${data?.channels?.length || 7})` },
+                          { id: 'all', label: `All (${data?.channels?.length ?? 0})` },
                           { id: 'AEO', label: '🤖 AEO & AI Search' },
                           { id: 'SEO', label: '🟢 Organic SEO' },
                           { id: 'BRAND', label: '🔵 Brand & Direct' },
@@ -1845,19 +1842,19 @@ export default function IntegrationsWorkspace({
                               <div className="text-[10px] text-slate-500 dark:text-slate-400">100% of total</div>
                             </td>
                             <td className="py-2.5 px-3 text-right tabular-nums text-slate-900 dark:text-white">
-                              <div>{data?.totals?.engagement_rate || data?.summary?.engagement_rate || '47.72%'}</div>
+                              <div>{data?.totals?.engagement_rate || data?.summary?.engagement_rate || '—'}</div>
                               <div className="text-[10px] text-slate-500 dark:text-slate-400">Avg 0%</div>
                             </td>
                             <td className="py-2.5 px-3 text-right tabular-nums text-slate-900 dark:text-white">
-                              <div>{data?.totals?.avg_time || data?.summary?.average_engagement_time || '59s'}</div>
+                              <div>{data?.totals?.avg_time || data?.summary?.average_engagement_time || '—'}</div>
                               <div className="text-[10px] text-slate-500 dark:text-slate-400">Avg 0%</div>
                             </td>
                             <td className="py-2.5 px-3 text-right tabular-nums text-slate-900 dark:text-white">
-                              <div>{data?.totals?.events_per_session || '7.11'}</div>
+                              <div>{data?.totals?.events_per_session ?? '—'}</div>
                               <div className="text-[10px] text-slate-500 dark:text-slate-400">Avg 0%</div>
                             </td>
                             <td className="py-2.5 px-3 text-right tabular-nums text-slate-900 dark:text-white font-extrabold">
-                              {data?.totals?.event_count?.toLocaleString() || '9,814'}
+                              {data?.totals?.event_count?.toLocaleString() ?? '—'}
                               <div className="text-[10px] text-slate-500 dark:text-slate-400">100%</div>
                             </td>
                             <td className="py-2.5 px-3 font-sans">
@@ -1998,21 +1995,21 @@ export default function IntegrationsWorkspace({
                         <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
                           <div className="text-[10px] text-slate-500 dark:text-slate-400">AI Sessions</div>
                           <div className="text-base font-black text-purple-600 dark:text-purple-400">
-                            {data?.aeo_spotlight?.ai_assistant_sessions || 7} sess
+                            {data?.aeo_spotlight?.ai_assistant_sessions ?? 0} sess
                           </div>
-                          <div className="text-[10px] text-slate-500">{data?.aeo_spotlight?.ai_share || '0.51%'} of total</div>
+                          <div className="text-[10px] text-slate-500">{data?.aeo_spotlight?.ai_share || '—'} of total</div>
                         </div>
                         <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
                           <div className="text-[10px] text-slate-500 dark:text-slate-400">AI Engagement</div>
                           <div className="text-base font-black text-emerald-600 dark:text-emerald-400">
-                            {data?.aeo_spotlight?.ai_engagement_rate || '42.86%'}
+                            {data?.aeo_spotlight?.ai_engagement_rate || '—'}
                           </div>
                           <div className="text-[10px] text-slate-500">High intent visitors</div>
                         </div>
                         <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 col-span-2 sm:col-span-1">
                           <div className="text-[10px] text-slate-500 dark:text-slate-400">Avg AI Dwell Time</div>
                           <div className="text-base font-black text-slate-900 dark:text-white">
-                            {data?.aeo_spotlight?.ai_avg_time || '17s'}
+                            {data?.aeo_spotlight?.ai_avg_time || '—'}
                           </div>
                           <div className="text-[10px] text-slate-500">Per session</div>
                         </div>
@@ -2244,7 +2241,7 @@ export default function IntegrationsWorkspace({
                                 {p.sessions30d.toLocaleString()}
                               </td>
                               <td className="py-2.5 px-3 text-right text-blue-700 dark:text-blue-400 font-semibold tabular-nums">
-                                {p.sessions90d.toLocaleString()}
+                                {Number.isFinite(p.sessions90d) ? p.sessions90d.toLocaleString() : '—'}
                               </td>
                               <td className="py-2.5 px-3 text-right">
                                 <span className={`font-semibold tabular-nums ${
@@ -2347,8 +2344,8 @@ export default function IntegrationsWorkspace({
                   </div>
                   <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
                   <div className="text-center">
-                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">{data?.nap_consistency_score || 'Synced'}</div>
-                    <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">NAP Integrity</div>
+                    <div className="text-2xl font-black text-slate-700 dark:text-slate-200 font-mono tabular-nums">{data?.nap_consistency_score ?? '—'}</div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{data?.match_confidence === 'unconfirmed' ? 'Match unconfirmed' : 'NAP Integrity'}</div>
                   </div>
                 </div>
               </div>
@@ -2419,7 +2416,7 @@ export default function IntegrationsWorkspace({
                       <Zap size={16} className="text-emerald-500" />
                       Desktop Performance
                     </h3>
-                    <span className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400 tabular-nums">{data?.desktop_score || '—'}/100</span>
+                    <span className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400 tabular-nums">{data?.desktop_score ?? '—'}/100</span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono text-xs pt-2">
                     <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
@@ -2679,7 +2676,7 @@ export default function IntegrationsWorkspace({
                         ).slice(0, 10).map((z, idx) => (
                           <tr key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/50">
                             <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-white truncate max-w-sm">{z.url}</td>
-                            <td className="py-2.5 px-3 text-right font-bold tabular-nums text-slate-700 dark:text-slate-300">{z.status_code || 200}</td>
+                            <td className="py-2.5 px-3 text-right font-bold tabular-nums text-slate-700 dark:text-slate-300">{z.status_code ?? 0}</td>
                             <td className="py-2.5 px-3 text-right font-extrabold text-rose-600 dark:text-rose-400 tabular-nums">0</td>
                             <td className="py-2.5 px-4 font-sans text-xs text-slate-600 dark:text-slate-300">{z.action}</td>
                           </tr>

@@ -2,6 +2,83 @@
 // Evaluates pages and produces actionable issues with root causes, search impacts, and fixes.
 
 export const RULE_METADATA = {
+  'Response Codes: Redirect Chain (2+ Hops)': {
+    rootCause: 'This URL redirects more than once before reaching its final destination (for example http -> https -> trailing slash).',
+    impact: 'Every extra hop adds latency and an extra fetch for crawlers; long chains can stop Googlebot from following through.',
+    fixGuide: 'Point the first URL (and every internal link to it) directly at the final destination so there is a single redirect at most.',
+    exampleBefore: '/old-page -> /old-page/ -> /new-page/',
+    exampleAfter: '/old-page -> /new-page/ (one 301)',
+  },
+  'Response Codes: Temporary Redirect (302/307)': {
+    rootCause: 'This URL uses a temporary redirect, which tells search engines the move is not permanent.',
+    impact: 'Search engines may keep the old URL indexed and consolidate signals more slowly than with a permanent redirect.',
+    fixGuide: 'If the move is permanent, change the redirect to 301 (or 308) in your server, CDN or redirect plugin.',
+  },
+  'Response Codes: Blocked or Failed (No Response)': {
+    rootCause: 'The crawler received no HTTP response for this URL: it was disallowed by robots.txt, the connection failed or timed out, or the address points to a non-public network.',
+    impact: 'Search engines cannot fetch these URLs either, so any content or links on them are invisible.',
+    fixGuide: 'Check the reason recorded for the URL. If robots.txt blocks a page you want indexed, allow it; if the server timed out or refused the connection, fix hosting or firewall rules.',
+    tip: 'Status 0 is the standard way SEO crawlers report a URL that returned no response.'
+  },
+  'Links: Internal Links To Broken Pages': {
+    rootCause: 'This page links to one or more internal URLs that return 4xx/5xx or no response.',
+    impact: 'Visitors hit dead ends and crawlers waste budget on broken URLs; link equity flowing through those links is lost.',
+    fixGuide: 'Open the page, find links to the broken URLs (see the URL inspector inlinks), and point them at a live destination or remove them.',
+    tip: 'Fix broken links in shared templates (header, footer, sidebar) first: one edit repairs every page.'
+  },
+  'Links: Internal Links To Redirects': {
+    rootCause: 'This page links to internal URLs that redirect (3xx) instead of linking to the final destination.',
+    impact: 'Each redirect adds latency for users and an extra fetch for crawlers.',
+    fixGuide: 'Update the links to the redirect target URL directly.',
+  },
+  'Structured Data: Invalid JSON-LD': {
+    rootCause: 'A <script type="application/ld+json"> block on the page is not valid JSON, so search engines discard it.',
+    impact: 'The page loses eligibility for the rich results that markup was meant to provide.',
+    fixGuide: 'Validate the block in the Google Rich Results Test or Schema Markup Validator, fix the syntax error (often a trailing comma or unescaped quote), and redeploy.',
+    tip: 'SEO plugins (Yoast, Rank Math) output valid JSON-LD; invalid blocks usually come from hand-written theme snippets.'
+  },
+  'Structured Data: Product Pages Missing Product Schema': {
+    rootCause: 'These product pages have no Product structured data (JSON-LD with name, price, availability).',
+    impact: 'Without it, Google cannot show price, stock and review stars in search results or Shopping, and AI answers have less to quote.',
+    fixGuide: 'Add Product JSON-LD with name, image, offers (price, currency, availability) to the product page template; most store platforms and SEO plugins can output it.',
+    exampleBefore: '<!-- no structured data on the product page -->',
+    exampleAfter: '<script type="application/ld+json">{"@type":"Product","name":"...","offers":{"@type":"Offer","price":"51.77","priceCurrency":"GBP","availability":"https://schema.org/InStock"}}</script>',
+    tip: 'Validate one product URL in the Google Rich Results Test after adding it.'
+  },
+  'Pagination: Paginated Page Canonicalised To First Page': {
+    rootCause: 'Page 2, 3... of a listing point their canonical tag at page 1.',
+    impact: 'Google may drop pages 2+ from its index, so products or posts linked only from those pages are found more slowly.',
+    fixGuide: 'Give each paginated page a self-referencing canonical (page 2 points to page 2).',
+    exampleBefore: '<!-- on /blog/page/2/ --> <link rel="canonical" href="https://site.com/blog/" />',
+    exampleAfter: '<!-- on /blog/page/2/ --> <link rel="canonical" href="https://site.com/blog/page/2/" />',
+    tip: 'Google stopped using rel=prev/next; self-canonicals plus normal links are its current advice.'
+  },
+  'Pagination: Duplicate Title From Pagination': {
+    rootCause: 'Pages of the same listing (page 1, 2, 3...) share one title.',
+    impact: 'Minor: search results cannot tell the pages apart. This is common and low priority.',
+    fixGuide: 'Add the page number to the title of pages 2+ (for example "Mystery Books - Page 2").',
+    exampleBefore: '<title>Mystery | Books</title> (on every page of the category)',
+    exampleAfter: '<title>Mystery | Books - Page 2</title>',
+    tip: 'Most themes have a setting for paginated titles.'
+  },
+  'Directives: Noindex': {
+    rootCause: 'These pages tell search engines not to index them (meta robots or X-Robots-Tag noindex).',
+    impact: 'They will not appear in Google. That is correct for thank-you, cart or internal pages, and a serious mistake on pages you want found.',
+    fixGuide: 'Check the list: remove noindex from any page that should rank (often a leftover from a staging site or an SEO plugin setting).',
+    exampleBefore: '<meta name="robots" content="noindex">',
+    exampleAfter: '<meta name="robots" content="index, follow"> (or remove the tag)',
+    tip: 'This is informational and barely affects the score.'
+  },
+  'Structured Data: Missing Structured Data': {
+    rootCause: 'No JSON-LD, microdata or RDFa schema was found on this page.',
+    impact: 'Search and AI answer engines have less explicit context about the page, and it cannot qualify for rich results.',
+    fixGuide: 'Add schema that matches the page type (Organization on the homepage, Article on posts, Product on product pages, BreadcrumbList site-wide).',
+  },
+  'Canonicals: Non-Indexable Canonical': {
+    rootCause: 'The canonical tag points to a URL that is not indexable (error, redirect, or noindex).',
+    impact: 'Google may ignore the canonical or drop both pages from the index.',
+    fixGuide: 'Point the canonical at the live, indexable version of the page (usually the page itself).',
+  },
   'Response Codes: Redirection (3xx)': {
     rootCause: 'This page redirects to a different URL (HTTP 301 or 302). Internal links on your site are still pointing to the old address instead of linking directly to the final destination.',
     impact: 'Redirects add 150–300ms of lag for users, waste search engine crawl quota, and can dilute link equity over time.',
@@ -290,10 +367,26 @@ export const RULE_METADATA = {
     exampleAfter: '<link rel="canonical" href="https://bestpeers.com/portfolio/" />',
     tip: 'Google\'s official guidelines explicitly request full absolute URLs for canonical tags.'
   },
+  'Response_Codes: Redirection (Meta Refresh)': {
+    rootCause: 'The page sends visitors elsewhere with a <meta http-equiv="refresh"> tag or a Refresh HTTP header instead of a server redirect.',
+    impact: 'Search engines treat refresh redirects as weaker, slower signals than 301s, and users briefly see the old page.',
+    fixGuide: 'Replace the refresh with a server-side 301 redirect to the destination URL.',
+    exampleBefore: '<meta http-equiv="refresh" content="0; url=/new-page/">',
+    exampleAfter: 'Server config: 301 redirect /old-page/ -> /new-page/',
+    tip: 'Most CMS redirect plugins (Yoast Premium, Redirection, Rank Math) create proper 301s.'
+  },
+  'Canonicals: Unlinked': {
+    rootCause: 'The canonical URL this page points to is not linked from anywhere else on the site.',
+    impact: 'Google weighs internal links when choosing a canonical; a target nobody links to is a weak signal and may be ignored.',
+    fixGuide: 'Link internally to the canonical URL (menus, related links) instead of the duplicate, or correct the canonical tag.',
+    exampleBefore: 'Menu links to /shoes?sort=new, canonical points to /shoes/',
+    exampleAfter: 'Menu links to /shoes/',
+    tip: 'Internal links, sitemaps and canonicals should all agree on the same URL.'
+  },
   'Images: Missing Alt Text': {
-    rootCause: 'One or more <img> tags have an empty alt attribute (alt="") or are missing alt text.',
-    impact: 'Visually impaired users using screen readers cannot understand the image, and Google cannot index it in Google Images search.',
-    fixGuide: 'Add a clear, descriptive alt text attribute describing what is shown in each informative image.',
+    rootCause: 'One or more <img> tags have empty alt text (alt="") or no alt attribute. Empty alt is correct for purely decorative images, so review these rather than fixing all of them.',
+    impact: 'Informative images without alt text cannot be understood by screen-reader users or indexed in Google Images.',
+    fixGuide: 'Add descriptive alt text to images that carry information (products, diagrams, people). Leave alt="" on decorative patterns, dividers and icons.',
     exampleBefore: '<img src="/shoes/mens-running-shoe.jpg" alt="" />',
     exampleAfter: '<img src="/shoes/mens-running-shoe.jpg" alt="Men\'s red breathable running shoe with cushioned sole" />',
     tip: 'Describe what someone with their eyes closed would need to know about the image.'
@@ -503,290 +596,56 @@ export const RULE_METADATA = {
   }
 };
 
-const CATEGORY_CONFIGS = {
-  Page_Titles: { 
-    'Missing': 'Issue', 'Duplicate': 'Issue', 'Over 60 Characters': 'Opportunity', 
-    'Below 30 Characters': 'Opportunity', 'Multiple': 'Issue', 'Outside <head>': 'Issue',
-    'Same as H1': 'Opportunity'
-  },
-  Meta_Description: { 
-    'Missing': 'Warning', 'Duplicate': 'Warning', 'Over 155 Characters': 'Opportunity', 
-    'Below 70 Characters': 'Opportunity', 'Multiple': 'Warning', 'Outside <head>': 'Issue'
-  },
-  H1: { 
-    'Missing': 'Warning', 'Duplicate': 'Warning', 'Over 70 Characters': 'Opportunity', 
-    'Multiple': 'Opportunity', 'Non-Sequential': 'Warning', 'Alt Text in H1': 'Opportunity'
-  },
-  H2: {
-    'Missing': 'Opportunity', 'Duplicate': 'Opportunity', 'Over 70 Characters': 'Opportunity', 
-    'Multiple': 'Opportunity', 'Non-Sequential': 'Opportunity'
-  },
-  Content: {
-    'Exact Duplicates': 'Issue', 'Near Duplicates': 'Warning', 'Low Content Pages': 'Warning',
-    'Soft 404 Pages': 'Issue', 'Readability Difficult': 'Opportunity', 'Readability Very Difficult': 'Warning',
-    'Lorem Ipsum Placeholder': 'Warning'
-  },
-  Images: {
-    'Missing Alt Text': 'Warning', 'Missing Alt Attribute': 'Warning', 
-    'Alt Text Over 100 Characters': 'Opportunity', 'Missing Size Attributes': 'Opportunity'
-  },
-  Canonicals: {
-    'Missing': 'Opportunity', 'Multiple': 'Issue', 'Multiple Conflicting': 'Issue',
-    'Canonical Is Relative': 'Warning', 'Outside <head>': 'Issue'
-  },
-  Directives: {
-    'Outside <head>': 'Issue'
-  },
-  Validation: {
-    'Missing <head> Tag': 'Issue', 'Multiple <head> Tags': 'Issue', 
-    'Missing <body> Tag': 'Issue', 'Multiple <body> Tags': 'Issue',
-    'HTML Document Over 2MB': 'Warning'
-  },
-  JavaScript: {
-    'Pages with Blocked Resources': 'Warning', 'Pages with JavaScript Errors': 'Warning',
-    'Uses Old AJAX Crawling Scheme URLs': 'Opportunity'
-  },
-  Security: {
-    'HTTP URLs': 'Issue',
-    'Mixed Content': 'Issue',
-    'Missing HSTS Header': 'Warning',
-    'Missing Content-Security-Policy Header': 'Warning',
-    'Missing X-Content-Type-Options Header': 'Warning',
-    'Missing X-Frame-Options Header': 'Warning',
-    'Missing Secure Referrer-Policy Header': 'Opportunity',
-    'Unsafe Cross-Origin Links': 'Warning',
-    'Protocol-Relative Resource Links': 'Opportunity'
-  },
-  Links: {
-    'Pages With High Crawl Depth': 'Opportunity',
-    'Pages With High Internal Outlinks': 'Opportunity',
-    'Non-Indexable Page Inlinks Only': 'Warning'
-  },
-  Sitemaps: {
-    'Non-Indexable URLs in Sitemap': 'Issue',
-    'Orphan URLs': 'Warning',
-    'URLs Not In Sitemap': 'Opportunity'
-  }
-};
+const PRIORITY_RANK = { High: 3, Medium: 2, Low: 1 };
 
-const RULES = [
-  {
-    name: 'Response Codes: Redirection (3xx)',
-    ruleName: 'Redirection (3xx)',
-    category: 'Response_Codes',
-    type: 'Warning',
-    priority: 'Medium',
-    evaluate: (page) => (page.status_code >= 300 && page.status_code < 400) || page.audit_data?.Response_Codes?.['3xx'] === true
-  },
-  {
-    name: 'Response Codes: Client Error (4xx)',
-    ruleName: 'Client Error (4xx)',
-    category: 'Response_Codes',
-    type: 'Issue',
-    priority: 'High',
-    evaluate: (page) => page.status_code >= 400 && page.status_code < 500
-  },
-  {
-    name: 'Response Codes: Server Error (5xx)',
-    ruleName: 'Server Error (5xx)',
-    category: 'Response_Codes',
-    type: 'Issue',
-    priority: 'High',
-    evaluate: (page) => page.status_code >= 500
-  },
-  // --- GOOGLE SEARCH CONSOLE DIAGNOSTIC RULES ---
-  {
-    name: 'Search Console: Excluded from Google Index',
-    ruleName: 'Excluded from Google Index',
-    category: 'Search_Console',
-    type: 'Issue',
-    priority: 'High',
-    evaluate: (page) => {
-      const gsc = page.audit_data?.Search_Console;
-      if (!gsc) return false;
-      const status = (gsc.Google_Index_Status || '').toLowerCase();
-      const state = (gsc.Index_Coverage_State || '').toLowerCase();
-      return status.includes('excluded') || state.includes('excluded') || status.includes('not indexed');
-    }
-  },
-  {
-    name: 'Search Console: Crawled - Currently Not Indexed',
-    ruleName: 'Crawled - Currently Not Indexed',
-    category: 'Search_Console',
-    type: 'Warning',
-    priority: 'Medium',
-    evaluate: (page) => {
-      const gsc = page.audit_data?.Search_Console;
-      return (gsc?.Index_Coverage_State || '').toLowerCase().includes('not indexed');
-    }
-  },
-  {
-    name: 'Search Console: Canonical Mismatch (Google Chose Different Canonical)',
-    ruleName: 'Canonical Mismatch (Google Chose Different Canonical)',
-    category: 'Search_Console',
-    type: 'Issue',
-    priority: 'High',
-    evaluate: (page) => {
-      const gsc = page.audit_data?.Search_Console;
-      return gsc?.Canonical_Mismatch === true;
-    }
-  },
-  {
-    name: 'Search Console: High Impressions with Low CTR (< 1.5%)',
-    ruleName: 'High Impressions with Low CTR (< 1.5%)',
-    category: 'Search_Console',
-    type: 'Opportunity',
-    priority: 'Low',
-    evaluate: (page) => {
-      const gsc = page.audit_data?.Search_Console;
-      if (!gsc) return false;
-      const imp = gsc.Impressions_Num !== undefined 
-        ? gsc.Impressions_Num 
-        : parseInt(String(gsc.Search_Impressions || '0').replace(/,/g, ''), 10) || 0;
-      const ctr = gsc.CTR_Num !== undefined 
-        ? gsc.CTR_Num 
-        : parseFloat(String(gsc.Average_CTR || '0').replace('%', '')) || 0;
-      return imp >= 80 && ctr > 0 && ctr < 1.5;
-    }
-  },
-  {
-    name: 'Search Console: Striking Distance Opportunity (Position 11–20)',
-    ruleName: 'Striking Distance Opportunity (Position 11–20)',
-    category: 'Search_Console',
-    type: 'Opportunity',
-    priority: 'Low',
-    evaluate: (page) => {
-      const gsc = page.audit_data?.Search_Console;
-      if (!gsc) return false;
-      const pos = gsc.Position_Num !== undefined 
-        ? gsc.Position_Num 
-        : parseFloat(String(gsc.Average_SERP_Position || '0')) || 0;
-      return pos >= 10.5 && pos <= 20.4;
-    }
-  },
-  // --- PAGESPEED / CORE WEB VITALS RULES ---
-  {
-    name: 'PageSpeed: Core Web Vitals Failing (LCP > 2.5s or CLS > 0.1)',
-    ruleName: 'Core Web Vitals Failing (LCP > 2.5s or CLS > 0.1)',
-    category: 'PageSpeed',
-    type: 'Warning',
-    priority: 'Medium',
-    evaluate: (page) => {
-      const metrics = page.audit_data?.PageSpeed?.mobile?.metrics;
-      if (!metrics) return false;
-      const lcp = parseFloat(String(metrics.lcp || '0').replace('s', '').trim());
-      const cls = parseFloat(String(metrics.cls || '0').trim());
-      return lcp > 2.5 || cls > 0.1;
-    }
-  },
-  // --- GOOGLE ANALYTICS (GA4) RULES ---
-  {
-    name: 'Google Analytics: Critical Revenue Risk (Broken High-Traffic Page)',
-    ruleName: 'Critical Revenue Risk (Broken High-Traffic Page)',
-    category: 'Google_Analytics',
-    type: 'Issue',
-    priority: 'High',
-    evaluate: (page) => {
-      const ga = page.audit_data?.Google_Analytics;
-      const isErr = (page.status_code || 200) >= 400;
-      return isErr && Boolean(ga?.Revenue_At_Risk && (ga.Revenue_At_Risk.includes('Critical') || ga.Revenue_At_Risk.includes('P0')));
-    }
-  },
-  {
-    name: 'Google Analytics: Zombie Page Detected (0 Visits in 90 Days)',
-    ruleName: 'Zombie Page Detected (0 Visits in 90 Days)',
-    category: 'Google_Analytics',
-    type: 'Opportunity',
-    priority: 'Low',
-    evaluate: (page) => {
-      const ga = page.audit_data?.Google_Analytics;
-      return ga?.Is_Zombie_Page === true;
-    }
-  }
-];
-
-// Dynamically inject rules based on the configs
-Object.entries(CATEGORY_CONFIGS).forEach(([category, rulesMap]) => {
-  Object.entries(rulesMap).forEach(([ruleName, type]) => {
-     let priority = 'Medium';
-     if (type === 'Issue') priority = 'High';
-     else if (type === 'Warning') priority = 'Medium';
-     else if (type === 'Opportunity') priority = 'Low';
-     
-     const fullName = `${category.replace(/_/g, ' ')}: ${ruleName}`;
-     const meta = RULE_METADATA[fullName] || {};
-
-     RULES.push({
-         name: fullName,
-         ruleName: ruleName,
-         category: category,
-         type: type,
-         priority: priority,
-         rootCause: meta.rootCause || `Condition '${ruleName}' was triggered based on audit data for ${category.replace(/_/g, ' ')}.`,
-         impact: meta.impact || `Affects technical health, crawlability, and indexing performance in search engines.`,
-         fixGuide: meta.fixGuide || `Audit and update page templates to resolve ${ruleName} for affected URLs.`,
-         evaluate: (page) => {
-             // Screaming Frog standard: On-page SEO rules only apply to 200 OK pages
-             if (page.status_code && page.status_code !== 200) return false;
-             const val = page.audit_data?.[category]?.[ruleName];
-             return val === true;
-         }
-     });
-  });
-});
-
-export function generateAllEvaluatedChecks(pages) {
-  if (!pages || pages.length === 0) return [];
-  const totalPages = pages.length;
-
-  const report = RULES.map(rule => {
-    const meta = RULE_METADATA[rule.name] || {};
+/**
+ * Every check from the backend scoring engine (GET /crawls/{id}/summary), merged with the display
+ * metadata above. Scores and pass/fail/not-evaluated states are computed only on the server.
+ * @param {object[]} pages  crawled pages (used to resolve failing page ids to rows)
+ * @param {object|null} summary  backend summary payload
+ */
+export function generateAllEvaluatedChecks(pages, summary) {
+  if (!summary?.rules) return [];
+  const byId = new Map((pages || []).map(p => [p.id, p]));
+  return summary.rules.map(rule => {
+    const meta = RULE_METADATA[rule.id] || {};
+    const label = rule.category.replace(/_/g, ' ');
+    const affected = (rule.failing_page_ids || []).map(id => byId.get(id)).filter(Boolean);
+    const notEvaluated = rule.status === 'not_evaluated';
     return {
-      ...rule,
-      rootCause: rule.rootCause || meta.rootCause || 'Diagnostic rule condition detected by the crawler.',
-      impact: rule.impact || meta.impact || 'Impairs search engine ranking, indexation, or user experience.',
-      fixGuide: rule.fixGuide || meta.fixGuide || 'Review affected URLs and resolve template/server configurations.',
-      exampleBefore: rule.exampleBefore || meta.exampleBefore,
-      exampleAfter: rule.exampleAfter || meta.exampleAfter,
-      tip: rule.tip || meta.tip,
-      affected_pages: [],
-      count: 0,
-      percentage: 0
+      name: rule.id,
+      ruleName: rule.rule,
+      category: rule.category,
+      type: rule.type,
+      priority: rule.priority,
+      severity: rule.severity,
+      scope: rule.scope,
+      integration: Boolean(rule.integration),
+      // False when the check has no written guide and the texts below are generic placeholders.
+      hasGuide: Boolean(meta.rootCause),
+      rootCause: meta.rootCause || `Condition '${rule.rule}' was detected for ${label}.`,
+      impact: meta.impact || 'Affects technical health, crawlability, and indexing performance in search engines.',
+      fixGuide: meta.fixGuide || `Review the affected URLs and update page templates to resolve '${rule.rule}'.`,
+      exampleBefore: meta.exampleBefore,
+      exampleAfter: meta.exampleAfter,
+      tip: meta.tip,
+      affected_pages: affected,
+      count: rule.failing_count,
+      evaluatedCount: rule.evaluated_count,
+      percentage: rule.evaluated_count > 0 ? ((rule.failing_count / rule.evaluated_count) * 100).toFixed(1) : '0.0',
+      isPassing: rule.status === 'pass',
+      notEvaluated,
+      notEvaluatedReason: rule.reason,
+      status: notEvaluated ? 'Not evaluated' : (rule.status === 'pass' ? 'Passed' : 'Flagged'),
     };
   });
-
-  pages.forEach(page => {
-    report.forEach(rule => {
-      if (rule.evaluate(page)) {
-        rule.affected_pages.push(page);
-        rule.count++;
-      }
-    });
-  });
-
-  return report.map(r => ({
-    ...r,
-    isPassing: r.count === 0,
-    status: r.count === 0 ? 'Passed' : 'Flagged',
-    percentage: totalPages > 0 ? ((r.count / totalPages) * 100).toFixed(1) : '0.0'
-  }));
 }
 
-export function generateIssuesReport(pages) {
-  const allChecks = generateAllEvaluatedChecks(pages);
-  const activeIssues = allChecks
-    .filter(r => r.count > 0)
-    .sort((a, b) => {
-      const priorityRank = { 'High': 3, 'Medium': 2, 'Low': 1 };
-      const aRank = priorityRank[a.priority] || 1;
-      const bRank = priorityRank[b.priority] || 1;
-      if (aRank !== bRank) {
-        return bRank - aRank;
-      }
-      return b.count - a.count;
-    });
-
-  return activeIssues;
+/** Failing checks only, highest priority and widest impact first. */
+export function generateIssuesReport(pages, summary) {
+  return generateAllEvaluatedChecks(pages, summary)
+    .filter(r => r.status === 'Flagged')
+    .sort((a, b) => (PRIORITY_RANK[b.priority] || 1) - (PRIORITY_RANK[a.priority] || 1) || b.count - a.count);
 }
 
 
@@ -805,17 +664,21 @@ export function buildIssueAiContext(issue, domain = '') {
     }
   }
 
-  const samplePages = affected.slice(0, 2).map(p => ({
+  const samplePages = affected.slice(0, 3).map(p => ({
     url: p.url,
-    title_1: (p.title_1 || '').slice(0, 85),
-    h1_1: (p.h1_1 || '').slice(0, 85),
-    meta_desc_1: (p.meta_desc_1 || '').slice(0, 120),
-    status_code: p.status_code || 200,
+    title_1: (p.title_1 || p.title || '').slice(0, 120),
+    h1_1: (p.h1_1 || p.h1 || '').slice(0, 120),
+    meta_desc_1: (p.meta_desc_1 || p.meta_desc || '').slice(0, 160),
+    status_code: p.status_code ?? 0,
+    canonical_link_element_1: p.canonical_link_element_1 || p.canonical_url || '',
+    indexability: p.indexability || p.indexability_status || 'Indexable',
     word_count: p.word_count || 0
   }));
 
+  const projId = issue.project_id || affected[0]?.project_id || (typeof window !== 'undefined' ? parseInt(localStorage.getItem('active_project_id') || '1', 10) : 1);
+
   return {
-    project_id: 1,
+    project_id: projId || 1,
     issue_name: issue.ruleName || issue.name,
     category: issue.category || 'SEO',
     domain: cleanDomain || 'Target Website',

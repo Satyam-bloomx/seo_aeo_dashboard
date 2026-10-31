@@ -9,7 +9,7 @@ import { spring, staggerContainer, staggerItem, tapPress } from '@/lib/motion';
 const DIAGNOSTICS = [
   ['Response Code', '404 (Not Found)', 'font-bold text-rose-600'],
   ['Spider Directive', 'NOINDEX, FOLLOW', ''],
-  ['Resolver Engine', 'AuditPro Screaming Frog Core', ''],
+  ['Resolver Engine', 'AuditPro Crawler', ''],
 ];
 
 export default function NotFound() {

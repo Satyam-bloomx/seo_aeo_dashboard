@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { DialogTitle } from '@headlessui/react';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import AnimatedModal from '@/components/ui/AnimatedModal';
@@ -14,7 +14,7 @@ const PRESETS = [
     badge: 'Recommended',
     badgeColor: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
     desc: 'Up to 500 pages, 4 levels deep. Fast & balanced.',
-    settings: { maxPages: 500, maxDepth: 4, maxConcurrent: 5, stealthDelay: 0 }
+    settings: { maxPages: 500, maxDepth: 4, maxConcurrent: 10, stealthDelay: 0 }
   },
   {
     id: 'quick',
@@ -22,15 +22,15 @@ const PRESETS = [
     badge: 'Fastest',
     badgeColor: 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
     desc: '100 pages, 2 levels deep. Great for quick health checks.',
-    settings: { maxPages: 100, maxDepth: 2, maxConcurrent: 5, stealthDelay: 0 }
+    settings: { maxPages: 100, maxDepth: 2, maxConcurrent: 10, stealthDelay: 0 }
   },
   {
     id: 'deep',
     name: 'Full Site Crawl',
     badge: 'Comprehensive',
     badgeColor: 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-    desc: '2,500 pages, 10 levels deep. Thorough site coverage.',
-    settings: { maxPages: 2500, maxDepth: 10, maxConcurrent: 5, stealthDelay: 0.5 }
+    desc: '1,000 pages, 10 levels deep. Thorough site coverage.',
+    settings: { maxPages: 1000, maxDepth: 10, maxConcurrent: 10, stealthDelay: 0 }
   },
   {
     id: 'stealth',
@@ -98,16 +98,40 @@ const CheckboxCard = ({ label, checked, onChange, description }) => (
   </motion.div>
 );
 
+const PROFILES_KEY = 'audit_crawler_profiles_v1';
+
+function readProfiles() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const list = JSON.parse(localStorage.getItem(PROFILES_KEY) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeProfiles(list) {
+  try {
+    localStorage.setItem(PROFILES_KEY, JSON.stringify(list));
+  } catch {
+    // Storage blocked: profiles last for this session only.
+  }
+}
+
 export default function SettingsModal({ isOpen, onClose, initialSettings, onSave, defaultTab = 'presets' }) {
   const [settings, setSettings] = useState(initialSettings);
   const [activeTab, setActiveTab] = useState(defaultTab);
 
-  useEffect(() => {
+  // Reset the form each time the modal opens (or its saved settings change while open).
+  const [openedWith, setOpenedWith] = useState(null);
+  const openKey = isOpen ? initialSettings : null;
+  if (openKey !== openedWith) {
+    setOpenedWith(openKey);
     if (isOpen && initialSettings) {
       setSettings(initialSettings);
       setActiveTab(defaultTab || 'presets');
     }
-  }, [isOpen, initialSettings, defaultTab]);
+  }
 
   const handleChange = (key, value) => {
     setSettings(prev => ({ ...prev, [key]: value }));
@@ -130,6 +154,21 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
       ...prev,
       ...preset.settings
     }));
+  };
+
+  // Named profiles the user saved (all settings, including exclusions), kept in this browser.
+  const [profiles, setProfiles] = useState(readProfiles);
+  const saveProfile = () => {
+    const name = window.prompt('Name this profile (for example the client or site):');
+    if (!name || !name.trim()) return;
+    const next = [...profiles.filter(p => p.name !== name.trim()), { name: name.trim(), settings }];
+    setProfiles(next);
+    writeProfiles(next);
+  };
+  const deleteProfile = (name) => {
+    const next = profiles.filter(p => p.name !== name);
+    setProfiles(next);
+    writeProfiles(next);
   };
 
   const sidebarTabs = [
@@ -200,7 +239,7 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                   whileTap={{ scale: 0.985 }}
                   transition={spring.press}
                   aria-current={isActive ? 'true' : undefined}
-                  className={`relative flex items-center md:items-start gap-2.5 md:gap-3 p-2.5 md:p-3 rounded-xl text-left select-none outline-none shrink-0 whitespace-nowrap md:whitespace-normal cursor-pointer ${
+                  className={`relative isolate flex items-center md:items-start gap-2.5 md:gap-3 p-2.5 md:p-3 rounded-xl text-left select-none outline-none shrink-0 whitespace-nowrap md:whitespace-normal cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
                     isActive ? 'text-white font-bold' : 'text-slate-600 dark:text-slate-400 font-semibold hover:bg-slate-100/80 dark:hover:bg-slate-800/80 transition-colors duration-150'
                   }`}
                 >
@@ -289,6 +328,31 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                           );
                         })}
                       </motion.div>
+
+                      <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Your saved profiles</span>
+                          <button type="button" onClick={saveProfile} className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">
+                            Save current settings as profile
+                          </button>
+                        </div>
+                        {profiles.length === 0 ? (
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Save your limits and exclusion rules per client so you do not need to retype them.</p>
+                        ) : (
+                          <ul className="flex flex-wrap gap-2">
+                            {profiles.map(p => (
+                              <li key={p.name} className="inline-flex items-center gap-1 rounded-full border border-slate-200 dark:border-slate-700 pl-3 pr-1 py-0.5 text-xs">
+                                <button type="button" onClick={() => setSettings(prev => ({ ...prev, ...p.settings }))} className="font-semibold text-slate-700 dark:text-slate-200 hover:text-indigo-600 cursor-pointer">
+                                  {p.name}
+                                </button>
+                                <button type="button" onClick={() => deleteProfile(p.name)} aria-label={`Delete profile ${p.name}`} className="rounded-full p-1 text-slate-400 hover:text-rose-500 cursor-pointer">
+                                  <X size={11} />
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
                     </motion.div>
                   )}
 
@@ -302,9 +366,9 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                           </label>
                           <input
                             type="number"
-                            min="1" max="10000"
+                            min="1" max="1000"
                             value={settings?.maxPages ?? 500}
-                            onChange={(e) => handleChange('maxPages', parseInt(e.target.value) || 1)}
+                            onChange={(e) => handleChange('maxPages', Math.min(1000, parseInt(e.target.value) || 1))}
                             className="w-full glass-input px-3.5 py-2.5 font-mono text-sm bg-slate-50/50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                           />
                           <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 block">Maximum URLs saved during this audit run.</span>
@@ -326,17 +390,16 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
 
                         <div>
                           <label className="block text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-                            Parallel Worker Threads
+                            Pages fetched at once
                           </label>
                           <CustomSelect
-                            value={settings?.maxConcurrent ?? 5}
+                            value={settings?.maxConcurrent ?? 10}
                             onChange={(val) => handleChange('maxConcurrent', parseInt(val))}
                             options={[
-                              { value: 1, label: '1 Worker (Slow & gentle)' },
-                              { value: 3, label: '3 Workers (Moderate speed)' },
-                              { value: 5, label: '5 Workers (Fast - Default)' },
-                              { value: 8, label: '8 Workers (High throughput)' },
-                              { value: 10, label: '10 Workers (Maximum speed)' },
+                              { value: 1, label: '1 at a time (very gentle)' },
+                              { value: 3, label: '3 at a time (gentle)' },
+                              { value: 5, label: '5 at a time' },
+                              { value: 10, label: '10 at a time (default, speeds up to 15 on healthy sites)' },
                             ]}
                             buttonClassName="py-2 px-3"
                             valueClassName="text-slate-800 dark:text-slate-200 font-semibold font-mono text-xs"
@@ -383,8 +446,14 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                         onChange={(e) => handleChange('checkExternalLinks', e.target.checked)}
                       />
                       <CheckboxCard
+                        label="Stay inside the start folder"
+                        description="Start at https://site.com/blog/ and only /blog/ pages are crawled. Turn off to follow links to the whole site."
+                        checked={settings?.stayInFolder ?? true}
+                        onChange={(e) => handleChange('stayInFolder', e.target.checked)}
+                      />
+                      <CheckboxCard
                         label="Crawl Author Archives (/author/*)"
-                        description="Screaming Frog standard: Disabled by default to exclude auto-generated WordPress user archive pages and prevent username enumeration."
+                        description="Off by default: WordPress author archives are auto-generated, rarely worth auditing, and expose usernames."
                         checked={settings?.crawlAuthorArchives ?? false}
                         onChange={(e) => handleChange('crawlAuthorArchives', e.target.checked)}
                       />
@@ -395,10 +464,18 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
                         <textarea
                           value={settings?.excludePaths ?? ""}
                           onChange={(e) => handleChange('excludePaths', e.target.value)}
-                          placeholder="/cart&#10;/checkout&#10;/wp-admin&#10;/search"
-                          className="w-full h-24 glass-input px-3.5 py-2.5 font-mono text-xs resize-none bg-slate-50/50 dark:bg-slate-800 text-slate-900 dark:text-white border-slate-200 dark:border-slate-700"
+                          placeholder="Example (not active until you type it):&#10;/cart&#10;*-case-study*"
+                          className="w-full h-24 glass-input px-3.5 py-2.5 font-mono text-xs resize-none bg-slate-50/50 dark:bg-slate-800 text-slate-900 dark:text-white border-slate-200 dark:border-slate-700 placeholder:italic placeholder:text-slate-400"
                         />
-                        <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 block">URLs matching these patterns will be skipped.</span>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 space-y-0.5">
+                          <p>Rules match whole folders in the URL path, one rule per line:</p>
+                          <ul className="list-disc pl-4">
+                            <li><code>/cart</code> skips /cart and /cart/anything, but not /cartoons</li>
+                            <li><code>*</code> is a wildcard: <code>*-case-study*</code> skips /acme-case-study/, <code>/tag/*/feed</code> skips tag feeds</li>
+                            <li>A full URL (https://...) skips everything starting with it</li>
+                          </ul>
+                          <p>After the crawl, the dashboard shows how many URLs your rules excluded.</p>
+                        </div>
                       </div>
                     </motion.div>
                   )}

@@ -139,8 +139,22 @@ const CATEGORIES = ['All', 'Speed & Vitals', 'AEO Voice & LLM', 'GEO Local Searc
 
 export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedUrl = null, pages = [], onAuditProperty = null }) {
   const [integrations, setIntegrations] = useState({});
-  const [activeModal, setActiveModal] = useState(null);
-  const [modalInitialTab, setModalInitialTab] = useState('one_click');
+  // Values the OAuth callback page passes back in the URL. This component is loaded with ssr: false,
+  // so window is always available and these can seed state directly instead of via an effect.
+  const [urlParams] = useState(() => {
+    const sp = new URLSearchParams(window.location.search);
+    return {
+      oauthError: sp.get('oauth_error'), warning: sp.get('warning'), account: sp.get('account'),
+      service: sp.get('service'), openModal: sp.get('open_modal'), tabType: sp.get('tab_type'),
+      connected: sp.get('connected'),
+    };
+  });
+  const [activeModal, setActiveModal] = useState(
+    () => (urlParams.openModal && API_INTEGRATIONS.find(i => i.id === urlParams.openModal)) || null
+  );
+  const [modalInitialTab, setModalInitialTab] = useState(
+    () => (urlParams.openModal ? (urlParams.tabType || 'direct_token') : 'one_click')
+  );
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [testingId, setTestingId] = useState(null);
   const [testResults, setTestResults] = useState({});
@@ -150,16 +164,26 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
   const [workspaceService, setWorkspaceService] = useState('search_console');
   const [gscProperties, setGscProperties] = useState([]);
   const [selectedGscProperty, setSelectedGscProperty] = useState('');
-  const [loadingProperties, setLoadingProperties] = useState(false);
+  const [gscPropsLoaded, setGscPropsLoaded] = useState(false);
 
-  // Connection / OAuth Error State
-  const [serviceErrors, setServiceErrors] = useState({});
+  // Connection / OAuth Error State: an error passed back in the URL, then one recorded in the last hour.
+  const [serviceErrors, setServiceErrors] = useState(() => {
+    const errs = {};
+    if (urlParams.oauthError) errs[urlParams.service || 'google_analytics'] = decodeURIComponent(urlParams.oauthError);
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem('last_integration_error') || 'null');
+      if (parsed?.service && parsed?.error && (Date.now() - (parsed.timestamp || 0) < 3600000)) {
+        errs[parsed.service] = parsed.error;
+      }
+    } catch {}
+    return errs;
+  });
 
   // GA4 Properties & Manual Override State
   const [ga4Properties, setGa4Properties] = useState([]);
   const [selectedGa4Property, setSelectedGa4Property] = useState('');
   const [manualGa4PropertyId, setManualGa4PropertyId] = useState('');
-  const [loadingGa4Properties, setLoadingGa4Properties] = useState(false);
+  const [ga4PropsLoaded, setGa4PropsLoaded] = useState(false);
   const [isSavingGa4Property, setIsSavingGa4Property] = useState(false);
 
   // GSC Manual Override State
@@ -212,7 +236,6 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
 
   const fetchStatus = useCallback(async () => {
     try {
-      setLoadingStatus(true);
       const res = await axios.get(`${API_BASE_URL}/integrations/status/${projectId}`);
       const data = res.data;
       const map = {};
@@ -256,7 +279,6 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
 
   const fetchGscProperties = useCallback(async () => {
     try {
-      setLoadingProperties(true);
       const res = await axios.get(`${API_BASE_URL}/integrations/google/properties/${projectId}`);
       if (res.data?.properties) {
         setGscProperties(res.data.properties);
@@ -269,13 +291,12 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
     } catch (err) {
       console.warn('Failed to fetch GSC properties:', err);
     } finally {
-      setLoadingProperties(false);
+      setGscPropsLoaded(true);
     }
   }, [projectId]);
 
   const fetchGa4Properties = useCallback(async () => {
     try {
-      setLoadingGa4Properties(true);
       const res = await axios.get(`${API_BASE_URL}/integrations/google/properties/${projectId}?service=google_analytics`);
       if (res.data?.properties) {
         setGa4Properties(res.data.properties);
@@ -287,116 +308,81 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
     } catch (err) {
       console.warn('Failed to fetch GA4 properties:', err);
     } finally {
-      setLoadingGa4Properties(false);
+      setGa4PropsLoaded(true);
     }
   }, [projectId]);
 
+  // The loaders only set state once their request resolves; starting them here sets nothing synchronously.
   // Initial status fetch on mount or projectId change
   useEffect(() => {
-    fetchStatus();
+    const load = async () => { await Promise.resolve(); await fetchStatus(); };
+    load();
   }, [fetchStatus]);
 
   // Fetch properties when services are connected
   const isGscConnected = Boolean(integrations['search_console']?.connected);
+  const loadingProperties = isGscConnected && !gscPropsLoaded;
   useEffect(() => {
-    if (isGscConnected) {
-      fetchGscProperties();
-    }
+    if (!isGscConnected) return;
+    const load = async () => { await Promise.resolve(); await fetchGscProperties(); };
+    load();
   }, [isGscConnected, fetchGscProperties]);
 
   const isGa4Connected = Boolean(integrations['google_analytics']?.connected);
+  const loadingGa4Properties = isGa4Connected && !ga4PropsLoaded;
   useEffect(() => {
-    if (isGa4Connected) {
-      fetchGa4Properties();
-    }
+    if (!isGa4Connected) return;
+    const load = async () => { await Promise.resolve(); await fetchGa4Properties(); };
+    load();
   }, [isGa4Connected, fetchGa4Properties]);
 
-  // Listen for OAuth error, warning, or success in URL search params or sessionStorage
+  // React to the OAuth callback's URL params once: notify, refresh, and tidy the URL.
+  // (Errors and the modal to open were already seeded into state from the same params.)
   useEffect(() => {
-    let urlOauthError = null;
-    let urlWarning = null;
-    let urlAccount = null;
-    let urlService = null;
-    let urlOpenModal = null;
-    let urlTabType = null;
-    let urlConnected = null;
+    const { warning, account, service, connected, oauthError } = urlParams;
+    const serviceName = service === 'google_analytics'
+      ? 'Google Analytics 4'
+      : service === 'search_console'
+      ? 'Google Search Console'
+      : 'Google Service';
+    const tidyUrl = () => {
+      try {
+        const cleanUrl = window.location.pathname + (service ? `?tab=integrations&service=${service}` : '?tab=integrations');
+        window.history.replaceState({}, document.title, cleanUrl);
+      } catch {}
+    };
+    const refresh = async () => {
+      await Promise.resolve();
+      await Promise.all([
+        fetchStatus(),
+        warning === 'no_properties' && service === 'search_console' ? fetchGscProperties() : null,
+        warning === 'no_properties' && service === 'google_analytics' ? fetchGa4Properties() : null,
+      ]);
+    };
 
-    if (typeof window !== 'undefined') {
-      const searchParams = new URLSearchParams(window.location.search);
-      urlOauthError = searchParams.get('oauth_error');
-      urlWarning = searchParams.get('warning');
-      urlAccount = searchParams.get('account');
-      urlService = searchParams.get('service');
-      urlOpenModal = searchParams.get('open_modal');
-      urlTabType = searchParams.get('tab_type');
-      urlConnected = searchParams.get('connected');
-    }
-
-    if (urlWarning === 'no_properties') {
-      fetchStatus();
-      if (urlService === 'search_console') fetchGscProperties();
-      if (urlService === 'google_analytics') fetchGa4Properties();
-      const serviceName = urlService === 'google_analytics'
-        ? 'Google Analytics 4'
-        : urlService === 'search_console'
-        ? 'Google Search Console'
-        : 'Google Service';
-      toast.warning(`Signed in as ${urlAccount || 'Google User'}, but NO active ${serviceName} properties were found.`, {
+    if (warning === 'no_properties') {
+      refresh();
+      toast.warning(`Signed in as ${account || 'Google User'}, but NO active ${serviceName} properties were found.`, {
         description: 'This account lacks property permissions. See the diagnostic instructions on the card below.',
         duration: 9000
       });
-      try {
-        const cleanUrl = window.location.pathname + (urlService ? `?tab=integrations&service=${urlService}` : '?tab=integrations');
-        window.history.replaceState({}, document.title, cleanUrl);
-      } catch {}
-    } else if (urlConnected === 'true') {
-      fetchStatus();
-      const serviceName = urlService === 'google_analytics' 
-        ? 'Google Analytics 4' 
-        : urlService === 'search_console' 
-        ? 'Google Search Console' 
-        : 'Google Service';
+      tidyUrl();
+    } else if (connected === 'true') {
+      refresh();
       toast.success(`${serviceName} connected successfully!`, {
         description: 'Live telemetry is active and synchronized.',
         duration: 7000
       });
-      try {
-        const cleanUrl = window.location.pathname + (urlService ? `?tab=integrations&service=${urlService}` : '?tab=integrations');
-        window.history.replaceState({}, document.title, cleanUrl);
-      } catch {}
+      tidyUrl();
     }
 
-    if (urlOauthError) {
-      const decoded = decodeURIComponent(urlOauthError);
-      const targetSvc = urlService || 'google_analytics';
-      setServiceErrors(prev => ({ ...prev, [targetSvc]: decoded }));
-      toast.error(`Authentication Failed: ${decoded.slice(0, 100)}`, {
+    if (oauthError) {
+      toast.error(`Authentication Failed: ${decodeURIComponent(oauthError).slice(0, 100)}`, {
         description: 'See the diagnostic details on the service card below.',
         duration: 9000
       });
     }
-
-    if (urlOpenModal) {
-      const targetItem = API_INTEGRATIONS.find(i => i.id === urlOpenModal);
-      if (targetItem) {
-        setModalInitialTab(urlTabType || 'direct_token');
-        setActiveModal(targetItem);
-      }
-    }
-
-    // Also check sessionStorage for last error
-    try {
-      if (typeof window !== 'undefined') {
-        const stored = sessionStorage.getItem('last_integration_error');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed?.service && parsed?.error && (Date.now() - (parsed.timestamp || 0) < 3600000)) {
-            setServiceErrors(prev => ({ ...prev, [parsed.service]: parsed.error }));
-          }
-        }
-      }
-    } catch {}
-  }, [fetchStatus, fetchGscProperties, fetchGa4Properties]);
+  }, [urlParams, fetchStatus, fetchGscProperties, fetchGa4Properties]);
 
   const handleSelectGa4Property = async (propId) => {
     if (!propId || !propId.trim()) {
@@ -546,7 +532,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
       }));
       if (isSuccess) {
         toast.success(`Verified ${integrationId.replace(/_/g, ' ').toUpperCase()}!`, {
-          description: `Live latency: ${res.data.latency_ms || 24}ms`
+          description: res.data.latency_ms ? `Live latency: ${res.data.latency_ms}ms` : 'Connection verified.'
         });
       } else if (isWarning) {
         toast.warning(displayMessage, {
@@ -745,6 +731,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
 
           <motion.button
             onClick={() => {
+              setLoadingStatus(true);
               fetchStatus();
               toast.info('Refreshed API statuses.');
             }}
@@ -1043,7 +1030,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                     )}
                     {activeError.toLowerCase().includes('permission not granted') && (
                       <p className="text-[11px] text-rose-800 dark:text-rose-300 leading-tight">
-                        👉 <strong>Diagnosis:</strong> You must check the permission box on Google's authorization screen to allow data access.
+                        👉 <strong>Diagnosis:</strong> You must check the permission box on Google&apos;s authorization screen to allow data access.
                       </p>
                     )}
                     <div className="flex items-center gap-2 pt-1 flex-wrap">
@@ -1145,7 +1132,7 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                           )}
                         </li>
                         <li>
-                          Or click <strong>"Switch Google Account"</strong> below to select the Google account that actually manages your website.
+                          Or click <strong>&quot;Switch Google Account&quot;</strong> below to select the Google account that actually manages your website.
                         </li>
                       </ul>
                     </div>

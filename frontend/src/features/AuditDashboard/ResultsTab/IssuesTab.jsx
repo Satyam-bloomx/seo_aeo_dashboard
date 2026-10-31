@@ -33,6 +33,7 @@ import AiRemediationModal from '../AiRemediationModal';
 import IssueExpandedDetail from './IssueExpandedDetail';
 import { copyToClipboard } from '@/utils/clipboard';
 import { isDuplicateRule, buildDuplicateClusters } from '@/utils/duplicateDetector';
+import { useCrawlSummary } from '@/context/CrawlSummaryContext';
 
 function getPageEvidence(page, ruleName = '') {
   if (!page) return null;
@@ -149,7 +150,7 @@ function getPageEvidence(page, ruleName = '') {
       type: 'redirect',
       items: [
         { label: 'HTTP Status', value: page.status_code + ' Redirect' },
-        { label: 'Redirects To', value: page.audit_data?.Response_Codes?.Redirect_URL || page.redirect_url || 'Target redirect location' }
+        { label: 'Redirects To', value: page.audit_data?.Response_Codes?.['Redirect URL'] || page.audit_data?.Response_Codes?.Redirect_URL || 'Not recorded' }
       ]
     };
   }
@@ -195,25 +196,22 @@ const PRIORITY_FILTERS = [
   { id: 'LOW', label: 'Low Priority', countKey: 'Low', active: 'bg-blue-600', idle: 'text-blue-700 dark:text-blue-400' },
 ];
 
-export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
+export default function IssuesTab({ pages, onIssueClick, onSelectPage, onOpenAiCopilot }) {
   const [filterType, setFilterType] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedIssue, setExpandedIssue] = useState(null);
   const [copiedUrl, setCopiedUrl] = useState(null);
   const [aiModalIssue, setAiModalIssue] = useState(null);
-  const [aiDiagnoses, setAiDiagnoses] = useState({});
-  const [aiLoading, setAiLoading] = useState({});
-
-  React.useEffect(() => {
+  // Cached AI diagnoses (this tab is loaded with ssr: false, so localStorage is available on first render).
+  const [aiDiagnoses, setAiDiagnoses] = useState(() => {
     try {
-      const stored = localStorage.getItem('audit_ai_diagnoses_cache');
-      if (stored) {
-        setAiDiagnoses(JSON.parse(stored));
-      }
+      return JSON.parse(localStorage.getItem('audit_ai_diagnoses_cache') || '{}') || {};
     } catch (e) {
       console.warn('Failed to load AI diagnoses cache', e);
+      return {};
     }
-  }, []);
+  });
+  const [aiLoading, setAiLoading] = useState({});
 
   const fetchAiDiagnosis = async (issue, force = false) => {
     const issueKey = issue.ruleName || issue.name;
@@ -248,22 +246,27 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
     }
   };
 
-  const handleToggleExpand = (rowKey, issue) => {
+  const handleToggleExpand = (rowKey) => {
     if (expandedIssue === rowKey) {
       setExpandedIssue(null);
     } else {
+      // Opening a row shows the standard guidance; AI runs only from "Analyze AI" / "Fix with AI",
+      // since each call spends the workspace's provider quota.
       setExpandedIssue(rowKey);
-      const issueKey = issue.ruleName || issue.name;
-      if (!aiDiagnoses[issueKey] && !aiLoading[issueKey]) {
-        fetchAiDiagnosis(issue);
-      }
     }
   };
 
   const reduced = useReducedMotion();
 
 
-  const issuesReport = useMemo(() => generateIssuesReport(pages), [pages]);
+  const crawlSummary = useCrawlSummary();
+  const issuesReport = useMemo(() => generateIssuesReport(pages, crawlSummary), [pages, crawlSummary]);
+  // Distinguish 'still scoring', 'filtered out' and 'genuinely clean' instead of always claiming a clean site.
+  const emptyMessage = !crawlSummary
+    ? 'Scores are still being calculated for this crawl.'
+    : issuesReport.length > 0
+      ? 'No issues match the current filter or search.'
+      : 'Every evaluated check passed. Checks without data are shown as Not evaluated in the score breakdown.';
 
   const summary = useMemo(() => {
     return issuesReport.reduce((acc, issue) => {
@@ -338,7 +341,11 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 sm:gap-4 shrink-0">
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">Audit Diagnostic Issues</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Prioritized diagnostic rules detected across all scanned pages with root-cause analysis.</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            {crawlSummary?.mode === 'page'
+              ? 'Single-page audit: page-level checks only. Duplicates, internal links and sitemap checks need a whole-site crawl.'
+              : 'Prioritized checks across all crawled pages, with root cause and fix.'}
+          </p>
         </div>
 
         {/* Priority Filter Tabs */}
@@ -413,7 +420,11 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
                     }`}
                   >
                     <div
-                      onClick={() => handleToggleExpand(rowKey, issue)}
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isExpanded}
+                      onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); handleToggleExpand(rowKey); } }}
+                      onClick={() => handleToggleExpand(rowKey)}
                       className="p-3.5 cursor-pointer space-y-2.5"
                     >
                       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -496,6 +507,7 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
                             onSelectPage={onSelectPage}
                             copiedUrl={copiedUrl}
                             handleCopy={handleCopy}
+                            onOpenAiCopilot={onOpenAiCopilot}
                           />
                         </div>
                       </motion.div>
@@ -507,7 +519,7 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
               <div className="py-12 text-center text-slate-400">
                 <ShieldCheck size={32} className="text-emerald-600 mx-auto mb-2" />
                 <p className="font-bold text-slate-900 dark:text-white text-xs">No matching diagnostic issues.</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">All audit parameters satisfy clean health standards.</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">{emptyMessage}</p>
               </div>
             )}
           </AnimatePresence>
@@ -543,7 +555,10 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
                         exit={{ opacity: 0, y: -6 }}
                         transition={tween(duration.fast, ease.outQuart)}
                         className={`transition-colors group hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer ${isExpanded ? 'bg-slate-50/90 dark:bg-slate-800/80' : ''}`}
-                        onClick={() => handleToggleExpand(rowKey, issue)}
+                        tabIndex={0}
+                        aria-expanded={isExpanded}
+                        onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); handleToggleExpand(rowKey); } }}
+                        onClick={() => handleToggleExpand(rowKey)}
                       >
                         <td
                           className="px-5 py-3.5 font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors flex items-center gap-2"
@@ -585,7 +600,7 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
                               whileTap={tapPress}
                               transition={spring.press}
                               className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white border border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800/60 dark:hover:bg-indigo-600 dark:hover:text-white transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
-                              title="Generate 1-Click AI Fix with GPT-4o"
+                              title="Generate 1-Click AI Technical Fix"
                             >
                               <Sparkles size={11} className="text-amber-500" />
                               <span>Fix with AI</span>
@@ -636,6 +651,7 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
                                   onSelectPage={onSelectPage}
                                   copiedUrl={copiedUrl}
                                   handleCopy={handleCopy}
+                                  onOpenAiCopilot={onOpenAiCopilot}
                                 />
                               </div>
                             </motion.div>
@@ -664,7 +680,7 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage }) {
                         <ShieldCheck size={36} className="text-emerald-600" />
                       </motion.span>
                       <p className="font-bold text-slate-900 dark:text-white text-sm">No matching diagnostic issues.</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">All audit parameters satisfy clean health standards.</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{emptyMessage}</p>
                     </div>
                   </td>
                 </motion.tr>

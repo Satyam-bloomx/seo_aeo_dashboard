@@ -255,7 +255,7 @@ export function getPageDuplicateRelationships(page, allPages = []) {
         const found = (allPages || []).find(p => p.url === url);
         return {
           url,
-          statusCode: found?.status_code || 200,
+          statusCode: found?.status_code ?? 0,
           indexability: found?.indexability || 'Indexable',
           wordCount: found?.word_count,
           canonical: found?.canonical_link_element_1,

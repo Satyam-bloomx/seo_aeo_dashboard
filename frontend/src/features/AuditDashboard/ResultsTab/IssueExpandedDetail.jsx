@@ -137,7 +137,7 @@ export function getPageEvidence(page, ruleName = '') {
       type: 'redirect',
       items: [
         { label: 'HTTP Status', value: page.status_code + ' Redirect' },
-        { label: 'Redirects To', value: page.audit_data?.Response_Codes?.Redirect_URL || page.redirect_url || 'Target redirect location' }
+        { label: 'Redirects To', value: page.audit_data?.Response_Codes?.['Redirect URL'] || page.audit_data?.Response_Codes?.Redirect_URL || 'Not recorded' }
       ]
     };
   }
@@ -186,7 +186,8 @@ export default function IssueExpandedDetail({
   onIssueClick,
   onSelectPage,
   copiedUrl,
-  handleCopy
+  handleCopy,
+  onOpenAiCopilot
 }) {
   const issueKey = issue.ruleName || issue.name;
   const aiData = aiDiagnoses[issueKey];
@@ -408,7 +409,7 @@ export default function IssueExpandedDetail({
                             Cluster #{cIdx + 1}
                           </span>
                           <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate" title={cluster.sharedValue}>
-                            <strong className="text-slate-900 dark:text-white font-mono text-[11px]">{cluster.categoryLabel}:</strong> "{cluster.sharedValue}"
+                            <strong className="text-slate-900 dark:text-white font-mono text-[11px]">{cluster.categoryLabel}:</strong> &quot;{cluster.sharedValue}&quot;
                           </span>
                         </div>
                         <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 shrink-0 font-medium">
@@ -433,7 +434,7 @@ export default function IssueExpandedDetail({
                             </div>
                             <div className="flex items-center gap-1">
                               <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-white dark:bg-slate-900 text-emerald-700 border border-emerald-200 dark:border-emerald-800">
-                                {main.status_code || 200}
+                                {main.status_code ?? 0}
                               </span>
                               {main.word_count && (
                                 <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
@@ -475,6 +476,17 @@ export default function IssueExpandedDetail({
                                   Inspect
                                 </button>
                               )}
+                              {onOpenAiCopilot && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenAiCopilot(main.url)}
+                                  className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#CAE366]/20 hover:bg-[#CAE366]/30 text-slate-900 dark:text-[#CAE366] border border-[#CAE366]/40 transition-colors flex items-center gap-1 cursor-pointer"
+                                  title="Audit main authority URL with AI (page audit)"
+                                >
+                                  <Sparkles size={10} className="text-[#CAE366]" />
+                                  <span>AI audit</span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={(e) => handleCopy(main.url, e)}
@@ -513,7 +525,7 @@ export default function IssueExpandedDetail({
                               </div>
                               <div className="flex items-center gap-1">
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                                  {dup.status_code || 200}
+                                  {dup.status_code ?? 0}
                                 </span>
                               </div>
                             </div>
@@ -548,6 +560,16 @@ export default function IssueExpandedDetail({
                                     title="Inspect telemetry in dashboard drawer"
                                   >
                                     Inspect
+                                  </button>
+                                )}
+                                {onOpenAiCopilot && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenAiCopilot(dup.url)}
+                                    className="p-1 text-amber-500 hover:text-amber-600 dark:hover:text-[#CAE366] rounded transition-colors"
+                                    title="Audit duplicate URL with AI (page audit)"
+                                  >
+                                    <Sparkles size={12} />
                                   </button>
                                 )}
                                 <button
@@ -603,13 +625,13 @@ export default function IssueExpandedDetail({
                       <div className="flex items-center justify-between text-xs gap-3">
                         <div className="flex items-center gap-2 truncate max-w-xl min-w-0">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 ${
-                            (page.status_code || 200) >= 400
+                            (page.status_code ?? 0) >= 400
                               ? 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50'
-                              : (page.status_code || 200) >= 300
+                              : (page.status_code ?? 0) >= 300
                               ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50'
                               : 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50'
                           }`}>
-                            {page.status_code || 200}
+                            {page.status_code ?? 0}
                           </span>
                           <span className="font-mono text-slate-800 dark:text-slate-200 font-medium truncate" title={page.url}>
                             {page.url}
@@ -625,6 +647,16 @@ export default function IssueExpandedDetail({
                           >
                             <ExternalLink size={12} />
                           </a>
+                          {onOpenAiCopilot && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenAiCopilot(page.url)}
+                              className="p-1 text-amber-500 hover:text-amber-600 dark:hover:text-[#CAE366] rounded transition-colors"
+                              title="Audit this URL with AI (page audit)"
+                            >
+                              <Sparkles size={12} />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={(e) => handleCopy(page.url, e)}
@@ -667,7 +699,7 @@ export default function IssueExpandedDetail({
                 })}
                 {affectedList.length > 50 && (
                   <div className="p-2 text-center text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-50 dark:bg-slate-950">
-                    + {affectedList.length - 50} more affected URLs. Click "Open All in URL Grid" to inspect full list.
+                    + {affectedList.length - 50} more affected URLs. Click &quot;Open All in URL Grid&quot; to inspect full list.
                   </div>
                 )}
               </div>

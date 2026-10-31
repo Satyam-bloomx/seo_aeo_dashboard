@@ -1,28 +1,35 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { toast } from 'sonner';
-import confetti from 'canvas-confetti';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import Sidebar from './Sidebar/Sidebar';
 import OverviewTab from './ResultsTab/OverviewTab';
-import IssuesTab from './ResultsTab/IssuesTab';
-import URLExplorerTab from './ResultsTab/URLExplorerTab';
-import PerformanceTab from './ResultsTab/PerformanceTab';
-import ExecutiveReportModal from './ExecutiveReportModal';
-import ExportAuditModal from './ExportAuditModal';
-import SettingsModal from './SettingsModal/SettingsModal';
-import IntegrationsPanel from './IntegrationsPanel';
+// Secondary tabs, modals and drawers load on first use instead of shipping in the initial bundle.
+const IssuesTab = dynamic(() => import('./ResultsTab/IssuesTab'), { ssr: false });
+const URLExplorerTab = dynamic(() => import('./ResultsTab/URLExplorerTab'), { ssr: false });
+const PerformanceTab = dynamic(() => import('./ResultsTab/PerformanceTab'), { ssr: false });
+const ExecutiveReportModal = dynamic(() => import('./ExecutiveReportModal'), { ssr: false });
+const ExportAuditModal = dynamic(() => import('./ExportAuditModal'), { ssr: false });
+const AiAssistantDrawer = dynamic(() => import('./AiAssistantDrawer'), { ssr: false });
+const SettingsModal = dynamic(() => import('./SettingsModal/SettingsModal'), { ssr: false });
+const IntegrationsPanel = dynamic(() => import('./IntegrationsPanel'), { ssr: false });
 import ErrorBoundary from '@/components/common/ErrorBoundary';
-import NarutoSamplePanel from './NarutoSample/NarutoSamplePanel';
 import SpiderLiveProgressScreen from './SpiderLiveProgressScreen';
 import ThemeToggle from '@/components/ui/ThemeToggle';
-import Loading from '../../app/loading';
 import { API_BASE_URL, authFetch } from '@/api/client';
 import { generateIssuesReport } from '@/utils/IssuesEngine';
 import { copyToClipboard } from '@/utils/clipboard';
 import { getDiagnosticDetail, getPriorityMeta } from '@/utils/diagnosticDetails';
 import { getPageDuplicateRelationships } from '@/utils/duplicateDetector';
+import { CrawlSummaryProvider, useCrawlSummaryFetch } from '@/context/CrawlSummaryContext';
+import useHelper from '@/features/Helper/useHelper';
+import useHelperRelay from '@/features/Helper/useHelperRelay';
+import HelperChip from '@/features/Helper/HelperChip';
+import HelperPanel from '@/features/Helper/HelperPanel';
+import HelperFloating from '@/features/Helper/HelperFloating';
+import { useCaptureActions } from '@/features/Helper/CaptureActions';
+import dynamic from 'next/dynamic';
 import {
   bannerDrop,
   duration,
@@ -70,8 +77,9 @@ import {
   Zap,
 } from 'lucide-react';
 
-const fireCelebrationCannons = () => {
+const fireCelebrationCannons = async () => {
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+  const { default: confetti } = await import('canvas-confetti');
 
   const count = 180;
   const defaults = {
@@ -106,7 +114,6 @@ const SLUG_TO_TAB = {
   'speed-vitals': 'performance',
   vitals: 'performance',
   integrations: 'integrations',
-  naruto: 'naruto',
 };
 
 const TAB_TO_SLUG = {
@@ -115,13 +122,60 @@ const TAB_TO_SLUG = {
   explorer: 'explorer',
   performance: 'performance',
   integrations: 'integrations',
-  naruto: 'naruto',
 };
+
+const PAGE_BATCH = 1000;
+
+/** Load pages with id > afterId in 1,000-row batches until exhausted. */
+async function fetchPagesSince(crawlId, afterId = 0) {
+  const all = [];
+  let cursor = afterId;
+  for (;;) {
+    const res = await authFetch(`${API_BASE_URL}/crawls/${crawlId}/pages?limit=${PAGE_BATCH}&after_id=${cursor}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const batch = await res.json();
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    all.push(...batch);
+    if (batch.length < PAGE_BATCH) break;
+    cursor = batch[batch.length - 1].id;
+  }
+  return all;
+}
+
+// Mount a lazily-loaded overlay on its first open and keep it mounted (preserves exit animations).
+function useMountedOnceOpened(isOpen) {
+  const [mounted, setMounted] = useState(isOpen);
+  if (isOpen && !mounted) setMounted(true);
+  return mounted;
+}
+
+// Crawl settings recorded by the backend (snake_case) in the shape the settings modal edits.
+function settingsFromCrawl(s) {
+  const out = {};
+  if (Number.isFinite(s.max_pages)) out.maxPages = s.max_pages;
+  if (Number.isFinite(s.max_depth)) out.maxDepth = s.max_depth;
+  if (s.exclude_paths != null) out.excludePaths = Array.isArray(s.exclude_paths) ? s.exclude_paths.join('\n') : String(s.exclude_paths);
+  for (const [from, to] of [['ignore_robots', 'ignoreRobots'], ['js_rendering', 'jsRendering'], ['ignore_url_params', 'ignoreUrlParams'],
+    ['check_external_links', 'checkExternalLinks'], ['crawl_author_archives', 'crawlAuthorArchives'],
+    ['stay_in_folder', 'stayInFolder']]) {
+    if (typeof s[from] === 'boolean') out[to] = s[from];
+  }
+  if (s.user_agent) out.userAgent = s.user_agent;
+  return out;
+}
+
+// "Whole site: example.com · 28 Oct" / "Page: example.com/about · 29 Oct" for the audit switcher.
+function auditLabel(mode, crawl) {
+  const target = (crawl?.seed_url || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const when = crawl?.started_at ? new Date(crawl.started_at.endsWith('Z') ? crawl.started_at : `${crawl.started_at}Z`)
+    .toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
+  const prefix = mode === 'site' ? 'Whole site' : 'Page';
+  return `${prefix}: ${target}${when ? ` · ${when}` : ''}`;
+}
 
 export default function AuditDashboard({ initialTab, initialOpenSettings = false }) {
   const reduced = useReducedMotion();
 
-  const [isAppInitializing, setIsAppInitializing] = useState(true);
   const [url, setUrl] = useState('');
   const [isAuditing, setIsAuditing] = useState(false);
 
@@ -152,14 +206,6 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
     }
   }, []);
 
-  // Failsafe timer: guarantee that the bootloader screen NEVER traps the user
-  useEffect(() => {
-    const failsafe = setTimeout(() => {
-      setIsAppInitializing(false);
-    }, 2200);
-    return () => clearTimeout(failsafe);
-  }, []);
-
   // Sync with browser back/forward buttons (popstate)
   useEffect(() => {
     const handlePopState = (e) => {
@@ -178,61 +224,51 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Initial URL check and auto-sync on mount
+  // A legacy ?tab= link: the tab state already came from it (useState initializer); tidy the URL to /slug.
   useEffect(() => {
-    if (initialTab) {
-      setActiveTab(SLUG_TO_TAB[initialTab] || initialTab);
-    } else if (typeof window !== 'undefined') {
-      const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
-      const params = new URLSearchParams(window.location.search);
-      const tabParam = params.get('tab');
-      if (path && SLUG_TO_TAB[path]) {
-        setActiveTab(SLUG_TO_TAB[path]);
-      } else if (tabParam && SLUG_TO_TAB[tabParam]) {
-        const targetTab = SLUG_TO_TAB[tabParam];
-        setActiveTab(targetTab);
-        const cleanSlug = TAB_TO_SLUG[targetTab] || targetTab;
-        window.history.replaceState({ tab: targetTab }, '', `/${cleanSlug}`);
-      }
+    if (initialTab) return;
+    const path = window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+    const tabParam = new URLSearchParams(window.location.search).get('tab');
+    if (!(path && SLUG_TO_TAB[path]) && tabParam && SLUG_TO_TAB[tabParam]) {
+      const targetTab = SLUG_TO_TAB[tabParam];
+      window.history.replaceState({ tab: targetTab }, '', `/${TAB_TO_SLUG[targetTab] || targetTab}`);
     }
-    if (initialOpenSettings) {
-      setIsSettingsOpen(true);
-    }
-  }, [initialTab, initialOpenSettings]);
+  }, [initialTab]);
 
-  // Auto-load latest crawl data on mount so dashboard is populated immediately
-  useEffect(() => {
-    const loadLatestCrawl = async () => {
-      try {
-        const res = await authFetch(`${API_BASE_URL}/crawls/latest`);
-        if (res.ok) {
-          const latest = await res.json();
-          if (latest?.id) {
-            setCrawlId(latest.id);
-            setUrl(latest.seed_url || '');
-            setStatus(latest.status || 'completed');
-            const pRes = await authFetch(`${API_BASE_URL}/crawls/${latest.id}/pages`);
-            if (pRes.ok) {
-              const pagesData = await pRes.json();
-              if (Array.isArray(pagesData) && pagesData.length > 0) {
-                setPages(pagesData);
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Could not auto-load latest crawl:', err);
+  const [integrationsStatus, setIntegrationsStatus] = useState([]);
+
+  const fetchIntegrationsStatus = useCallback(async () => {
+    try {
+      const res = await authFetch(`${API_BASE_URL}/integrations/status/1`);
+      if (res.ok) {
+        const data = await res.json();
+        setIntegrationsStatus(Array.isArray(data) ? data : []);
       }
-    };
-    loadLatestCrawl();
+    } catch (err) {
+      console.warn('Could not fetch integrations status:', err);
+    }
   }, []);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const [isSettingsOpen, setIsSettingsOpen] = useState(initialOpenSettings);
   const [settingsTab, setSettingsTab] = useState('presets');
+  // The [slug] page reuses this component across routes: follow its props when they change
+  // (render-time update, React's pattern for state derived from props).
+  const [routeProps, setRouteProps] = useState({ initialTab, initialOpenSettings });
+  if (routeProps.initialTab !== initialTab || routeProps.initialOpenSettings !== initialOpenSettings) {
+    setRouteProps({ initialTab, initialOpenSettings });
+    if (initialTab) setActiveTab(SLUG_TO_TAB[initialTab] || initialTab);
+    if (initialOpenSettings) setIsSettingsOpen(true);
+  }
   const [isExecutiveReportOpen, setIsExecutiveReportOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isAiCopilotOpen, setIsAiCopilotOpen] = useState(false);
+  const [copilotInitialUrl, setCopilotInitialUrl] = useState('');
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [showCompletionBanner, setShowCompletionBanner] = useState(false);
+  const hasFiredCompletion = useRef(false);
+  // Set when the user starts an audit, so the background load of the last crawl can't overwrite it.
+  const auditStartedRef = useRef(false);
 
   const handleOpenSettings = (tab = 'presets') => {
     setSettingsTab(tab);
@@ -242,7 +278,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
   const DEFAULT_CRAWLER_SETTINGS = {
     maxPages: 500,
     maxDepth: 4,
-    maxConcurrent: 5,
+    maxConcurrent: 10,
     stealthDelay: 0,
     ignoreUrlParams: true,
     checkExternalLinks: false,
@@ -251,8 +287,13 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
     jsRendering: false,
     userAgent: 'SEO-Spider-Bot',
     crawlAuthorArchives: false,
+    stayInFolder: true,
   };
 
+  // Settings saved in this browser win; otherwise the settings of the account's last crawl are reused below.
+  const [hasBrowserSettings] = useState(() => {
+    try { return typeof window !== 'undefined' && Boolean(localStorage.getItem('audit_crawler_settings')); } catch { return false; }
+  });
   const [crawlerSettings, setCrawlerSettings] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -267,33 +308,92 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
 
   const [crawlId, setCrawlId] = useState(null);
   const [status, setStatus] = useState(null);
+  // 'site' follows links across the website; 'page' audits just the entered URL.
+  const [auditMode, setAuditMode] = useState(() => {
+    if (typeof window === 'undefined') return 'site';
+    try { return localStorage.getItem('audit_mode') === 'page' ? 'page' : 'site'; } catch { return 'site'; }
+  });
+  // Latest audit of each mode ({ id, seed_url, status, mode }), so both can be kept and switched between.
+  const [latestByMode, setLatestByMode] = useState({ site: null, page: null });
+  const [viewMode, setViewMode] = useState('site');
   const [progress, setProgress] = useState(0);
   const [pagesCrawled, setPagesCrawled] = useState(0);
+  const [crawlPhase, setCrawlPhase] = useState('crawling');
+  const [queuePosition, setQueuePosition] = useState(null);
   const [pages, setPages] = useState([]);
+  // Opens the AI page audit on the audited site's first page (the drawer lets the user change it).
+  const openAiAudit = () => {
+    setCopilotInitialUrl(pages?.[0]?.url || url || '');
+    setIsAiCopilotOpen(true);
+  };
   const [selectedRow, setSelectedRow] = useState(null);
-  const [inlinks, setInlinks] = useState([]);
-  const [isLoadingInlinks, setIsLoadingInlinks] = useState(false);
+  // Inlinks of the selected row; { pageId, items } so a stale response is never shown for another row.
+  const [inlinksState, setInlinksState] = useState({ pageId: null, items: [] });
+  const selectedRowId = selectedRow?.id ?? null;
+  const inlinks = selectedRowId && inlinksState.pageId === selectedRowId ? inlinksState.items : [];
+  const isLoadingInlinks = Boolean(selectedRowId) && inlinksState.pageId !== selectedRowId;
 
   useEffect(() => {
-    if (selectedRow?.id) {
-      setIsLoadingInlinks(true);
-      authFetch(`${API_BASE_URL}/pages/${selectedRow.id}/inlinks`)
-        .then(res => res.json())
-        .then(data => {
-          setInlinks(Array.isArray(data) ? data : []);
-          setIsLoadingInlinks(false);
-        })
-        .catch(err => {
-          console.error("Failed to fetch inlinks:", err);
-          setInlinks([]);
-          setIsLoadingInlinks(false);
-        });
-    } else {
-      setInlinks([]);
-    }
-  }, [selectedRow?.id]);
+    if (!selectedRowId) return undefined;
+    let cancelled = false;
+    authFetch(`${API_BASE_URL}/pages/${selectedRowId}/inlinks`)
+      .then(res => res.json())
+      .then(data => { if (!cancelled) setInlinksState({ pageId: selectedRowId, items: Array.isArray(data) ? data : [] }); })
+      .catch(err => {
+        console.error("Failed to fetch inlinks:", err);
+        if (!cancelled) setInlinksState({ pageId: selectedRowId, items: [] });
+      });
+    return () => { cancelled = true; };
+  }, [selectedRowId]);
 
-  const issuesReport = useMemo(() => generateIssuesReport(pages), [pages]);
+  // Auto-load latest crawl data and integrations status on mount
+  useEffect(() => {
+    const loadLatestCrawl = async () => {
+      try {
+        const fetchLatest = async (mode) => {
+          const r = await authFetch(`${API_BASE_URL}/crawls/latest?mode=${mode}`);
+          return r.ok ? r.json() : null;
+        };
+        const [site, page] = await Promise.all([fetchLatest('site'), fetchLatest('page')]);
+        if (auditStartedRef.current) return;
+        setLatestByMode({ site: site?.id ? site : null, page: page?.id ? page : null });
+        const latest = [site, page].filter(c => c?.id).sort((a, b) => b.id - a.id)[0];
+        if (latest) {
+          setCrawlId(latest.id);
+          setViewMode(latest.mode || 'site');
+          setUrl(latest.seed_url || '');
+          setStatus(latest.status || 'completed');
+          const pagesData = await fetchPagesSince(latest.id);
+          if (pagesData.length > 0) setPages(pagesData);
+        }
+      } catch (err) {
+        console.warn('Could not auto-load latest crawl:', err);
+      }
+    };
+    const loadIntegrations = async () => {
+      await Promise.resolve(); // state is only ever set after the request, never during the effect
+      await fetchIntegrationsStatus();
+    };
+    // Both requests start together.
+    Promise.all([loadIntegrations(), loadLatestCrawl()]);
+  }, [fetchIntegrationsStatus]);
+
+  const mountSettingsModal = useMountedOnceOpened(isSettingsOpen);
+  const mountExecutiveReportModal = useMountedOnceOpened(isExecutiveReportOpen);
+  const mountExportAuditModal = useMountedOnceOpened(isExportModalOpen);
+  const mountAiAssistantDrawer = useMountedOnceOpened(isAiCopilotOpen);
+
+  // Scores and issue results from the backend scoring engine, shared with every tab and modal.
+  const crawlSummary = useCrawlSummaryFetch(crawlId, status, pages.length);
+
+  // New browser or device: start from the settings the last whole-site crawl used, once.
+  const lastCrawlSettings = crawlSummary?.crawl?.mode !== 'page' ? crawlSummary?.crawl?.settings : null;
+  const [restoredSettingsFrom, setRestoredSettingsFrom] = useState(null);
+  if (!hasBrowserSettings && lastCrawlSettings && restoredSettingsFrom === null) {
+    setRestoredSettingsFrom(crawlSummary.crawl.id);
+    setCrawlerSettings(prev => ({ ...prev, ...settingsFromCrawl(lastCrawlSettings) }));
+  }
+  const issuesReport = useMemo(() => generateIssuesReport(pages, crawlSummary), [pages, crawlSummary]);
 
   const [explorerCategory, setExplorerCategory] = useState('Page_Titles');
   const [explorerView, setExplorerView] = useState('All');
@@ -303,6 +403,63 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
     if (view) setExplorerView(view);
     handleTabChange('explorer');
   };
+
+  const switchToAudit = async (mode) => {
+    const target = latestByMode[mode];
+    if (!target?.id || target.id === crawlId) return;
+    setSelectedRow(null);
+    setShowCompletionBanner(false);
+    setViewMode(mode);
+    setCrawlId(target.id);
+    setUrl(target.seed_url || '');
+    setStatus(target.status || 'completed');
+    setPages([]);
+    try {
+      setPages(await fetchPagesSince(target.id));
+    } catch (err) {
+      toast.error('Could not load that audit.', { description: err.message });
+    }
+  };
+
+  const chooseAuditMode = (mode) => {
+    setAuditMode(mode);
+    try { localStorage.setItem('audit_mode', mode); } catch {}
+  };
+
+  // AuditPro Helper (browser extension): detection, relay of blocked pages during a crawl, "Audit this tab".
+  const helper = useHelper();
+  const [isHelperOpen, setIsHelperOpen] = useState(false);
+  const helperRelay = useHelperRelay({ helper, crawlId, running: status === 'running' });
+
+  // A single-page audit started from a captured tab: show it like an audit started from the URL bar.
+  const adoptCaptureAudit = (data) => {
+    if (!data?.id) return;
+    setUrl(data.seed_url);
+    setIsAuditing(true);
+    setStatus('running');
+    setProgress(0);
+    setCrawlPhase('queued');
+    setPagesCrawled(0);
+    setPages([]);
+    handleTabChange('overview');
+    setSelectedRow(null);
+    setShowCompletionBanner(false);
+    setQueuePosition(null);
+    hasFiredCompletion.current = false;
+    auditStartedRef.current = true;
+    setIsHelperOpen(false);
+    setCrawlId(data.id);
+    setViewMode('page');
+    setLatestByMode(prev => ({ ...prev, page: { id: data.id, seed_url: data.seed_url, status: 'running', mode: 'page' } }));
+  };
+  const captureActions = useCaptureActions({
+    capture: helper.capture,
+    clearCapture: helper.clearCapture,
+    crawlId,
+    running: status === 'running',
+    seedUrl: url,
+    onAuditStarted: adoptCaptureAudit,
+  });
 
   const startAudit = async (e, targetOverrideUrl = null) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -325,14 +482,20 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
     setIsAuditing(true);
     setStatus('running');
     setProgress(0);
+    setCrawlPhase('crawling');
     setPagesCrawled(0);
     setPages([]);
     handleTabChange('overview');
     setSelectedRow(null);
     setShowCompletionBanner(false);
+    setQueuePosition(null);
+    hasFiredCompletion.current = false;
+    auditStartedRef.current = true;
 
-    toast.info(`Spider initiated on ${normalizedUrl}`, {
-      description: `Max ${crawlerSettings.maxPages} pages & depth ${crawlerSettings.maxDepth}`,
+    toast.info(auditMode === 'page' ? `Auditing page ${normalizedUrl}` : `Crawling ${normalizedUrl}`, {
+      description: auditMode === 'page'
+        ? 'Single-page audit: page-level checks only.'
+        : `Up to ${crawlerSettings.maxPages} pages, depth ${crawlerSettings.maxDepth}.`,
     });
 
     try {
@@ -341,9 +504,10 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           seed_url: normalizedUrl,
+          mode: auditMode,
           max_depth: crawlerSettings.maxDepth,
           max_concurrent: crawlerSettings.maxConcurrent,
-          max_pages: crawlerSettings.maxPages,
+          max_pages: Math.min(crawlerSettings.maxPages, 1000), // server limit (older saved settings may be higher)
           stealth_delay: crawlerSettings.stealthDelay,
           ignore_url_params: crawlerSettings.ignoreUrlParams,
           check_external_links: crawlerSettings.checkExternalLinks,
@@ -352,6 +516,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
           js_rendering: crawlerSettings.jsRendering,
           user_agent: crawlerSettings.userAgent,
           crawl_author_archives: crawlerSettings.crawlAuthorArchives ?? false,
+          stay_in_folder: crawlerSettings.stayInFolder ?? true,
         }),
       });
 
@@ -367,6 +532,8 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
       const data = await response.json();
       if (!data?.id) throw new Error('Server returned invalid crawl response.');
       setCrawlId(data.id);
+      setViewMode(auditMode);
+      setLatestByMode(prev => ({ ...prev, [auditMode]: { id: data.id, seed_url: normalizedUrl, status: 'running', mode: auditMode } }));
     } catch (error) {
       console.error('Failed to start audit:', error);
       setStatus('failed');
@@ -382,94 +549,121 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
     toast.success(`Loaded seed URL: ${targetUrl}`);
   };
 
-  const handleClearAudit = async () => {
+  // Destructive: deletes every audit in the workspace, so it needs explicit confirmation, and the
+  // dashboard is only cleared after the server confirms the deletion.
+  const performClearAudit = async () => {
+    try {
+      const res = await authFetch(`${API_BASE_URL}/crawls`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+    } catch (err) {
+      toast.error('Could not delete audit data', { description: err.message || 'Please try again.' });
+      return;
+    }
     setIsAuditing(false);
     setStatus(null);
+    setLatestByMode({ site: null, page: null });
     setProgress(0);
     setPagesCrawled(0);
     setPages([]);
     setUrl('');
     setCrawlId(null);
     setSelectedRow(null);
-    setInlinks([]);
+    setInlinksState({ pageId: null, items: [] });
     setShowCompletionBanner(false);
+    toast.success('Audit data deleted', { description: 'All site and page audits in this workspace were removed.' });
+  };
 
-    try {
-      await authFetch(`${API_BASE_URL}/crawls`, { method: 'DELETE' });
-    } catch (err) {
-      console.warn('Backend clear crawls error:', err);
-    }
-
-    toast.success('Audit data cleared', {
-      description: 'Dashboard and crawl records have been cleared.',
+  const handleClearAudit = () => {
+    toast.warning('Delete all audit data?', {
+      description: 'This removes every site and single-page audit in your workspace. It cannot be undone.',
+      duration: 10000,
+      action: { label: 'Delete', onClick: performClearAudit },
+      cancel: { label: 'Cancel', onClick: () => {} },
     });
   };
 
-  const fetchResults = useCallback(async () => {
+  // Incremental polling: each tick downloads only pages added since the last tick. Ticks never overlap
+  // (setTimeout chain) and back off when the server is slow or unreachable.
+  const lastPageIdRef = useRef(0);
+  useEffect(() => { lastPageIdRef.current = 0; }, [crawlId]);
+
+  const fetchNewPages = useCallback(async () => {
     if (!crawlId) return;
-    try {
-      const response = await authFetch(`${API_BASE_URL}/crawls/${crawlId}/pages`);
-      if (response.ok) {
-        const pagesData = await response.json();
-        setPages(Array.isArray(pagesData) ? pagesData : []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch pages:', error);
-    }
+    const fresh = await fetchPagesSince(crawlId, lastPageIdRef.current);
+    if (fresh.length === 0) return;
+    const isFirstBatch = lastPageIdRef.current === 0;
+    lastPageIdRef.current = fresh[fresh.length - 1].id;
+    setPages(prev => (isFirstBatch ? fresh : [...prev, ...fresh]));
   }, [crawlId]);
 
   useEffect(() => {
-    let intervalId;
+    if (!crawlId || status !== 'running') return undefined;
+    let cancelled = false;
+    let timer;
+    let delay = 2500;
 
-    const checkStatus = async () => {
-      if (!crawlId || status === 'completed' || status === 'failed') return;
-
+    const tick = async () => {
       try {
         const response = await authFetch(`${API_BASE_URL}/crawls/${crawlId}/status`);
-        if (!response.ok) return;
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
-        if (!data || typeof data !== 'object') return;
+        if (cancelled || !data || typeof data !== 'object') return;
 
-        setStatus(data.status);
         setPagesCrawled(data.pages_crawled);
-        setProgress(Math.min(95, Math.floor((data.pages_crawled / 50) * 100)));
-
-        if (data.pages_crawled > 0) fetchResults();
+        setCrawlPhase(data.phase || 'crawling');
+        setQueuePosition(data.status === 'queued' ? (data.queue_position ?? 1) : null);
+        // A single-page audit has 1 page to fetch; a site crawl is measured against its page limit.
+        const limit = data.mode === 'page' ? 1 : (crawlerSettings?.maxPages || 500);
+        const fetched = Math.min(80, Math.floor(((data.pages_crawled || 0) / limit) * 80));
+        const phaseFloor = { queued: 0, crawling: 0, helper: 80, analysing: 85, enriching: 92 }[data.phase] ?? 0;
+        setProgress(Math.min(98, Math.max(fetched, phaseFloor)));
+        if (data.pages_crawled > 0) await fetchNewPages();
+        delay = 2500;
 
         if (data.status === 'completed') {
-          setProgress(100);
-          try {
-            const finalRes = await authFetch(`${API_BASE_URL}/crawls/${crawlId}/pages`);
-            if (finalRes.ok) {
-              const finalPages = await finalRes.json();
+          if (!hasFiredCompletion.current) {
+            hasFiredCompletion.current = true;
+            setProgress(100);
+            // Post-processing and enrichment rewrite every page at the end: reload the full set once.
+            try {
+              const finalPages = await fetchPagesSince(crawlId);
+              lastPageIdRef.current = finalPages.length ? finalPages[finalPages.length - 1].id : 0;
               setPages(finalPages);
+            } catch (e) {
+              console.error('Failed to fetch final pages:', e);
             }
-          } catch (e) {
-            console.error('Failed to fetch final pages:', e);
+            setIsAuditing(false);
+            setShowCompletionBanner(true);
+            fireCelebrationCannons();
+            toast.success('Audit completed', {
+              description: `Analyzed ${data.pages_crawled || 'all'} URLs.`,
+            });
           }
+          // A completed crawl replaces the workspace's other stored crawl, so only this mode remains.
+          const doneMode = data.mode === 'page' ? 'page' : 'site';
+          setLatestByMode(prev => ({ site: null, page: null, [doneMode]: prev[doneMode] ? { ...prev[doneMode], status: 'completed' } : null }));
+          setStatus('completed');
+          return;
+        }
+        if (data.status === 'failed') {
           setIsAuditing(false);
-          setShowCompletionBanner(true);
-          fireCelebrationCannons();
-          toast.success('Technical Audit Completed!', {
-            description: `Successfully analyzed ${data.pages_crawled || 'all'} URLs with 32 parameters.`,
-          });
-        } else if (data.status === 'failed') {
-          setIsAuditing(false);
-          toast.error('Audit crawl encountered an issue.');
+          setStatus('failed');
+          toast.error('The crawl stopped before finishing. Partial results are shown.');
+          return;
         }
       } catch (error) {
-        console.error('Polling error:', error);
+        console.warn('Polling error:', error?.message || error);
+        delay = Math.min(delay * 2, 20000);
       }
+      if (!cancelled) timer = setTimeout(tick, delay);
     };
 
-    if (crawlId && status === 'running') {
-      intervalId = setInterval(checkStatus, 2500);
-    }
-
+    timer = setTimeout(tick, delay);
     return () => {
-      if (intervalId) clearInterval(intervalId);
+      cancelled = true;
+      clearTimeout(timer);
     };
-  }, [crawlId, status, fetchResults]);
+  }, [crawlId, status, fetchNewPages, crawlerSettings?.maxPages]);
 
   const [copiedKeyId, setCopiedKeyId] = useState(null);
   const [inspectorFilter, setInspectorFilter] = useState('all'); // 'all' | 'issues' | 'passed'
@@ -557,6 +751,18 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                     </motion.span>
                   </AnimatePresence>
                 </motion.button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCopilotInitialUrl(selectedRow.url);
+                    setIsAiCopilotOpen(true);
+                  }}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#CAE366]/20 text-slate-900 dark:text-[#CAE366] hover:bg-[#CAE366]/30 border border-[#CAE366]/40 transition-colors cursor-pointer shrink-0"
+                  title="Audit this URL with AI (page audit)"
+                >
+                  <Sparkles size={11} className="text-[#CAE366]" />
+                  <span>AI Audit</span>
+                </button>
               </div>
             </div>
             <motion.button
@@ -590,9 +796,27 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                       : 'border-emerald-200 bg-emerald-50 text-emerald-700'
                       }`}
                   >
-                    {selectedRow.status_code || 200}
+                    {selectedRow.status_code ?? 0}
                   </span>
                 </div>
+                {selectedRow.audit_data?.Fetch && selectedRow.audit_data.Fetch.outcome !== 'ok' && (
+                  <div className="text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-slate-500">Fetch result</span>
+                      <span className={`rounded border px-2 py-0.5 text-[11px] font-bold ${selectedRow.audit_data.Fetch.side === 'site'
+                        ? 'border-rose-200 bg-rose-50 text-rose-700'
+                        : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                        {selectedRow.audit_data.Fetch.side === 'site' ? 'Site problem (counts)' : selectedRow.audit_data.Fetch.side === 'ours' ? 'Our side (not counted)' : 'Could not check (not counted)'}
+                      </span>
+                    </div>
+                    {selectedRow.audit_data.Fetch.reason && (
+                      <p className="mt-1 text-slate-600">
+                        {selectedRow.audit_data.Fetch.reason}
+                        {selectedRow.audit_data.Fetch.attempts > 1 ? ` (${selectedRow.audit_data.Fetch.attempts} attempts)` : ''}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium text-slate-500">Word Count</span>
                   <span className="font-mono font-bold text-slate-900">
@@ -646,7 +870,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                           {rel.sharedValue && (
                             <div className="p-1.5 rounded bg-slate-50 dark:bg-slate-800/70 text-[10px] font-mono text-slate-600 dark:text-slate-300 truncate" title={rel.sharedValue}>
                               <span className="font-bold text-slate-400">{rel.sharedLabel}: </span>
-                              <span>"{rel.sharedValue}"</span>
+                              <span>&ldquo;{rel.sharedValue}&rdquo;</span>
                             </div>
                           )}
 
@@ -930,7 +1154,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                         <div className="text-[11px] text-slate-600 pt-0.5 flex items-center gap-1">
                           <span className="text-slate-400 font-medium">Anchor:</span>
                           <span className="italic font-semibold text-slate-800 truncate" title={link.anchor_text}>
-                            "{link.anchor_text}"
+                            &ldquo;{link.anchor_text}&rdquo;
                           </span>
                         </div>
                       )}
@@ -1269,12 +1493,6 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
       );
     }
 
-    if (activeTab === 'naruto') {
-      return (
-        <NarutoSamplePanel onExit={() => handleTabChange('overview')} />
-      );
-    }
-
     if (activeTab === 'overview') {
       if (isAuditing || status === 'running') {
         return (
@@ -1284,6 +1502,9 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
             pagesCrawled={pagesCrawled}
             pages={pages}
             crawlerSettings={crawlerSettings}
+            phase={crawlPhase}
+            queuePosition={queuePosition}
+            mode={viewMode}
             onSwitchTab={(tab) => handleTabChange(tab)}
           />
         );
@@ -1292,8 +1513,9 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
       if (pages.length > 0) {
         return (
           <OverviewTab
-            key={`overview-${crawlId || 'ready'}-${pages.length}`}
+            key={`overview-${crawlId || 'ready'}`}
             pages={pages}
+            integrationsStatus={integrationsStatus}
             onNavigateToExplorer={handleNavigateToExplorer}
             onNavigateToTab={(tab) => handleTabChange(tab)}
           />
@@ -1323,8 +1545,8 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
             variants={staggerItem}
             className="mb-6 max-w-sm text-xs leading-relaxed text-slate-500 dark:text-slate-400"
           >
-            Enter a website URL in the address bar above to deploy the Screaming Frog 32-factor
-            crawling engine.
+            Enter a website address above to check it for broken pages, missing Google info,
+            slow loading and more.
           </motion.p>
 
           <motion.div
@@ -1360,6 +1582,10 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
             handleNavigateToExplorer(issue.category, issue.name || 'Errors')
           }
           onSelectPage={(page) => setSelectedRow(page)}
+          onOpenAiCopilot={(targetUrl) => {
+            setCopilotInitialUrl(targetUrl);
+            setIsAiCopilotOpen(true);
+          }}
         />
       );
     }
@@ -1371,6 +1597,10 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
           initialCategory={explorerCategory}
           initialView={explorerView}
           onRowClick={(row) => setSelectedRow(row)}
+          onOpenAiCopilot={(targetUrl) => {
+            setCopilotInitialUrl(targetUrl);
+            setIsAiCopilotOpen(true);
+          }}
         />
       );
     }
@@ -1379,23 +1609,12 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
       return <PerformanceTab pages={pages} />;
     }
 
-    if (activeTab === 'naruto') {
-      return <NarutoSamplePanel onClose={() => handleTabChange('overview')} />;
-    }
 
     return null;
   };
 
   return (
-    <>
-      {/* Boot overlay. Rendered above the app rather than instead of it, so the
-          dashboard is already painted and settled when the loader lifts away.
-          Loading owns its own GSAP fade-out and only calls back once it has
-          finished, so no AnimatePresence wrapper is needed here. */}
-      {isAppInitializing && (
-        <Loading isBootloader onBootloaderComplete={() => setIsAppInitializing(false)} />
-      )}
-
+    <CrawlSummaryProvider value={crawlSummary}>
       <div className="relative flex h-screen h-[100dvh] w-full overflow-hidden bg-[#F8FAFC] dark:bg-[#050505] font-sans text-slate-900 dark:text-[#FFFFFF] transition-colors duration-200">
         <div className="ambient-bg" />
 
@@ -1409,6 +1628,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
             onOpenExport={() => setIsExportModalOpen(true)}
             onOpenExecutiveReport={() => setIsExecutiveReportOpen(true)}
             onOpenSettings={handleOpenSettings}
+            onOpenAiAudit={openAiAudit}
             pagesCount={pages.length}
             issuesCount={issuesReport.length}
           />
@@ -1453,6 +1673,10 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                   handleOpenSettings(t);
                   setIsMobileSidebarOpen(false);
                 }}
+                onOpenAiAudit={() => {
+                  openAiAudit();
+                  setIsMobileSidebarOpen(false);
+                }}
                 onCloseMobile={() => setIsMobileSidebarOpen(false)}
                 isMobile={true}
                 pagesCount={pages.length}
@@ -1490,9 +1714,13 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                 <Globe size={15} />
               </div>
               <input
-                type="url"
+                type="text"
+                inputMode="url"
+                autoComplete="url"
+                spellCheck={false}
+                aria-label={auditMode === 'page' ? 'Page URL to audit' : 'Website URL to crawl'}
                 className="w-full min-w-0 flex-1 bg-transparent py-1 font-sans text-xs font-medium text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-[#D6E5FC]/40 outline-none border-0 focus:outline-none focus:ring-0"
-                placeholder="Enter website URL (e.g. https://bloomxsolutions.com/)..."
+                placeholder={auditMode === 'page' ? 'Page URL (e.g. bloomxsolutions.com/about/)' : 'Website URL (e.g. bloomxsolutions.com)'}
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 required
@@ -1508,6 +1736,30 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                   <X size={14} />
                 </button>
               )}
+              <div role="group" aria-label="Audit scope" className="hidden sm:flex shrink-0 items-center rounded-full bg-slate-100 dark:bg-white/[0.06] p-0.5 mr-1 text-[11px] font-bold">
+                {[{ id: 'page', label: 'Single page' }, { id: 'site', label: 'Whole site' }].map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    aria-pressed={auditMode === opt.id}
+                    disabled={isAuditing}
+                    onClick={() => chooseAuditMode(opt.id)}
+                    className={`relative isolate rounded-full px-2.5 py-1 transition-colors duration-200 ${auditMode === opt.id
+                      ? 'text-slate-900 dark:text-white'
+                      : 'text-slate-500 dark:text-[#D6E5FC]/60 hover:text-slate-800 dark:hover:text-white'}`}
+                  >
+                    {/* One shared pill slides between the options instead of each restyling itself. */}
+                    {auditMode === opt.id && (
+                      <motion.span
+                        layoutId="audit-scope-pill"
+                        transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                        className="absolute inset-0 -z-10 rounded-full bg-white dark:bg-[#1A1F2B] shadow-sm dark:border dark:border-[#D3DD99]/20"
+                      />
+                    )}
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
               <motion.button
                 type="submit"
                 disabled={isAuditing}
@@ -1540,6 +1792,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
             </form>
 
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <HelperChip helper={helper} onOpen={() => setIsHelperOpen(true)} />
               <motion.button
                 onClick={handleClearAudit}
                 whileHover={{ scale: 1.02 }}
@@ -1555,6 +1808,50 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
               </motion.button>
             </div>
           </motion.header>
+
+          {/* Audit scope: mobile toggle + switcher between the kept single-page and whole-site audits */}
+          {/* Always shown on mobile (toggle); on desktop only when there are two audits to switch between. */}
+          <div className={`${latestByMode.site && latestByMode.page ? 'flex' : 'flex sm:hidden'} flex-wrap items-center gap-2 px-3 sm:px-5 pt-2 text-[11px]`}>
+              <div role="group" aria-label="Audit scope" className="flex sm:hidden items-center rounded-full bg-slate-100 dark:bg-white/[0.06] p-0.5 font-bold">
+                {[{ id: 'page', label: 'Single page' }, { id: 'site', label: 'Whole site' }].map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    aria-pressed={auditMode === opt.id}
+                    disabled={isAuditing}
+                    onClick={() => chooseAuditMode(opt.id)}
+                    className={`rounded-full px-3 py-1.5 min-h-[28px] ${auditMode === opt.id ? 'bg-white dark:bg-[#1A1F2B] text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-[#D6E5FC]/60'}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {latestByMode.site && latestByMode.page && (
+                <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                  <span className="font-semibold">Viewing:</span>
+                  {['site', 'page'].map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={viewMode === mode}
+                      disabled={isAuditing}
+                      onClick={() => {
+                        if (viewMode === mode) return;
+                        const target = latestByMode[mode];
+                        // Switching replaces everything on screen, so say what it switches to first.
+                        if (window.confirm(`Show the ${auditLabel(mode, target)} instead of the audit on screen now?`)) switchToAudit(mode);
+                      }}
+                      title={latestByMode[mode]?.seed_url}
+                      className={`rounded-full border px-2.5 py-1 font-bold max-w-[220px] truncate ${viewMode === mode
+                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300'
+                        : 'border-slate-200 dark:border-white/10 hover:border-indigo-300'}`}
+                    >
+                      {auditLabel(mode, latestByMode[mode])}
+                    </button>
+                  ))}
+                </div>
+              )}
+          </div>
 
           {/* Live crawl banner */}
           <AnimatePresence initial={false}>
@@ -1722,7 +2019,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
 
         {renderDrawer()}
 
-        <SettingsModal
+        {mountSettingsModal && <SettingsModal
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
           initialSettings={crawlerSettings}
@@ -1738,26 +2035,51 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
             toast.success('Crawler settings updated and saved.');
           }}
           defaultTab={settingsTab}
-        />
+        />}
 
-        <ExecutiveReportModal
+        {mountExecutiveReportModal && <ExecutiveReportModal
           isOpen={isExecutiveReportOpen}
           onClose={() => setIsExecutiveReportOpen(false)}
           pages={pages}
           targetUrl={url}
-        />
+          crawlId={crawlId}
+        />}
 
-        <ExportAuditModal
+        {mountExportAuditModal && <ExportAuditModal
           isOpen={isExportModalOpen}
           onClose={() => setIsExportModalOpen(false)}
           pages={pages}
           targetUrl={url}
+          onOpenAiAudit={openAiAudit}
           onOpenPdfReport={() => {
             setIsExportModalOpen(false);
             setIsExecutiveReportOpen(true);
           }}
+        />}
+
+        {mountAiAssistantDrawer && <AiAssistantDrawer
+          isOpen={isAiCopilotOpen}
+          onClose={() => setIsAiCopilotOpen(false)}
+          initialUrl={copilotInitialUrl || url}
+          domain={url ? (url.replace(/^https?:\/\//, '').split('/')[0]) : ''}
+          pages={pages}
+        />}
+
+        <HelperPanel
+          isOpen={isHelperOpen}
+          onClose={() => setIsHelperOpen(false)}
+          helper={helper}
+          siteUrl={url}
+          captureActions={captureActions}
+        />
+        <HelperFloating
+          relayApi={helperRelay}
+          summary={helperRelay.summary}
+          capture={helper.capture}
+          captureActions={captureActions}
+          hideCapture={isHelperOpen}
         />
       </div>
-    </>
+    </CrawlSummaryProvider>
   );
 }

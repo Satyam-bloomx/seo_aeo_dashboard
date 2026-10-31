@@ -15,14 +15,37 @@ const AuthContext = createContext({
   signOut: async () => {},
 });
 
+const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000; // 3 days (72 hours / 259,200,000 ms)
+const SESSION_TIMESTAMP_KEY = 'audit_session_started_at';
+
+const recordSessionStart = () => {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SESSION_TIMESTAMP_KEY, Date.now().toString());
+    }
+  } catch {}
+};
+
+const checkIsSessionExpired = () => {
+  try {
+    if (typeof window === 'undefined') return false;
+    const started = localStorage.getItem(SESSION_TIMESTAMP_KEY);
+    if (!started) return false;
+    const elapsed = Date.now() - parseInt(started, 10);
+    return elapsed > THREE_DAYS_MS;
+  } catch {
+    return false;
+  }
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Setup Axios interceptor to attach Bearer token to all outgoing requests
+  // Setup Axios interceptors: attach Bearer token and handle 3-day 401 re-login prompts
   useEffect(() => {
-    const interceptor = axios.interceptors.request.use(async (config) => {
+    const reqInterceptor = axios.interceptors.request.use(async (config) => {
       try {
         const { data } = await supabase.auth.getSession();
         const token = data?.session?.access_token;
@@ -35,34 +58,71 @@ export const AuthProvider = ({ children }) => {
       return config;
     });
 
+    const resInterceptor = axios.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        if (error.response?.status === 401) {
+          const detail = (error.response?.data?.detail || '').toLowerCase();
+          if (detail.includes('3 days') || detail.includes('session expired')) {
+            try {
+              localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+              localStorage.removeItem('audit_demo_session');
+              await supabase.auth.signOut();
+            } catch {}
+            setUser(null);
+            setSession(null);
+            toast.warning('Session Expired (3-Day Limit)', {
+              description: 'For security purposes, please sign in again.',
+              duration: 8000,
+            });
+          }
+        }
+        return Promise.reject(error);
+      }
+    );
+
     return () => {
-      axios.interceptors.request.eject(interceptor);
+      axios.interceptors.request.eject(reqInterceptor);
+      axios.interceptors.response.eject(resInterceptor);
     };
   }, []);
 
-  // Sync Supabase auth state & Guest demo mode
+  // Sync Supabase auth state, 3-day security expiry & Guest demo mode
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const isDemo = typeof window !== 'undefined' && localStorage.getItem('audit_demo_session') === 'true';
-        if (isDemo) {
-          const demoUser = {
-            id: 'demo-guest-user',
-            email: 'demo@bloomxsolutions.com',
-            user_metadata: { name: 'Demo Guest' },
-            aud: 'authenticated',
-            role: 'authenticated'
-          };
-          setUser(demoUser);
-          setSession({ user: demoUser, access_token: 'demo-token' });
+        // Enforce 3-day maximum session duration check
+        if (checkIsSessionExpired()) {
+          console.info('[Security] Session exceeded 3-day limit. Enforcing re-login.');
+          try {
+            localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+            localStorage.removeItem('audit_demo_session');
+            await supabase.auth.signOut();
+          } catch {}
+          setUser(null);
+          setSession(null);
           setLoading(false);
+          toast.warning('Session Expired (3-Day Security Policy)', {
+            description: 'For your security, please sign in again after 3 days.',
+            duration: 9000,
+          });
           return;
         }
+
+        // Legacy fake guest flag from older builds: guests now use real anonymous Supabase sessions.
+        try { localStorage.removeItem('audit_demo_session'); } catch {}
 
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         if (error) {
           console.warn('Error fetching Supabase session:', error.message);
         }
+
+        if (initialSession) {
+          if (!localStorage.getItem(SESSION_TIMESTAMP_KEY)) {
+            recordSessionStart();
+          }
+        }
+
         setSession(initialSession);
         setUser(initialSession?.user || null);
       } catch (e) {
@@ -75,10 +135,8 @@ export const AuthProvider = ({ children }) => {
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-      const isDemo = typeof window !== 'undefined' && localStorage.getItem('audit_demo_session') === 'true';
-      if (isDemo && !currentSession) {
-        // Keep guest demo mode active if user explicitly chose it
-        return;
+      if (currentSession && !localStorage.getItem(SESSION_TIMESTAMP_KEY)) {
+        recordSessionStart();
       }
       setSession(currentSession);
       setUser(currentSession?.user || null);
@@ -90,6 +148,28 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
+  // Periodic heartbeat to verify 3-day session expiration while tab is open
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      if (checkIsSessionExpired()) {
+        try {
+          localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+          localStorage.removeItem('audit_demo_session');
+          supabase.auth.signOut();
+        } catch {}
+        setUser(null);
+        setSession(null);
+        toast.warning('Session Expired (3-Day Limit)', {
+          description: 'For security purposes, please sign in again.',
+          duration: 9000,
+        });
+      }
+    }, 5 * 60 * 1000); // Check every 5 minutes
+
+    return () => clearInterval(interval);
+  }, [user]);
+
   const signIn = useCallback(async (email, password) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -97,6 +177,7 @@ export const AuthProvider = ({ children }) => {
         password,
       });
       if (error) throw error;
+      recordSessionStart();
       toast.success('Signed in successfully!', {
         description: `Welcome back, ${data.user?.email || 'User'}`,
       });
@@ -149,12 +230,11 @@ export const AuthProvider = ({ children }) => {
       const redirectUri = typeof window !== 'undefined' ? window.location.origin : '';
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
+        // No forced prompt: Google only asks again when it needs to (first sign-in, several accounts
+        // signed in, or access revoked). Search Console / GA4 use their own OAuth flow in Integrations,
+        // so sign-in needs no offline Google refresh token.
         options: {
           redirectTo: redirectUri,
-          queryParams: {
-            prompt: 'consent select_account',
-            access_type: 'offline',
-          },
         },
       });
       if (error) throw error;
@@ -167,29 +247,32 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  const signInAsGuest = useCallback(() => {
-    const demoUser = {
-      id: 'demo-guest-user',
-      email: 'demo@bloomxsolutions.com',
-      user_metadata: { name: 'Demo Guest' },
-      aud: 'authenticated',
-      role: 'authenticated'
-    };
-    setUser(demoUser);
-    setSession({ user: demoUser, access_token: 'demo-token' });
+  // Guests get a real, signed anonymous Supabase session and their own isolated workspace.
+  // Requires "Anonymous sign-ins" to be enabled in Supabase (Authentication -> Providers).
+  const signInAsGuest = useCallback(async () => {
     try {
-      localStorage.setItem('audit_demo_session', 'true');
-    } catch {}
-    toast.success('Welcome to AuditPro Demo!', {
-      description: 'Logged in as guest demo user.',
-    });
-    return { success: true };
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
+      recordSessionStart();
+      toast.success('Welcome to AuditPro!', {
+        description: 'You are using a private guest workspace. Create an account to keep access.',
+      });
+      return { success: true, data };
+    } catch (err) {
+      toast.error('Guest Access Unavailable', {
+        description: err.message || 'Guest sign-in is not enabled. Please create an account.',
+      });
+      return { success: false, error: err };
+    }
   }, []);
 
   const signOut = useCallback(async () => {
     try {
       try {
-        localStorage.removeItem('audit_demo_session');
+        Object.keys(localStorage)
+          .filter((k) => k.startsWith('audit_') || k === SESSION_TIMESTAMP_KEY)
+          .forEach((k) => localStorage.removeItem(k));
+        sessionStorage.clear();
       } catch {}
       await supabase.auth.signOut();
       setUser(null);

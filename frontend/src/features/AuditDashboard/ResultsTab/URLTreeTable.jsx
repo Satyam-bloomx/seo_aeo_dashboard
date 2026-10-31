@@ -21,7 +21,7 @@ import { copyToClipboard } from '@/utils/clipboard';
 
 /**
  * Builds a hierarchical directory tree (Trie) from a flat list of crawled URLs.
- * Replicates Screaming Frog's "Select tree table view" architecture.
+ * Directory-tree view of the crawled URLs.
  */
 function buildUrlTree(pages) {
   const root = {
@@ -294,6 +294,14 @@ export default function URLTreeTable({ pages, onRowClick, searchQuery = '', isCo
                 return (
                   <tr
                     key={row.id}
+                    tabIndex={isClickable ? 0 : undefined}
+                    aria-label={isClickable ? `Inspect ${row.address}` : undefined}
+                    onKeyDown={(e) => {
+                      if (isClickable && onRowClick && (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+                        e.preventDefault();
+                        onRowClick(row.page);
+                      }
+                    }}
                     onClick={() => isClickable && onRowClick && onRowClick(row.page)}
                     className={`transition-colors select-none ${
                       isClickable
@@ -447,7 +455,7 @@ export default function URLTreeTable({ pages, onRowClick, searchQuery = '', isCo
       {/* Footer Info */}
       <div className="px-4 py-2 bg-slate-50 dark:bg-slate-950/80 border-t border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-500 dark:text-slate-400 flex justify-between items-center shrink-0">
         <span>Showing <strong className="text-slate-900 dark:text-white">{visibleRows.length}</strong> directory nodes across <strong className="text-indigo-600 dark:text-indigo-400">{pages?.length || 0}</strong> crawled URLs</span>
-        <span className="text-emerald-700 dark:text-emerald-400 font-semibold">Hierarchy Mode: Strict Screaming Frog Tree Table</span>
+        <span className="text-emerald-700 dark:text-emerald-400 font-semibold">Hierarchy Mode: Directory Tree</span>
       </div>
     </div>
   );

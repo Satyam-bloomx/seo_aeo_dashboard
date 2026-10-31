@@ -305,11 +305,12 @@ export default function ApiKeyModal({
   const [availableModels, setAvailableModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
 
-  useEffect(() => {
-    if (initialTab) {
-      setOauthTab(initialTab);
-    }
-  }, [initialTab]);
+  // Follow initialTab when the caller changes it (render-time update instead of an effect).
+  const [syncedTab, setSyncedTab] = useState(initialTab);
+  if (initialTab !== syncedTab) {
+    setSyncedTab(initialTab);
+    if (initialTab) setOauthTab(initialTab);
+  }
 
   useEffect(() => {
     if (integration?.category === 'AEO Voice & LLM') {
@@ -506,7 +507,11 @@ export default function ApiKeyModal({
         });
         if (integration.category === 'AEO Voice & LLM') {
           try {
-            const mRes = await axios.get(`${API_BASE_URL}/integrations/models/${projectId}/${integration.id}?api_key=${encodeURIComponent(apiKey.trim())}&refresh=true`);
+            // The key goes in the POST body, never the URL (URLs are written to server and proxy logs).
+            const mRes = await axios.post(`${API_BASE_URL}/integrations/models/discover`, {
+              service: integration.id,
+              api_key: apiKey.trim()
+            });
             if (mRes.data?.available_models) {
               setAvailableModels(mRes.data.available_models);
               setSelectedModel(mRes.data.selected_model || mRes.data.available_models[0]?.id || '');
@@ -777,7 +782,7 @@ export default function ApiKeyModal({
                     <div>
                       <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                         <Sliders size={15} className="text-indigo-600 dark:text-indigo-400" />
-                        Screaming Frog Style: User-Defined OAuth Application
+                        Use your own Google OAuth app (optional)
                       </h4>
                       <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
                         Enter your Google Cloud OAuth Client ID and Client Secret directly in the UI. No server configuration or .env changes required!
@@ -864,7 +869,7 @@ export default function ApiKeyModal({
                       <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs space-y-1">
                         <div className="font-bold flex items-center gap-1.5 text-[11px]">
                           <AlertTriangle size={13} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                          <span>Important: Google Cloud "Testing" Mode Notice</span>
+                          <span>Important: Google Cloud &ldquo;Testing&rdquo; Mode Notice</span>
                         </div>
                         <p className="text-[10px] text-amber-800 dark:text-amber-300 leading-tight">
                           If your OAuth consent screen is in <strong>Testing</strong> mode in Google Cloud Console, Google will block sign-in with <em>access_denied</em> unless you add your Google email to <strong>OAuth consent screen &gt; Test users</strong>.

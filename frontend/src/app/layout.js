@@ -33,12 +33,12 @@ export const metadata = {
     template: "%s | AuditPro SEO Suite",
   },
   description:
-    "Enterprise Screaming Frog crawler engine with 32 technical parameters, Core Web Vitals, AEO Voice & LLM Readiness, and Local GEO Search diagnostics.",
+    "Website audit for SEO and AI search: 32 technical checks, Core Web Vitals, AI answer readiness and local search, with plain-language fixes and client-ready reports.",
   keywords: [
     "Technical SEO Audit",
     "AEO Audit",
     "GEO Local Search Optimization",
-    "Screaming Frog Alternative",
+    "Technical SEO Crawler",
     "AI Engine Optimization",
     "Perplexity LLM Citation Audit",
     "Google AI Overviews Optimization",
@@ -66,7 +66,7 @@ export const metadata = {
   openGraph: {
     title: "AuditPro — Autonomous Technical SEO, AEO & GEO Audit Suite",
     description:
-      "Enterprise Screaming Frog rules crawler engine with 32 technical parameters, Core Web Vitals, AEO Voice & LLM Readiness, and Local GEO Search diagnostics.",
+      "Website audit for SEO and AI search: 32 technical checks, Core Web Vitals, AI answer readiness and local search, with plain-language fixes and client-ready reports.",
     url: "https://auditpro.ai",
     siteName: "AuditPro SEO Suite",
     locale: "en_US",
@@ -116,18 +116,13 @@ export default function RootLayout({ children }) {
       price: "0",
       priceCurrency: "USD",
     },
-    aggregateRating: {
-      "@type": "AggregateRating",
-      ratingValue: "4.9",
-      ratingCount: "1480",
-    },
     featureList: [
-      "32-Rule Technical SEO Crawler",
+      "Technical SEO Crawler",
       "AEO Voice & LLM Readiness Analyzer",
       "GEO Local Search & NAP Consistency Diagnostics",
       "Core Web Vitals Real-Time Speed Benchmarks",
       "Google Search Console & GA4 Integration",
-      "Instant Executive PDF Audit Certificates",
+      "Executive PDF Audit Reports",
     ],
   };
 
@@ -140,37 +135,6 @@ export default function RootLayout({ children }) {
     sameAs: [
       "https://twitter.com/AuditProAI",
       "https://github.com/Satyam-bloomx/seo_aeo_dashboard",
-    ],
-  };
-
-  const jsonLdFAQ = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: [
-      {
-        "@type": "Question",
-        name: "What is an AEO (Answer Engine Optimization) Audit?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "An AEO audit evaluates your content structure, schema markup, and direct extractability to ensure AI search engines (ChatGPT Search, Perplexity, Google AI Overviews) cite and feature your website.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "How does AuditPro perform technical website crawling?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "AuditPro uses a high-performance Python crawl engine with headless Chromium to extract status codes, meta directives, canonicals, H1 hierarchy, structured data, Core Web Vitals, and internal link equity across 32 enterprise parameters.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "What is GEO (Generative Engine Optimization) for Local Search?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "GEO ensures your local business signals, NAP (Name, Address, Phone) consistency, and Google Business Profile links are optimized for AI-driven local recommendations and Google Maps 3-pack rankings.",
-        },
-      },
     ],
   };
 
@@ -216,10 +180,6 @@ export default function RootLayout({ children }) {
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdOrganization) }}
         />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdFAQ) }}
-        />
       </head>
       <body
         className="min-h-full flex flex-col font-sans bg-background text-foreground selection:bg-indigo-500/20 selection:text-indigo-400 antialiased transition-colors duration-200"
@@ -231,7 +191,7 @@ export default function RootLayout({ children }) {
 
         {/* Global Toast Alerts */}
         <Toaster
-          position="top-right"
+          position="bottom-right"
           richColors
           closeButton
           expand

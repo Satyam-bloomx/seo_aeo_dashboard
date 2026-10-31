@@ -18,7 +18,6 @@ const VALID_SLUGS = {
   'speed-vitals': 'performance',
   vitals: 'performance',
   integrations: 'integrations',
-  naruto: 'naruto',
   settings: 'overview',
 };
 

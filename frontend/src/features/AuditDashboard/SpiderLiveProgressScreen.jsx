@@ -17,13 +17,15 @@ import {
 } from 'lucide-react';
 import { duration, ease, fadeUp, spring, staggerContainer, staggerItem, tapPress, tween } from '@/lib/motion';
 
-const STAGES = [
-  { threshold: 0, label: 'Initiating Spider & Robots Protocol', sub: 'Parsing robots.txt, sitemaps and seed endpoints...' },
-  { threshold: 25, label: 'Deep Crawling & DOM Extraction', sub: 'Analyzing canonicals, titles, H1/H2 tags & meta directives...' },
-  { threshold: 55, label: 'Evaluating AEO & Knowledge Graph Signals', sub: 'Synthesizing LLM extractable answers & schema markup...' },
-  { threshold: 80, label: 'Measuring Core Web Vitals & Local SERP', sub: 'Testing LCP, CLS, INP, TTFB & regional NAP consistency...' },
-  { threshold: 95, label: 'Finalizing Audit Index & Compliance Matrix', sub: 'Compiling 32 technical parameters across all pages...' },
-];
+// Labels follow the backend's real phase (GET /crawls/{id}/status -> phase), not a guessed percentage.
+const PHASES = {
+  queued: { label: 'Waiting for a free crawler', sub: 'Other audits are running. Yours starts automatically; you can leave this page open.' },
+  crawling: { label: 'Crawling', sub: 'Fetching pages and following internal links...' },
+  crawling_page: { label: 'Fetching the page', sub: 'Downloading the URL and following any redirects...' },
+  helper: { label: 'Waiting for your browser helper', sub: 'Our server was blocked on some pages. The AuditPro Helper is fetching them from your browser; this stops by itself after a few minutes.' },
+  analysing: { label: 'Analysing site structure', sub: 'Duplicates, internal links, sitemaps and robots.txt...' },
+  enriching: { label: 'Measuring speed and adding connected data', sub: 'All pages are crawled: you can already open Issues or the URL Data Grid. Speed tests and connected tools take up to a minute.' },
+};
 
 export default function SpiderLiveProgressScreen({
   url,
@@ -31,19 +33,23 @@ export default function SpiderLiveProgressScreen({
   pagesCrawled = 0,
   pages = [],
   crawlerSettings = {},
+  phase = 'crawling',
+  queuePosition = null,
+  mode = 'site',
   onSwitchTab
 }) {
   const reduced = useReducedMotion();
 
   const currentStage = useMemo(() => {
-    let current = STAGES[0];
-    for (const stage of STAGES) {
-      if (progress >= stage.threshold) {
-        current = stage;
-      }
+    if (phase === 'crawling' && mode === 'page') return PHASES.crawling_page;
+    if (phase === 'queued') {
+      return {
+        ...PHASES.queued,
+        label: queuePosition > 1 ? `Waiting for a free crawler: you are #${queuePosition} in line` : 'Starting in a moment: next in line',
+      };
     }
-    return current;
-  }, [progress]);
+    return PHASES[phase] || PHASES.crawling;
+  }, [phase, mode, queuePosition]);
 
   const recentPages = useMemo(() => {
     if (!pages || pages.length === 0) return [];
@@ -142,11 +148,11 @@ export default function SpiderLiveProgressScreen({
                   >
                     <div className="flex items-center gap-2 truncate max-w-md">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
-                        (page.status_code || 200) >= 400
+                        (page.status_code ?? 0) >= 400
                           ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
                           : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                       }`}>
-                        {page.status_code || 200}
+                        {page.status_code ?? 0}
                       </span>
                       <span className="font-mono text-slate-700 dark:text-slate-300 truncate" title={page.url}>
                         {page.url}

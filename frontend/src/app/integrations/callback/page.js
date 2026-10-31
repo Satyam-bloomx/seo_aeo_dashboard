@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, Suspense } from 'react';
+import { useEffect, useMemo, useState, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import axios from 'axios';
 import { CheckCircle2, Loader2, XCircle, ShieldCheck, AlertTriangle, Key, ArrowRight, RefreshCw, ExternalLink } from 'lucide-react';
@@ -83,99 +83,74 @@ function CallbackContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   
+  // The server-issued state is "<service>.<encrypted token>"; the token is verified by the backend.
   const stateParam = searchParams.get('state') || '';
-  let serviceParam = searchParams.get('service');
-  let projectIdParam = searchParams.get('project_id');
   const codeParam = searchParams.get('code');
   const errorParam = searchParams.get('error');
   const errorDesc = searchParams.get('error_description');
 
-  if (stateParam) {
-    if (stateParam.includes(':')) {
-      const [stateProj, stateSvc] = stateParam.split(':');
-      if (!projectIdParam && stateProj) projectIdParam = stateProj;
-      if (!serviceParam && stateSvc) serviceParam = stateSvc;
-    } else if (!serviceParam) {
-      serviceParam = stateParam;
-    }
-  }
-
-  const projectId = projectIdParam || '1';
-  const service = serviceParam || 'google_analytics';
+  const KNOWN_SERVICES = ['search_console', 'google_analytics', 'google_business'];
+  const statePrefix = stateParam.split('.')[0];
+  const service = KNOWN_SERVICES.includes(statePrefix) ? statePrefix : 'google_analytics';
   const code = codeParam;
 
-  const [status, setStatus] = useState('loading');
   const serviceDisplayName = service ? service.replace(/_/g, ' ').toUpperCase() : 'GOOGLE SERVICE';
-  const [message, setMessage] = useState(`Verifying OAuth credentials for ${serviceDisplayName}...`);
-  const [errorDetails, setErrorDetails] = useState(null);
-  const [redirectUriUsed, setRedirectUriUsed] = useState('');
-  const exchangeAttemptedRef = useRef(false);
+  // This page only renders in the browser (useSearchParams inside Suspense), so window is available.
+  const callbackUri = `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/integrations/callback`;
 
-  useEffect(() => {
-    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-    const callbackUri = `${currentOrigin}/integrations/callback`;
-    setRedirectUriUsed(callbackUri);
-
-    // 1. Google returned an error query (e.g. access_denied)
+  // Outcomes decided by the URL alone are derived during render; only the token exchange is async state.
+  const immediate = useMemo(() => {
     if (errorParam) {
       const fullErrorMsg = errorDesc || errorParam || 'Google authorization was cancelled or denied.';
-      setStatus('error');
-      setMessage(fullErrorMsg);
-      const diagnosis = diagnoseOAuthError(errorParam, errorDesc, callbackUri, service);
-      setErrorDetails(diagnosis);
-
-      // Record in sessionStorage for the dashboard
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('last_integration_error', JSON.stringify({
-          service,
-          error: fullErrorMsg,
-          diagnosis: diagnosis.title,
-          timestamp: Date.now()
-        }));
-      }
-
-      // Record in backend DB so /status/1 displays it persistently
-      axios.post(`${API_BASE_URL}/integrations/google/record-error`, {
-        project_id: parseInt(projectId, 10),
-        service,
-        error: errorParam,
-        error_description: fullErrorMsg
-      }).catch(() => {});
-
-      return;
+      return { status: 'error', message: fullErrorMsg, details: diagnoseOAuthError(errorParam, errorDesc, callbackUri, service) };
     }
+    if (!service) return { status: 'error', message: 'Invalid callback parameters. Missing service identifier.', details: null };
+    if (!code) return { status: 'error', message: 'No authorization code returned from Google OAuth.', details: null };
+    return null;
+  }, [errorParam, errorDesc, callbackUri, service, code]);
 
-    // 2. Validate service identifier
-    if (!service) {
-      setStatus('error');
-      setMessage('Invalid callback parameters. Missing service identifier.');
-      return;
-    }
+  const [exchange, setExchange] = useState({
+    status: 'loading',
+    message: `Authenticating ${serviceDisplayName} with Google Cloud...`,
+    details: null,
+  });
+  const { status, message, details: errorDetails } = immediate || exchange;
+  const exchangeAttemptedRef = useRef(false);
 
-    // 3. Validate auth code
-    if (!code) {
-      setStatus('error');
-      setMessage('No authorization code returned from Google OAuth.');
-      return;
-    }
+  // Google returned an error: record it for the dashboard (no React state is set here).
+  useEffect(() => {
+    if (!errorParam || !immediate) return;
+    sessionStorage.setItem('last_integration_error', JSON.stringify({
+      service,
+      error: immediate.message,
+      diagnosis: immediate.details?.title,
+      timestamp: Date.now()
+    }));
+    // Record in backend DB so /status/1 displays it persistently
+    axios.post(`${API_BASE_URL}/integrations/google/record-error`, {
+      service,
+      error: errorParam,
+      error_description: immediate.message
+    }).catch(() => {});
+  }, [errorParam, immediate, service]);
 
+  useEffect(() => {
+    if (immediate) return;
     // Guard against React Strict Mode double-invocation
     if (exchangeAttemptedRef.current) return;
     exchangeAttemptedRef.current = true;
 
     const completeAuth = async () => {
       try {
-        setMessage(`Authenticating ${serviceDisplayName} with Google Cloud...`);
-        
-        const endpoint = `${API_BASE_URL}/integrations/google/callback?project_id=${encodeURIComponent(projectId)}&service=${encodeURIComponent(service)}&code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(callbackUri)}`;
+        const res = await axios.post(`${API_BASE_URL}/integrations/google/callback`, { code, state: stateParam });
+        // Drop the one-time code from the address bar and history.
+        window.history.replaceState(null, '', '/integrations/callback');
 
-        const res = await axios.post(endpoint);
-        
         if (res.data?.status === 'warning' || res.data?.has_no_properties) {
-          setStatus('warning');
-          setMessage(res.data?.message || `Authenticated as ${res.data?.account_email || 'Google User'}, but no verified properties were found in ${serviceDisplayName}.`);
-          if (res.data?.diagnostic_help) {
-            setErrorDetails({
+          setExchange({
+            status: 'warning',
+            message: res.data?.message || `Authenticated as ${res.data?.account_email || 'Google User'}, but no verified properties were found in ${serviceDisplayName}.`,
+            details: res.data?.diagnostic_help ? {
               title: `No Active ${serviceDisplayName} Properties Found`,
               summary: res.data.message,
               steps: [
@@ -185,20 +160,19 @@ function CallbackContent() {
               ],
               link: service === 'google_analytics' ? 'https://analytics.google.com/' : 'https://search.google.com/search-console',
               linkLabel: `Open ${serviceDisplayName}`
-            });
-          }
+            } : null,
+          });
           setTimeout(() => {
             router.push(`/?tab=integrations&service=${service}&warning=no_properties&account=${encodeURIComponent(res.data?.account_email || '')}`);
           }, 3500);
         } else {
-          setStatus('success');
-          setMessage(res.data?.message || `Successfully connected to ${serviceDisplayName}!`);
-          
+          setExchange({
+            status: 'success',
+            message: res.data?.message || `Successfully connected to ${serviceDisplayName}!`,
+            details: null,
+          });
           // Clear any stored errors on success
-          if (typeof window !== 'undefined') {
-            sessionStorage.removeItem('last_integration_error');
-          }
-
+          sessionStorage.removeItem('last_integration_error');
           setTimeout(() => {
             router.push(`/?tab=integrations&service=${service}&connected=true&account=${encodeURIComponent(res.data?.account_email || '')}`);
           }, 1500);
@@ -206,25 +180,19 @@ function CallbackContent() {
       } catch (err) {
         console.error("OAuth token exchange error:", err);
         const detail = err.response?.data?.detail || err.message || 'Token exchange failed.';
-        setStatus('error');
-        setMessage(`Authentication failed: ${detail}`);
-        
         const diagnosis = diagnoseOAuthError(detail, detail, callbackUri, service);
-        setErrorDetails(diagnosis);
+        setExchange({ status: 'error', message: `Authentication failed: ${detail}`, details: diagnosis });
 
         // Record in sessionStorage for the dashboard
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('last_integration_error', JSON.stringify({
-            service,
-            error: detail,
-            diagnosis: diagnosis.title,
-            timestamp: Date.now()
-          }));
-        }
+        sessionStorage.setItem('last_integration_error', JSON.stringify({
+          service,
+          error: detail,
+          diagnosis: diagnosis.title,
+          timestamp: Date.now()
+        }));
 
         // Record in backend DB so /status/1 displays it persistently
         axios.post(`${API_BASE_URL}/integrations/google/record-error`, {
-          project_id: parseInt(projectId, 10),
           service,
           error: 'token_exchange_error',
           error_description: detail
@@ -233,7 +201,7 @@ function CallbackContent() {
     };
 
     completeAuth();
-  }, [projectId, service, code, errorParam, errorDesc, router, serviceDisplayName]);
+  }, [immediate, stateParam, service, code, router, serviceDisplayName, callbackUri]);
 
   const handleReturnToDashboard = () => {
     const errText = message || errorDesc || errorParam || 'OAuth Authentication Failed';
@@ -248,7 +216,7 @@ function CallbackContent() {
     try {
       const redirectUri = window.location.origin;
       const res = await axios.get(
-        `${API_BASE_URL}/integrations/google/auth?project_id=${projectId}&service=${service}&redirect_uri=${encodeURIComponent(redirectUri)}`
+        `${API_BASE_URL}/integrations/google/auth?service=${service}&redirect_uri=${encodeURIComponent(redirectUri)}`
       );
       if (res.data?.auth_url) {
         window.location.href = res.data.auth_url;

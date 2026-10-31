@@ -83,42 +83,58 @@ export default function AuthScreen() {
               />
             </div>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white mt-1">
-            {mode === 'signin' ? 'Sign in to AuditPro' : 'Create your workspace'}
-          </h1>
-          <p className="mt-1.5 text-xs text-[#D6E5FC]/75 font-normal max-w-xs mx-auto">
-            {mode === 'signin'
-              ? 'Enter your credentials to access your private SEO & crawl engine'
-              : 'Deploy autonomous technical SEO, AEO & GEO spider telemetry'}
-          </p>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={mode}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+            >
+              <h1 className="text-2xl font-bold tracking-tight text-white mt-1">
+                {mode === 'signin' ? 'Sign in to AuditPro' : 'Create your workspace'}
+              </h1>
+              <p className="mt-1.5 text-xs text-[#D6E5FC]/75 font-normal max-w-xs mx-auto">
+                {mode === 'signin'
+                  ? 'See what is holding your website back on Google and in AI answers, and what to fix first.'
+                  : 'Check any website in minutes: problems, the 3 fixes that matter most, and a report you can share.'}
+              </p>
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         {/* Card */}
         <div className="rounded-2xl border border-white/[0.08] bg-[#0D0F15]/90 backdrop-blur-xl p-4 xs:p-5 sm:p-7 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
           {/* Segmented Mode Selector */}
-          <div className="grid grid-cols-2 p-1 bg-[#07080B] rounded-xl mb-5 border border-white/[0.06]">
-            <button
-              type="button"
-              onClick={() => setMode('signin')}
-              className={`py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                mode === 'signin'
-                  ? 'bg-[#151922] text-[#CAE366] shadow-xs border border-white/[0.08]'
-                  : 'text-[#D6E5FC]/60 hover:text-white'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('signup')}
-              className={`py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                mode === 'signup'
-                  ? 'bg-[#151922] text-[#CAE366] shadow-xs border border-white/[0.08]'
-                  : 'text-[#D6E5FC]/60 hover:text-white'
-              }`}
-            >
-              Create Account
-            </button>
+          <div role="tablist" aria-label="Account mode" className="grid grid-cols-2 p-1 bg-[#07080B] rounded-xl mb-5 border border-white/[0.06]">
+            {[
+              { id: 'signin', label: 'Sign In' },
+              { id: 'signup', label: 'Create Account' },
+            ].map((tab) => {
+              const active = mode === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setMode(tab.id)}
+                  className={`relative isolate py-1.5 text-xs font-semibold rounded-lg cursor-pointer transition-colors duration-200 ${
+                    active ? 'text-[#CAE366]' : 'text-[#D6E5FC]/60 hover:text-white'
+                  }`}
+                >
+                  {/* One shared pill slides between the two tabs instead of each tab restyling itself. */}
+                  {active && (
+                    <motion.span
+                      layoutId="auth-mode-pill"
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                      className="absolute inset-0 -z-10 rounded-lg bg-[#151922] border border-white/[0.08] shadow-xs"
+                    />
+                  )}
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
 
           {/* Google OAuth Button */}
@@ -166,10 +182,13 @@ export default function AuthScreen() {
             <AnimatePresence initial={false}>
               {mode === 'signup' && (
                 <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.18 }}
+                  key="full-name"
+                  // Tailwind 4's space-y-3.5 gap is this field's own 14px bottom margin. Animating it with the
+                  // height (inline style wins over the class) makes the form slide instead of jumping 14px.
+                  initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  animate={{ opacity: 1, height: 'auto', marginBottom: 14 }}
+                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
                   className="overflow-hidden"
                 >
                   <label className="block text-[11px] font-medium text-[#D6E5FC] mb-1.5">
@@ -275,14 +294,19 @@ export default function AuthScreen() {
           </div>
         </div>
 
-        {/* Security & Workspace Trust Micro-Footer */}
-        <div className="mt-6 flex items-center justify-center gap-2">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#CAE366]/5 border border-[#CAE366]/20 text-[10px] sm:text-[11px] font-medium text-[#CAE366] max-w-full text-center">
-            <ShieldCheck size={13} className="text-[#CAE366] shrink-0" />
-            <span className="hidden xs:inline">Multi-tenant workspace isolation • Supabase Auth</span>
-            <span className="xs:hidden">Workspace isolation • Supabase Auth</span>
-          </div>
-        </div>
+        {/* What you get */}
+        <ul className="mt-6 grid grid-cols-1 xs:grid-cols-3 gap-2 text-center text-[11px] text-[#D6E5FC]/80">
+          {[
+            'Finds broken pages, slow pages and missing Google info',
+            'Ranks the fixes that matter most, in plain words',
+            'Ready-to-paste titles, descriptions and a shareable report',
+          ].map((benefit) => (
+            <li key={benefit} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2">{benefit}</li>
+          ))}
+        </ul>
+        <p className="mt-3 flex items-center justify-center gap-1.5 text-[10px] text-[#CAE366]/80">
+          <ShieldCheck size={12} className="shrink-0" /> Your audits stay private to your account
+        </p>
       </div>
     </div>
   );

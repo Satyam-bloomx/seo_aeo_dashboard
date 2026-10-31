@@ -27,6 +27,21 @@ const STRATEGIES = [
   { id: 'desktop', label: 'Desktop', Icon: Monitor },
 ];
 
+function getOpportunitySubtitle(title = '') {
+  const t = title.toLowerCase();
+  if (t.includes('render-blocking')) return 'Deliver critical JS/CSS inline and defer non-critical assets.';
+  if (t.includes('next-gen') || t.includes('webp') || t.includes('avif')) return 'Serve modern WebP or AVIF formats for superior compression over legacy JPEG/PNG.';
+  if (t.includes('size images') || t.includes('properly size')) return 'Serve responsive, appropriately-scaled images to conserve bandwidth and reduce memory usage.';
+  if (t.includes('unused javascript') || t.includes('unused js')) return 'Defer or tree-shake unused scripts to decrease network payload and main-thread execution time.';
+  if (t.includes('unused css')) return 'Remove unused stylesheet rules and defer non-critical styles until after paint.';
+  if (t.includes('compression') || t.includes('text compression')) return 'Serve resources with Gzip or Brotli compression to minimize total network transfer bytes.';
+  if (t.includes('minify javascript')) return 'Minify script files to reduce download size and script parsing time.';
+  if (t.includes('minify css')) return 'Minify stylesheet bundles to accelerate render tree construction.';
+  if (t.includes('preconnect') || t.includes('dns-prefetch')) return 'Establish early third-party connections to accelerate external resource loading.';
+  if (t.includes('cache') || t.includes('caching')) return 'Extend cache lifetimes for static assets to speed up repeat visits.';
+  return 'Apply modern web optimization best practices to reduce payload and latency.';
+}
+
 export default function PerformanceTab({ pages }) {
   const [strategy, setStrategy] = useState('mobile');
   const [customUrlInput, setCustomUrlInput] = useState('');
@@ -38,10 +53,21 @@ export default function PerformanceTab({ pages }) {
   const circleRef = useRef(null);
   const numberRef = useRef(null);
 
-  // Available crawled URLs list for quick selection
+  // Available crawled URLs list for quick selection (prioritizing pages with verified PageSpeed data)
   const crawledUrls = useMemo(() => {
     if (!pages || pages.length === 0) return [];
-    return pages.map(p => p.url).filter(Boolean);
+    const withPerf = [];
+    const withoutPerf = [];
+    for (const p of pages) {
+      if (!p.url) continue;
+      const ps = p.audit_data?.PageSpeed || p.audit_data?.PageSpeed_Insights;
+      if (ps && typeof ps === 'object' && (ps.mobile?.metrics || ps.metrics)) {
+        withPerf.push(p.url);
+      } else {
+        withoutPerf.push(p.url);
+      }
+    }
+    return [...withPerf, ...withoutPerf];
   }, [pages]);
 
   // Handle single URL analysis without affecting other tabs
@@ -52,11 +78,12 @@ export default function PerformanceTab({ pages }) {
       return;
     }
 
-    // Check if URL is already in crawled pages array with PageSpeed data
+    // Check if URL is already in crawled pages array with verified PageSpeed metrics
     const matchedPage = pages?.find(p => p.url === urlToTest);
-    if (matchedPage?.audit_data?.PageSpeed) {
+    const matchedPs = matchedPage?.audit_data?.PageSpeed || matchedPage?.audit_data?.PageSpeed_Insights;
+    if (matchedPs && typeof matchedPs === 'object' && (matchedPs.mobile?.metrics || matchedPs.desktop?.metrics || matchedPs.metrics)) {
       setInspectedUrl(urlToTest);
-      setCustomPerfData(matchedPage.audit_data.PageSpeed);
+      setCustomPerfData(matchedPs);
       toast.success(`Loaded Core Web Vitals for ${urlToTest}`);
       return;
     }
@@ -65,37 +92,28 @@ export default function PerformanceTab({ pages }) {
     setInspectedUrl(urlToTest);
 
     try {
-      const res = await axios.post(`${API_BASE_URL}/performance/analyze`, {
-        url: urlToTest,
-        project_id: 1
-      });
+      const res = await axios.post(`${API_BASE_URL}/performance/analyze`, { url: urlToTest });
 
       if (res.data?.data) {
         setCustomPerfData(res.data.data);
         toast.success(`Performance analyzed for ${urlToTest}`, {
-          description: res.data.is_live_api ? 'Live Google PageSpeed Insights data retrieved.' : 'Simulated real-browser Lighthouse estimation.'
+          description: 'Live Google PageSpeed Insights data retrieved.'
+        });
+      } else {
+        // No measurement is shown rather than an estimate.
+        setCustomPerfData(null);
+        toast.warning('No PageSpeed data available', {
+          description: res.data?.is_live_api
+            ? 'Google PageSpeed Insights did not return results for this URL.'
+            : 'Connect a PageSpeed Insights API key in Integrations to measure Core Web Vitals.'
         });
       }
     } catch (err) {
       console.error('Failed to analyze URL performance:', err);
-      // Fallback to realistic estimation
-      const fallbackData = {
-        mobile: {
-          performance_score: 89,
-          metrics: { lcp: '1.7 s', cls: '0.010', inp: '60 ms', ttfb: '230 ms', fcp: '1.1 s', tbt: '95 ms', speedIndex: '1.5 s' },
-          opportunities: [
-            { title: "Serve images in next-gen formats (WebP/AVIF)", savings: "0.32 s" },
-            { title: "Eliminate render-blocking resources", savings: "0.19 s" }
-          ]
-        },
-        desktop: {
-          performance_score: 97,
-          metrics: { lcp: '1.0 s', cls: '0.001', inp: '30 ms', ttfb: '150 ms', fcp: '0.6 s', tbt: '35 ms', speedIndex: '0.8 s' },
-          opportunities: []
-        }
-      };
-      setCustomPerfData(fallbackData);
-      toast.info(`Generated Web Vitals report for ${urlToTest}`);
+      setCustomPerfData(null);
+      toast.error('Performance analysis failed', {
+        description: err.response?.data?.detail || 'Could not reach the PageSpeed service. Please try again.'
+      });
     } finally {
       setIsAnalyzing(false);
     }
@@ -109,15 +127,25 @@ export default function PerformanceTab({ pages }) {
   };
 
   // Derive metrics and opportunities based on inspected URL or sitewide overview
-  const { metrics, opportunities, isLiveCustom } = useMemo(() => {
+  const { metrics, opportunities, isLiveCustom, measuredUrl, fieldData } = useMemo(() => {
     let sourceData = null;
+    let measuredFrom = inspectedUrl || null;
 
     if (customPerfData) {
       sourceData = customPerfData[strategy] || customPerfData;
     } else if (pages && pages.length > 0) {
-      const pagespeedRaw = pages[0]?.audit_data?.PageSpeed || pages[0]?.audit_data?.PageSpeed_Insights || null;
-      if (pagespeedRaw) {
-        sourceData = pagespeedRaw[strategy] || pagespeedRaw;
+      const pageWithPerf = pages.find(p => {
+        const ps = p.audit_data?.PageSpeed || p.audit_data?.PageSpeed_Insights;
+        return ps && typeof ps === 'object' && ((ps[strategy] && ps[strategy].metrics) || ps.metrics);
+      }) || pages.find(p => {
+        const ps = p.audit_data?.PageSpeed || p.audit_data?.PageSpeed_Insights;
+        return ps && typeof ps === 'object' && (ps.mobile?.metrics || ps.desktop?.metrics);
+      }) || pages[0];
+
+      const pagespeedRaw = pageWithPerf?.audit_data?.PageSpeed || pageWithPerf?.audit_data?.PageSpeed_Insights || null;
+      if (pagespeedRaw && typeof pagespeedRaw === 'object') {
+        sourceData = pagespeedRaw[strategy] || (pagespeedRaw.mobile || pagespeedRaw);
+        measuredFrom = pageWithPerf?.url || null;
       }
     }
 
@@ -125,26 +153,38 @@ export default function PerformanceTab({ pages }) {
       return {
         metrics: null,
         opportunities: [],
-        isLiveCustom: Boolean(inspectedUrl)
+        isLiveCustom: Boolean(inspectedUrl),
+        measuredUrl: measuredFrom,
+        fieldData: null,
       };
     }
 
-    const score = typeof sourceData.performance_score === 'number' ? sourceData.performance_score : 90;
+    const score = typeof sourceData.performance_score === 'number' ? sourceData.performance_score : null;
     const dynamicMetrics = sourceData.metrics || {};
+
+    // INP only exists as real-user (CrUX) field data; lab runs cannot measure it, so it is never estimated.
+    const formattedInp = dynamicMetrics.inp || '-';
 
     return {
       metrics: {
         overallScore: score,
         lcp: dynamicMetrics.lcp || '-',
-        inp: dynamicMetrics.inp || '-',
+        inp: formattedInp,
         cls: dynamicMetrics.cls || '-',
-        ttfb: dynamicMetrics.ttfb || '-',
+        // Older audits stored Lighthouse's sentence ("Root document took 280 ms"); keep only the time.
+        ttfb: String(dynamicMetrics.ttfb || '').match(/[\d.,]+\s*m?s\b/)?.[0] || dynamicMetrics.ttfb || '-',
         fcp: dynamicMetrics.fcp || '-',
         tbt: dynamicMetrics.tbt || '-',
         speedIndex: dynamicMetrics.speedIndex || '-'
       },
-      opportunities: sourceData.opportunities || [],
-      isLiveCustom: Boolean(inspectedUrl)
+      opportunities: (sourceData.opportunities || []).filter(opp => {
+        const title = (opp.title || '').toLowerCase();
+        return !title.includes('was short') && !title.includes('was fast') && !title.includes('is fast');
+      }),
+      isLiveCustom: Boolean(inspectedUrl),
+      measuredUrl: measuredFrom,
+      // Real-visitor (Chrome UX Report) data, kept apart from the lab test above.
+      fieldData: sourceData.field_data?.available ? sourceData.field_data : null,
     };
   }, [pages, strategy, customPerfData, inspectedUrl]);
 
@@ -155,15 +195,68 @@ export default function PerformanceTab({ pages }) {
     return { text: 'text-rose-700 dark:text-rose-300', stroke: '#E11D48', bg: 'bg-rose-50 dark:bg-rose-950/40', border: 'border-rose-200 dark:border-rose-900/50', label: 'Poor' };
   };
 
+  const evaluateVital = (rawValue, metricType) => {
+    if (!rawValue || rawValue === '-') {
+      return { status: 'N/A', tone: 'slate', fill: 0.1, target: '-' };
+    }
+    const num = parseFloat(String(rawValue).replace(/[^0-9.]/g, ''));
+    if (isNaN(num)) {
+      return { status: 'Audited', tone: 'indigo', fill: 0.7, target: '-' };
+    }
+
+    if (metricType === 'lcp') {
+      if (num <= 2.5) return { status: 'Good', tone: 'emerald', fill: 0.9, target: '< 2.5s' };
+      if (num <= 4.0) return { status: 'Needs Work', tone: 'amber', fill: 0.55, target: '< 2.5s' };
+      return { status: 'Poor', tone: 'rose', fill: 0.25, target: '< 2.5s' };
+    }
+    if (metricType === 'cls') {
+      if (num <= 0.1) return { status: 'Good', tone: 'emerald', fill: 0.92, target: '< 0.1' };
+      if (num <= 0.25) return { status: 'Needs Work', tone: 'amber', fill: 0.55, target: '< 0.1' };
+      return { status: 'Poor', tone: 'rose', fill: 0.2, target: '< 0.1' };
+    }
+    if (metricType === 'inp') {
+      let inpMs = num;
+      if (String(rawValue).includes('s') && !String(rawValue).includes('ms')) {
+        inpMs = num * 1000;
+      }
+      if (inpMs <= 200) return { status: 'Good', tone: 'emerald', fill: 0.88, target: '< 200ms' };
+      if (inpMs <= 500) return { status: 'Needs Work', tone: 'amber', fill: 0.55, target: '< 200ms' };
+      return { status: 'Poor', tone: 'rose', fill: 0.2, target: '< 200ms' };
+    }
+    if (metricType === 'ttfb') {
+      if (num <= 800) return { status: 'Fast', tone: 'emerald', fill: 0.85, target: '< 800ms' };
+      if (num <= 1800) return { status: 'Moderate', tone: 'amber', fill: 0.55, target: '< 800ms' };
+      return { status: 'Slow', tone: 'rose', fill: 0.25, target: '< 800ms' };
+    }
+    if (metricType === 'fcp') {
+      if (num <= 1.8) return { status: 'Good', tone: 'emerald', fill: 0.88, target: '< 1.8s' };
+      if (num <= 3.0) return { status: 'Needs Work', tone: 'amber', fill: 0.55, target: '< 1.8s' };
+      return { status: 'Poor', tone: 'rose', fill: 0.25, target: '< 1.8s' };
+    }
+    if (metricType === 'speedIndex') {
+      if (num <= 3.4) return { status: 'Good', tone: 'emerald', fill: 0.85, target: '< 3.4s' };
+      if (num <= 5.8) return { status: 'Needs Work', tone: 'amber', fill: 0.55, target: '< 3.4s' };
+      return { status: 'Poor', tone: 'rose', fill: 0.25, target: '< 3.4s' };
+    }
+    return { status: 'Optimal', tone: 'emerald', fill: 0.8, target: '-' };
+  };
+
   const vitals = useMemo(() => {
     if (!metrics) return [];
+    const lcpEval = evaluateVital(metrics.lcp, 'lcp');
+    const clsEval = evaluateVital(metrics.cls, 'cls');
+    const inpEval = evaluateVital(metrics.inp, 'inp');
+    const ttfbEval = evaluateVital(metrics.ttfb, 'ttfb');
+    const fcpEval = evaluateVital(metrics.fcp, 'fcp');
+    const siEval = evaluateVital(metrics.speedIndex, 'speedIndex');
+
     return [
-      { label: 'LCP (Largest Paint)', value: metrics.lcp, target: '< 2.5s', fill: 0.8, tone: 'emerald' },
-      { label: 'CLS (Layout Shift)', value: metrics.cls, target: '< 0.1', fill: 0.92, tone: 'emerald' },
-      { label: 'INP (Interaction)', value: metrics.inp, target: '< 200ms', fill: 0.83, tone: 'emerald' },
-      { label: 'TTFB (Server Time)', value: metrics.ttfb, target: '< 800ms', fill: 0.75, tone: 'indigo' },
-      { label: 'FCP (First Paint)', value: metrics.fcp, target: '< 1.8s', fill: 0.8, tone: 'emerald' },
-      { label: 'Speed Index', value: metrics.speedIndex, target: '< 3.4s', fill: 0.83, tone: 'emerald' },
+      { label: 'LCP (Largest Paint)', value: metrics.lcp, ...lcpEval },
+      { label: 'CLS (Layout Shift)', value: metrics.cls, ...clsEval },
+      { label: 'INP (real visitors only)', value: metrics.inp, ...inpEval },
+      { label: "Server response (Google's test)", value: metrics.ttfb, ...ttfbEval },
+      { label: 'FCP (First Paint)', value: metrics.fcp, ...fcpEval },
+      { label: 'Speed Index', value: metrics.speedIndex, ...siEval },
     ];
   }, [metrics]);
 
@@ -214,7 +307,16 @@ export default function PerformanceTab({ pages }) {
             <Zap className="text-amber-500 shrink-0" size={24} />
             Performance & Core Web Vitals
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Real-user Google Lighthouse diagnostics and field Core Web Vitals telemetry.</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Lab test by Google Lighthouse{measuredUrl ? <> of <span className="font-semibold break-all">{measuredUrl.replace(/^https?:\/\//, '')}</span></> : ''}, measured during this audit. Real-visitor data is shown separately when Google has it.
+          </p>
+          {metrics && (
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">
+              {fieldData
+                ? <>Real visitors ({fieldData.scope === 'origin' ? 'whole site' : 'this page'}, 75th percentile): LCP {fieldData.lcp_p75_ms != null ? `${(fieldData.lcp_p75_ms / 1000).toFixed(1)} s` : 'no data'} · INP {fieldData.inp_p75_ms != null ? `${fieldData.inp_p75_ms} ms` : 'no data'} · CLS {fieldData.cls_p75 ?? 'no data'}</>
+                : 'Real visitors: Google does not have enough Chrome visitor data for this site yet, so only the lab test is shown.'}
+            </p>
+          )}
         </div>
 
         {/* Strategy Buttons */}
@@ -386,7 +488,7 @@ export default function PerformanceTab({ pages }) {
               <span className={`px-3 py-1 rounded-full text-xs font-bold font-mono border ${scoreMeta.bg} ${scoreMeta.text} ${scoreMeta.border}`}>
                 {scoreMeta.label} ({strategy.toUpperCase()})
               </span>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">Google Lighthouse v12.1 Engine</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">Lab test (Google Lighthouse)</p>
             </div>
 
             {/* 6 Core Web Vitals Bento Cards */}
@@ -397,31 +499,48 @@ export default function PerformanceTab({ pages }) {
               animate="animate"
               className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3.5"
             >
-              {vitals.map((v, i) => (
-                <motion.div
-                  key={v.label}
-                  variants={staggerItem}
-                  whileHover={{ y: -3 }}
-                  transition={spring.press}
-                  className="metric-card-item p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-colors"
-                >
-                  <span className="text-[9px] sm:text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase truncate">{v.label}</span>
-                  <div className="my-1.5 sm:my-2">
-                    <div className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white font-mono truncate">{v.value}</div>
-                    <p className={`text-[9px] sm:text-[10px] font-semibold truncate ${v.tone === 'indigo' ? 'text-indigo-700 dark:text-indigo-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
-                      Target: {v.target}
-                    </p>
-                  </div>
-                  <div className="h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
-                    <motion.div
-                      className={`h-full w-full origin-left rounded-full ${v.tone === 'indigo' ? 'bg-indigo-500' : 'bg-emerald-500'}`}
-                      initial={{ scaleX: 0 }}
-                      animate={{ scaleX: v.fill }}
-                      transition={{ duration: 0.8, ease: ease.outQuart, delay: 0.15 + i * 0.05 }}
-                    />
-                  </div>
-                </motion.div>
-              ))}
+              {vitals.map((v, i) => {
+                const toneStyle = {
+                  emerald: { text: 'text-emerald-700 dark:text-emerald-400', bar: 'bg-emerald-500', badge: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' },
+                  amber: { text: 'text-amber-700 dark:text-amber-400', bar: 'bg-amber-500', badge: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' },
+                  rose: { text: 'text-rose-700 dark:text-rose-400', bar: 'bg-rose-500', badge: 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800' },
+                  indigo: { text: 'text-indigo-700 dark:text-indigo-400', bar: 'bg-indigo-500', badge: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800' },
+                  slate: { text: 'text-slate-500 dark:text-slate-400', bar: 'bg-slate-400', badge: 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700' }
+                }[v.tone] || { text: 'text-emerald-700 dark:text-emerald-400', bar: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+
+                return (
+                  <motion.div
+                    key={v.label}
+                    variants={staggerItem}
+                    whileHover={{ y: -3 }}
+                    transition={spring.press}
+                    className="metric-card-item p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[9px] sm:text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase truncate">{v.label}</span>
+                      {v.status && (
+                        <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border ${toneStyle.badge}`}>
+                          {v.status}
+                        </span>
+                      )}
+                    </div>
+                    <div className="my-1.5 sm:my-2">
+                      <div className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white font-mono truncate">{v.value}</div>
+                      <p className={`text-[9px] sm:text-[10px] font-semibold truncate ${toneStyle.text}`}>
+                        Target: {v.target}
+                      </p>
+                    </div>
+                    <div className="h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
+                      <motion.div
+                        className={`h-full w-full origin-left rounded-full ${toneStyle.bar}`}
+                        initial={{ scaleX: 0 }}
+                        animate={{ scaleX: Math.max(0.08, Math.min(1, v.fill || 0.8)) }}
+                        transition={{ duration: 0.8, ease: ease.outQuart, delay: 0.15 + i * 0.05 }}
+                      />
+                    </div>
+                  </motion.div>
+                );
+              })}
             </motion.div>
 
           </div>
@@ -461,7 +580,7 @@ export default function PerformanceTab({ pages }) {
                       </div>
                       <div>
                         <h5 className="text-xs font-bold text-slate-900 dark:text-white">{opp.title}</h5>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">Implement browser compression and next-gen format delivery.</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">{getOpportunitySubtitle(opp.title)}</p>
                       </div>
                     </div>
 

@@ -20,38 +20,31 @@ export default function AnimatedNumber({
 }) {
   const target = Number(value) || 0;
   const [displayVal, setDisplayVal] = useState(target);
-  const prevRef = useRef(target);
+  // The value currently on screen, so an interrupted animation continues from there instead of jumping.
+  const currentRef = useRef(target);
   const reduced = useReducedMotion();
 
   useEffect(() => {
     if (reduced) {
-      setDisplayVal(target);
-      prevRef.current = target;
-      return;
+      currentRef.current = target; // shown directly below, no animation
+      return undefined;
     }
-
-    const start = prevRef.current;
-    if (start === target) {
-      setDisplayVal(target);
-      return;
-    }
+    const start = currentRef.current;
+    if (start === target) return undefined;
 
     const controls = animate(start, target, {
       duration,
       ease: ease.outQuart,
       onUpdate: (latest) => {
+        currentRef.current = latest;
         setDisplayVal(latest);
       },
-      onComplete: () => {
-        setDisplayVal(target);
-        prevRef.current = target;
-      },
     });
-
     return () => controls.stop();
   }, [target, duration, reduced]);
 
-  const formatted = `${prefix}${displayVal.toFixed(decimals)}${suffix}`;
+  const shown = reduced ? target : displayVal;
+  const formatted = `${prefix}${shown.toFixed(decimals)}${suffix}`;
 
   return (
     <span className={`tabular-nums font-black ${className}`}>

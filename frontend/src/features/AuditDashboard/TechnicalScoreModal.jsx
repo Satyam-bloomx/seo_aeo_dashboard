@@ -25,11 +25,13 @@ import {
 } from 'lucide-react';
 
 const PILLAR_ICONS = {
-  crawlability: <Radio size={16} className="text-blue-600 dark:text-blue-400" />,
   indexability: <Bot size={16} className="text-emerald-600 dark:text-emerald-400" />,
-  architecture: <ShieldCheck size={16} className="text-indigo-600 dark:text-indigo-400" />,
-  metadata: <FileCode size={16} className="text-purple-600 dark:text-purple-400" />,
-  rendering: <Zap size={16} className="text-amber-600 dark:text-amber-400" />,
+  onpage: <FileCode size={16} className="text-purple-600 dark:text-purple-400" />,
+  content: <Layers size={16} className="text-blue-600 dark:text-blue-400" />,
+  links: <Radio size={16} className="text-indigo-600 dark:text-indigo-400" />,
+  security: <ShieldCheck size={16} className="text-teal-600 dark:text-teal-400" />,
+  structured: <Zap size={16} className="text-amber-600 dark:text-amber-400" />,
+  technical: <Info size={16} className="text-slate-600 dark:text-slate-400" />,
 };
 
 export default function TechnicalScoreModal({
@@ -40,17 +42,17 @@ export default function TechnicalScoreModal({
   onExploreCategory
 }) {
   const [activeTab, setActiveTab] = useState('pillars'); // 'pillars' | 'all-checks'
-  const [expandedPillars, setExpandedPillars] = useState({ architecture: true }); // Open worst pillar by default
+  const [expandedPillars, setExpandedPillars] = useState({});
   const [pillarFilters, setPillarFilters] = useState({}); // { [pillarId]: 'all' | 'flagged' | 'passed' }
   const [searchQuery, setSearchQuery] = useState('');
   const [globalFilter, setGlobalFilter] = useState('all'); // 'all' | 'flagged' | 'passed'
 
-  if (!technicalSeoResult) return null;
-
-  const { score, technicalScore, grade, technicalGrade, pillars = [], checksSummary = {} } = technicalSeoResult;
+  const { score, technicalScore, grade, technicalGrade, pillars = [], checksSummary = {} } = technicalSeoResult || {};
   const displayScore = technicalScore !== undefined ? technicalScore : score;
   const displayGrade = technicalGrade || grade;
-  const allChecks = checksSummary.allChecks || [];
+  // A stable fallback, so the filtered list below is not recomputed on every render.
+  const allChecks = useMemo(() => checksSummary.allChecks || [], [checksSummary.allChecks]);
+  const totalChecks = checksSummary.totalEvaluated ?? 0;
 
   const togglePillar = (id) => {
     setExpandedPillars(prev => ({
@@ -76,15 +78,18 @@ export default function TechnicalScoreModal({
 
       const matchesStatus = 
         globalFilter === 'all' || 
-        (globalFilter === 'flagged' && !check.isPassing) ||
+        (globalFilter === 'flagged' && check.status === 'Flagged') ||
         (globalFilter === 'passed' && check.isPassing);
 
       return matchesSearch && matchesStatus;
     });
   }, [allChecks, searchQuery, globalFilter]);
 
+  // Early return only after every hook has run (Rules of Hooks).
+  if (!technicalSeoResult) return null;
+
   return (
-    <AnimatedModal isOpen={isOpen} onClose={onClose} size="2xl">
+    <AnimatedModal isOpen={isOpen} onClose={onClose} size="xl">
       <div className="flex flex-col bg-white dark:bg-slate-900 overflow-hidden rounded-3xl max-h-[90vh]">
         {/* Header Bar */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/80 px-6 py-4">
@@ -101,11 +106,11 @@ export default function TechnicalScoreModal({
                   5-Pillar Standard
                 </span>
                 <span className="rounded-md border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-700 dark:text-slate-300">
-                  {checksSummary.totalEvaluated || 61} Automated Tests
+                  {totalChecks} Automated Tests
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Evaluates 61 granular technical rules across 14 categories matching Screaming Frog v20.4 & Google Search Central
+                Evaluates {totalChecks} granular technical rules across 14 categories based on Google Search Central guidance
               </p>
             </div>
           </div>
@@ -144,12 +149,12 @@ export default function TechnicalScoreModal({
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
-                  Synthesizes <strong className="text-slate-900 dark:text-white">{checksSummary.totalEvaluated || 61} diagnostic checks</strong> across <strong className="text-slate-900 dark:text-white">{totalPages}</strong> crawled URLs.
+                  Synthesizes <strong className="text-slate-900 dark:text-white">{totalChecks} diagnostic checks</strong> across <strong className="text-slate-900 dark:text-white">{totalPages}</strong> crawled URLs.
                 </p>
                 <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
                   <span>URL Health Hygiene:</span>
                   <strong className="text-indigo-600 dark:text-indigo-400 font-mono">
-                    {checksSummary.errorFreePages} / {totalPages} Error-Free Pages ({checksSummary.errorFreeRatio}%)
+                    {checksSummary.errorFreePages ?? 0} URLs without critical errors ({checksSummary.errorFreeRatio ?? '—'}%)
                   </strong>
                 </div>
               </div>
@@ -158,7 +163,7 @@ export default function TechnicalScoreModal({
             <div className="flex items-center gap-4 font-mono text-xs border-t md:border-t-0 md:border-l border-indigo-100/80 dark:border-indigo-900/40 pt-3 md:pt-0 md:pl-5 shrink-0 w-full md:w-auto justify-around md:justify-end">
               <div className="text-center">
                 <span className="text-slate-500 dark:text-slate-400 block text-[10px] uppercase font-sans">Total Evaluated</span>
-                <span className="font-bold text-slate-900 dark:text-white text-base">{checksSummary.totalEvaluated || 61} Checks</span>
+                <span className="font-bold text-slate-900 dark:text-white text-base">{totalChecks} Checks</span>
               </div>
               <div className="text-center">
                 <span className="text-emerald-600 dark:text-emerald-400 block text-[10px] uppercase font-sans">Passing Clean</span>
@@ -168,6 +173,10 @@ export default function TechnicalScoreModal({
                 <span className="text-rose-600 dark:text-rose-400 block text-[10px] uppercase font-sans">Issues Flagged</span>
                 <span className="font-bold text-rose-700 dark:text-rose-300 text-base">{checksSummary.issuesCount}</span>
               </div>
+              <div className="text-center" title="Checks with no data for this crawl are excluded from the score, never counted as passes.">
+                <span className="text-slate-500 dark:text-slate-400 block text-[10px] uppercase font-sans">Not Evaluated</span>
+                <span className="font-bold text-slate-700 dark:text-slate-300 text-base">{checksSummary.notEvaluatedCount ?? 0}</span>
+              </div>
             </div>
           </motion.div>
 
@@ -176,15 +185,15 @@ export default function TechnicalScoreModal({
             <Info size={16} className="text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <div className="font-semibold text-slate-900 dark:text-white">
-                How Technical SEO Scoring Works: 5 Core Pillars Aggregating 61+ Underlying Tests
+                How Technical SEO Scoring Works: 5 Core Pillars Aggregating {totalChecks}+ Underlying Tests
               </div>
               <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
-                Rather than treating all checks as a flat list, enterprise audit suites (Ahrefs, Semrush, Screaming Frog) group tests into <strong>5 weighted architectural pillars</strong>. Beneath each pillar, dozens of exact technical rules are tested against every internal page. Click on any pillar below to inspect its full list of passing and flagged checks.
+                <strong>Site Health</strong> blends two measures equally: the share of URLs with no critical error (the method Ahrefs uses for its Health Score) and a severity-weighted pass rate across every check (critical 5, warning 3, notice 1, as in Lighthouse category scores). Checks without data are excluded rather than counted as passes. The categories below are a diagnostic breakdown; click one to see its checks.
               </p>
             </div>
           </div>
 
-          {/* View Mode Toggle: 5 Pillars vs All 61 Checks */}
+          {/* View Mode Toggle: 5 Pillars vs All Checks */}
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
             <div className="flex items-center gap-2">
               <button
@@ -209,7 +218,7 @@ export default function TechnicalScoreModal({
               >
                 <span>Full Telemetry Directory</span>
                 <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                  {checksSummary.totalEvaluated || 61}
+                  {totalChecks}
                 </span>
               </button>
             </div>
@@ -223,8 +232,8 @@ export default function TechnicalScoreModal({
           {activeTab === 'pillars' && (
             <div className="space-y-4">
               {pillars.map((pillar) => {
-                const isExcellent = pillar.score >= 90;
-                const isGood = pillar.score >= 75;
+                const isExcellent = pillar.score >= 91;
+                const isGood = pillar.score >= 71;
                 const isExpanded = Boolean(expandedPillars[pillar.id]);
                 const filter = pillarFilters[pillar.id] || 'all';
 
@@ -256,7 +265,7 @@ export default function TechnicalScoreModal({
                                 {pillar.name}
                               </h4>
                               <span className="px-1.5 py-0.2 rounded font-mono text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                                Weight: {pillar.weight}
+                                {pillar.score === null ? 'Not evaluated' : pillar.band}
                               </span>
                               <span className="px-1.5 py-0.2 rounded font-mono text-[10px] font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                                 {pillar.passedCount || 0} Passing / {pillar.flaggedCount || 0} Flagged
@@ -277,7 +286,7 @@ export default function TechnicalScoreModal({
                                 ? 'text-indigo-700 dark:text-indigo-300' 
                                 : 'text-rose-600 dark:text-rose-400'
                             }`}>
-                              {pillar.score}
+                              {pillar.score ?? '—'}
                             </span>
                             <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">/100</span>
                           </div>
@@ -297,7 +306,7 @@ export default function TechnicalScoreModal({
                               ? 'bg-indigo-500' 
                               : 'bg-rose-500'
                           }`}
-                          style={{ width: `${pillar.score}%` }}
+                          style={{ width: `${pillar.score ?? 0}%` }}
                         />
                       </div>
                     </div>
@@ -470,7 +479,7 @@ export default function TechnicalScoreModal({
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search 61 technical checks (e.g. title, 404, canonical, H1, alt, cwv)..."
+                    placeholder={`Search ${totalChecks} technical checks (e.g. title, 404, canonical, H1, alt, cwv)...`}
                     className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                   />
                   {searchQuery && (
@@ -525,7 +534,7 @@ export default function TechnicalScoreModal({
               <div className="space-y-2">
                 {filteredAllChecks.length === 0 ? (
                   <div className="text-center py-8 text-xs text-slate-500">
-                    No technical checks found matching "{searchQuery}".
+                    No technical checks found matching &quot;{searchQuery}&quot;.
                   </div>
                 ) : (
                   filteredAllChecks.map((check) => {
@@ -619,7 +628,7 @@ export default function TechnicalScoreModal({
         {/* Footer Bar */}
         <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/80 px-6 py-4">
           <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
-            Audit standard: Screaming Frog v20.4 + Google Search Central (61 Active Checks)
+            Based on Google Search Central guidance ({totalChecks} active checks)
           </span>
           <button
             type="button"
