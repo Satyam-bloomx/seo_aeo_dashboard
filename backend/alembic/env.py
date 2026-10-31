@@ -19,10 +19,11 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 from app.models.domain import Base
-from app.core.database import settings
+# Use the same normalized URL as the app (driver rewrite + absolute SQLite path).
+from app.core.database import db_url
 
 target_metadata = Base.metadata
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -67,11 +68,8 @@ async def run_async_migrations() -> None:
 
     """
 
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Reuse the application's engine so pooler settings (e.g. pgbouncer statement_cache_size=0) apply.
+    from app.core.database import engine as connectable
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

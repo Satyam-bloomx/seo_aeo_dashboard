@@ -1,5 +1,6 @@
 .env
 .env.*
+!.env.example
 .venv/
 __pycache__/
 *.py[cod]
@@ -25,6 +26,8 @@ MANIFEST
 
 # sqlite
 *.db
+*.db-shm
+*.db-wal
 *.sqlite3
 
 # ide

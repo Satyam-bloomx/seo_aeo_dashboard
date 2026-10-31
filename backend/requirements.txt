@@ -1,35 +1,51 @@
-fastapi
-uvicorn[standard]
-pydantic
-pydantic-settings
-sqlalchemy
-aiosqlite
-asyncpg
-alembic
-httpx
-requests
-curl-cffi
-beautifulsoup4
-lxml
-lxml-html-clean
-html5lib
-playwright==1.50.0
-playwright-stealth
-redis
-celery
-google-generativeai
-google-api-python-client
-google-auth
-google-auth-httplib2
-textstat
-nltk
-spacy
-en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
-extruct
-rdflib
-mf2py
-pyrdfa3
-jinja2
-python-dotenv
-numpy
-pyjwt[crypto]
+# Direct runtime dependencies, pinned for reproducible builds.
+# Regenerate a fully hashed lock with: pip-compile --generate-hashes requirements.in
+
+# Web framework
+fastapi==0.139.0
+uvicorn[standard]==0.50.2
+pydantic==2.13.4
+pydantic-settings==2.14.2
+python-dotenv==1.2.2
+
+# Database
+sqlalchemy==2.0.51
+aiosqlite==0.22.1
+asyncpg==0.31.0
+alembic==1.18.5
+redis==8.0.1
+
+# HTTP / crawling
+httpx[http2]==0.28.1
+requests==2.34.2
+beautifulsoup4==4.15.0
+lxml==6.1.1
+lxml-html-clean==0.4.5
+protego==0.7.0
+playwright==1.61.0
+axe-playwright-python==0.1.7
+
+# Auth / crypto
+pyjwt[crypto]==2.15.1
+cryptography>=50.0.0
+
+# Google APIs
+google-api-python-client==2.198.0
+google-auth==2.55.1
+google-auth-httplib2==0.4.0
+# Deprecated SDK: migrate to google-genai (see docs/SECURITY_AUDIT_AND_ROADMAP.md, Phase 4).
+google-generativeai==0.8.6
+
+# Content analysis
+textstat==0.7.13
+
+# Security floors for vulnerable transitive dependencies (OSV advisories, Oct 2026)
+anyio>=4.14.2
+certifi>=2026.10.18
+urllib3>=2.8.0
+h2>=4.4.1
+soupsieve>=2.9.0
+
+# Removed: spacy, en-core-web-sm, extruct (only used by the deleted legacy pipeline), curl-cffi (TLS fingerprint impersonation), playwright-stealth (bot-detection evasion),
+# nltk (unused; critical CVEs), celery (unused), rdflib/mf2py/pyrdfa3/html5lib (pulled in by extruct),
+# jinja2/numpy (not imported directly).

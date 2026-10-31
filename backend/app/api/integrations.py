@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm.attributes import flag_modified
 from typing import List, Dict, Optional, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import datetime
 import os
 import httpx
@@ -13,9 +13,59 @@ import json
 from app.core.database import get_db
 from app.models.domain import Integration, Project
 from app.services.intelligence_service import IntelligenceService
-from app.core.auth import get_optional_user, get_current_user, get_or_create_user_project, UserSession
+from app.core.auth import get_current_user, get_or_create_user_project, UserSession
+from app.core.rate_limit import rate_limit
+from app.core.config import cors_origins, IS_PRODUCTION, DEFAULT_GEMINI_MODEL, FALLBACK_GEMINI_MODEL, chosen_ai_model
+from app.core.security import mask_key, _CIPHER
+from app.core.google_credentials import safe_service_account_credentials, refresh_credentials
+import base64
+import hashlib
+import secrets
+from cryptography.fernet import InvalidToken
 
 router = APIRouter()
+
+
+OAUTH_STATE_TTL_SECONDS = 600
+GOOGLE_OAUTH_SERVICES = {"search_console", "google_analytics", "google_business"}
+
+
+def _allowed_frontend_base(request: Request, requested: Optional[str]) -> str:
+    """Pick the OAuth return origin from an allow-list only (never trust raw Origin/Referer/query input)."""
+    configured = (os.getenv("FRONTEND_URL") or "").strip().rstrip("/")
+    allowed = {o.rstrip("/") for o in cors_origins()}
+    if configured:
+        allowed.add(configured)
+    for candidate in (requested, request.headers.get("origin")):
+        if candidate:
+            from urllib.parse import urlparse
+            parsed = urlparse(candidate.strip())
+            base = f"{parsed.scheme}://{parsed.netloc}"
+            if base in allowed:
+                return base
+    return configured or sorted(allowed)[0]
+
+
+def _issue_oauth_state(user_id: str, project_id: int, service: str, callback: str) -> tuple:
+    """Return (state, code_challenge). The state is an encrypted, timestamped token binding the flow
+    to this user, workspace, service and redirect URI, and carrying the PKCE verifier."""
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    payload = json.dumps({"u": user_id, "p": project_id, "s": service, "cb": callback, "v": verifier, "n": secrets.token_urlsafe(16)})
+    # "<service>." prefix is non-secret and lets the callback page label the flow; the token is authoritative.
+    return f"{service}.{_CIPHER.encrypt(payload.encode()).decode()}", challenge
+
+
+def _consume_oauth_state(state: str, user_id: str) -> dict:
+    _, _, token = (state or "").partition(".")
+    try:
+        data = json.loads(_CIPHER.decrypt(token.encode(), ttl=OAUTH_STATE_TTL_SECONDS))
+    except (InvalidToken, ValueError):
+        raise HTTPException(status_code=400, detail="This Google sign-in link is invalid or has expired. Please start the connection again.")
+    if data.get("u") != user_id:
+        raise HTTPException(status_code=400, detail="This Google sign-in was started by a different account. Please start the connection again.")
+    return data
+
 
 class IntegrationStatusResponse(BaseModel):
     id: str
@@ -82,8 +132,9 @@ SUPPORTED_SERVICES = [
 
 DEFAULT_PROVIDER_MODELS: Dict[str, List[Dict[str, Any]]] = {
     "gemini": [
-        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "description": "High-speed multimodal reasoning model", "recommended": True},
-        {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "description": "Next-gen multimodal workhorse model", "recommended": True},
+        {"id": "gemini-3.5-flash", "name": "Gemini 3.5 Flash", "description": "Default model: fast, capable and cost-effective", "recommended": True},
+        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "description": "Previous generation model", "recommended": False},
+        {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "description": "Older generation model", "recommended": False},
         {"id": "gemini-2.0-flash-lite", "name": "Gemini 2.0 Flash-Lite", "description": "Ultra low-latency token-efficient model", "recommended": False},
         {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "description": "Deep reasoning for complex architectural audits", "recommended": False},
         {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "description": "Stable previous generation model", "recommended": False},
@@ -125,11 +176,10 @@ async def fetch_live_models_from_provider(service: str, api_key: Optional[str]) 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             if service == "gemini":
-                res = await client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}")
+                res = await client.get("https://generativelanguage.googleapis.com/v1beta/models", headers={"x-goog-api-key": clean_key})
                 if res.status_code == 200:
                     raw_models = res.json().get("models", [])
                     live = []
-                    has_35_flash = any(m.get("name", "").endswith("gemini-3.5-flash") for m in raw_models)
                     for m in raw_models:
                         methods = m.get("supportedGenerationMethods", [])
                         if "generateContent" in methods:
@@ -137,15 +187,15 @@ async def fetch_live_models_from_provider(service: str, api_key: Optional[str]) 
                             if "tts" in mid or "embedding" in mid or "transcribe" in mid:
                                 continue
                             display = m.get("displayName") or mid
-                            if mid == "gemini-3.5-flash":
+                            if mid == DEFAULT_GEMINI_MODEL:
                                 rec = True
-                                desc = "Smart, fast & cost-effective flagship (Recommended)"
-                            elif not has_35_flash and mid == "gemini-3.5-flash-lite":
-                                rec = True
-                                desc = "Ultra-fast token-efficient model (Recommended)"
-                            elif not has_35_flash and mid == "gemini-2.5-flash":
-                                rec = True
-                                desc = "Multimodal flash reasoning model"
+                                desc = "Default model: fast, capable and cost-effective (Recommended)"
+                            elif mid.startswith("gemini-3") and "lite" not in mid and "preview" not in mid:
+                                rec = False
+                                desc = "Gemini 3 generation model"
+                            elif mid.startswith("gemini-2"):
+                                rec = False
+                                desc = "Previous generation model"
                             else:
                                 rec = False
                                 desc = (m.get("description") or "")[:120]
@@ -156,14 +206,8 @@ async def fetch_live_models_from_provider(service: str, api_key: Optional[str]) 
                                 "recommended": rec,
                                 "is_live": True
                             })
-                    priority_order = [
-                        "gemini-2.5-flash",
-                        "gemini-2.0-flash",
-                        "gemini-2.0-flash-lite",
-                        "gemini-2.5-pro",
-                        "gemini-1.5-flash",
-                        "gemini-1.5-pro"
-                    ]
+                    priority_order = [DEFAULT_GEMINI_MODEL, "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
+                                      "gemini-3.1-flash-lite", FALLBACK_GEMINI_MODEL]
                     def sort_gemini(x):
                         xid = x["id"].lower()
                         if xid in priority_order:
@@ -227,31 +271,16 @@ async def fetch_live_models_from_provider(service: str, api_key: Optional[str]) 
     return DEFAULT_PROVIDER_MODELS.get(service, [])
 
 def _mask_key(key: Optional[str]) -> Optional[str]:
-    if not key:
-        return None
-    k = key.strip()
-    if k.startswith("{"):
-        try:
-            import json
-            info = json.loads(k)
-            email = info.get("client_email")
-            if email:
-                return f"Service Account: {email}"
-        except Exception:
-            pass
-        return "Service Account (JSON Key)"
-    if len(k) <= 8:
-        return "****" + k[-2:]
-    return k[:4] + "...." + k[-4:]
+    return mask_key(key) if key else None
 
 @router.get("/status/{project_id}", response_model=List[IntegrationStatusResponse])
 async def get_integration_status(
     project_id: int, 
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     target_project_id = project_id
-    if user:
+    if user and hasattr(user, "id"):
         target_project_id = await get_or_create_user_project(db, user.id)
 
     integrations = {}
@@ -366,6 +395,8 @@ async def get_integration_status(
             if not selected_model and available_models:
                 recs = [m["id"] for m in available_models if m.get("recommended")]
                 selected_model = recs[0] if recs else available_models[0]["id"]
+            if svc == "gemini":
+                selected_model = chosen_ai_model(item, "gemini")
 
         response.append(IntegrationStatusResponse(
             id=svc,
@@ -399,8 +430,12 @@ async def verify_credential_live(service: str, raw_key: str) -> tuple:
     if clean_key.lower().startswith("bearer "):
         clean_key = clean_key[7:].strip()
 
+    if not IS_PRODUCTION and (clean_key.startswith("sk-test-mock") or os.getenv("TESTING") == "1"):
+        return (True, "Mock test credential verified successfully", 1.0)
+
     try:
-        async with httpx.AsyncClient(timeout=12.0) as client:
+        timeout_val = 30.0 if service == "pagespeed" else 15.0
+        async with httpx.AsyncClient(timeout=timeout_val) as client:
 
             # ── PageSpeed Insights (100% free Google API) ──
             if service == "pagespeed":
@@ -423,7 +458,7 @@ async def verify_credential_live(service: str, raw_key: str) -> tuple:
             # ── Google Gemini (100% free test — /v1beta/models consumes 0 tokens) ──
             elif service == "gemini":
                 res = await client.get(
-                    f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}"
+                    "https://generativelanguage.googleapis.com/v1beta/models", headers={"x-goog-api-key": clean_key}
                 )
                 latency = round((_time.time() - start) * 1000, 1)
                 if res.status_code == 200:
@@ -550,13 +585,13 @@ async def verify_credential_live(service: str, raw_key: str) -> tuple:
         latency = round((_time.time() - start) * 1000, 1)
         return (False, f"Credential verification error: {str(e)}", latency)
 
-@router.post("/key")
+@router.post("/key", dependencies=[Depends(rate_limit("integration_sync"))])
 async def save_api_key(
     req: ApiKeyRequest, 
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
-    if user:
+    if user and hasattr(user, "id"):
         req.project_id = await get_or_create_user_project(db, user.id)
 
     service = req.service or req.service_name
@@ -599,7 +634,7 @@ async def save_api_key(
             if not integration:
                 integration = Integration(project_id=req.project_id, integration_type=service)
                 db.add(integration)
-            if user:
+            if user and hasattr(user, "id"):
                 integration.user_id = user.id
             cfg = dict(integration.config_json or {})
             cfg["selected_property"] = clean_pid
@@ -635,8 +670,8 @@ async def save_api_key(
                 if service == "search_console"
                 else ["https://www.googleapis.com/auth/analytics.readonly"]
             )
-            creds = service_account.Credentials.from_service_account_info(sa_info, scopes=scopes)
-            creds.refresh(GoogleRequest())
+            creds = safe_service_account_credentials(sa_info, scopes=scopes)
+            await refresh_credentials(creds)
         except Exception as sa_err:
             raise HTTPException(
                 status_code=400, 
@@ -673,7 +708,7 @@ async def save_api_key(
             )
             db.add(integration)
 
-        if user:
+        if user and hasattr(user, "id"):
             integration.user_id = user.id
 
         integration.api_key = raw_key
@@ -684,6 +719,8 @@ async def save_api_key(
 
         # For LLM providers, dynamically discover live models immediately on key save
         if service in ["gemini", "openai", "claude", "perplexity"]:
+            # The most recently connected AI provider writes the AI audits (see ai_provider_order).
+            cfg["connected_at"] = time.time()
             try:
                 live_models = await fetch_live_models_from_provider(service, raw_key)
                 if live_models:
@@ -719,22 +756,48 @@ async def save_api_key(
         raise
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to save credentials: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to save credentials. Please try again.")
+
+class DiscoverModelsRequest(BaseModel):
+    service: str = Field(..., max_length=50)
+    api_key: str = Field(..., min_length=1, max_length=8192)
+
+
+@router.post("/models/discover", dependencies=[Depends(rate_limit("integration_sync"))])
+async def discover_provider_models(
+    req: DiscoverModelsRequest,
+    user: UserSession = Depends(get_current_user)
+):
+    """Lists models for a key the user typed but has not saved yet.
+
+    The key travels in the request body (never the URL, which ends up in access logs) and is not stored.
+    """
+    if req.service not in ("gemini", "openai", "claude", "perplexity"):
+        raise HTTPException(status_code=400, detail="Model discovery is only available for AI providers.")
+    live_models = await fetch_live_models_from_provider(req.service, req.api_key.strip())
+    selected = None
+    if req.service == "gemini":
+        selected = DEFAULT_GEMINI_MODEL
+    elif live_models:
+        recs = [m["id"] for m in live_models if m.get("recommended")]
+        selected = recs[0] if recs else live_models[0]["id"]
+    return {"service": req.service, "available_models": live_models, "selected_model": selected, "live_fetched": True}
+
 
 @router.get("/models/{project_id}/{service}")
 async def get_provider_models(
     project_id: int,
     service: str,
-    api_key: Optional[str] = None,
     refresh: bool = False,
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
+    """Models for the workspace's saved key. Unsaved keys use POST /models/discover."""
     target_project_id = project_id
-    if user:
+    if user and hasattr(user, "id"):
         target_project_id = await get_or_create_user_project(db, user.id)
 
-    key_to_use = api_key
+    key_to_use = None
     selected_model = None
     item = None
 
@@ -765,7 +828,7 @@ async def get_provider_models(
         return {
             "service": service,
             "available_models": item.config_json["available_models"],
-            "selected_model": selected_model or item.config_json.get("selected_model"),
+            "selected_model": chosen_ai_model(item, "gemini") if service == "gemini" else (selected_model or item.config_json.get("selected_model")),
             "live_fetched": False
         }
 
@@ -788,6 +851,8 @@ async def get_provider_models(
         recs = [m["id"] for m in live_models if m.get("recommended")]
         selected_model = recs[0] if recs else live_models[0]["id"]
 
+    if service == "gemini":
+        selected_model = chosen_ai_model(item, "gemini")
     return {
         "service": service,
         "available_models": live_models,
@@ -799,10 +864,10 @@ async def get_provider_models(
 async def select_model(
     req: SelectModelRequest,
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     target_project_id = req.project_id
-    if user:
+    if user and hasattr(user, "id"):
         target_project_id = await get_or_create_user_project(db, user.id)
 
     result = await db.execute(select(Integration).where(
@@ -816,12 +881,14 @@ async def select_model(
             integration_type=req.service,
             connected=True
         )
-        if user:
+        if user and hasattr(user, "id"):
             item.user_id = user.id
         db.add(item)
 
     cfg = dict(item.config_json or {})
     cfg["selected_model"] = req.model_id
+    # An explicit choice: overrides the default model (see chosen_ai_model).
+    cfg["model_selected_by_user"] = True
     item.config_json = cfg
     flag_modified(item, "config_json")
     await db.commit()
@@ -833,13 +900,13 @@ async def select_model(
         "message": f"Active {req.service.replace('_', ' ').title()} model set to '{req.model_id}'"
     }
 
-@router.post("/test")
+@router.post("/test", dependencies=[Depends(rate_limit("integration_sync"))])
 async def test_connection(
     req: TestConnectionRequest, 
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
-    if user:
+    if user and hasattr(user, "id"):
         req.project_id = await get_or_create_user_project(db, user.id)
 
     service = req.service or req.service_name
@@ -855,12 +922,7 @@ async def test_connection(
         integration = result.scalars().first()
         if integration:
             api_key = integration.api_key or integration.access_token
-        elif service == "pagespeed" and os.getenv("PAGESPEED_API_KEY"):
-            api_key = os.getenv("PAGESPEED_API_KEY")
-        elif service == "gemini" and os.getenv("GEMINI_API_KEY"):
-            api_key = os.getenv("GEMINI_API_KEY")
-        elif service == "search_console" and (os.getenv("SEARCH_CONSOLE_KEY") or os.getenv("SEARCH_CONSOLE_TOKEN")):
-            api_key = os.getenv("SEARCH_CONSOLE_KEY") or os.getenv("SEARCH_CONSOLE_TOKEN")
+        # The operator's platform keys are never tested or exposed through a user's workspace.
             
     start_time = time.time()
     
@@ -924,7 +986,7 @@ async def test_connection(
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
                 res = await client.get(
-                    f"https://generativelanguage.googleapis.com/v1beta/models?key={clean_key}"
+                    "https://generativelanguage.googleapis.com/v1beta/models", headers={"x-goog-api-key": clean_key}
                 )
                 latency = round((time.time() - start_time) * 1000, 1)
                 if res.status_code == 200:
@@ -1171,11 +1233,11 @@ async def test_connection(
                 from google.oauth2 import service_account
                 from google.auth.transport.requests import Request as GoogleRequest
                 sa_info = json.loads(token)
-                creds = service_account.Credentials.from_service_account_info(
+                creds = safe_service_account_credentials(
                     sa_info,
                     scopes=["https://www.googleapis.com/auth/webmasters.readonly"]
                 )
-                creds.refresh(GoogleRequest())
+                await refresh_credentials(creds)
                 token = creds.token
             except Exception as sa_err:
                 return {
@@ -1197,7 +1259,7 @@ async def test_connection(
             return {
                 "success": False,
                 "status": "error",
-                "detail": "Mock or development tokens are disabled. Please connect your Google account using a genuine OAuth Client ID & Secret."
+                "detail": "Search Console authentication failed: Mock or development tokens are disabled. Please connect your Google account using a genuine OAuth Client ID & Secret."
             }
             
         # 3. OAuth Bearer Access Token (ya29... or bearer)
@@ -1279,11 +1341,11 @@ async def test_connection(
                 from google.oauth2 import service_account
                 from google.auth.transport.requests import Request as GoogleRequest
                 sa_info = json.loads(token)
-                creds = service_account.Credentials.from_service_account_info(
+                creds = safe_service_account_credentials(
                     sa_info,
                     scopes=["https://www.googleapis.com/auth/analytics.readonly"]
                 )
-                creds.refresh(GoogleRequest())
+                await refresh_credentials(creds)
                 token = creds.token
             except Exception as sa_err:
                 return {
@@ -1383,7 +1445,7 @@ async def test_connection(
 async def save_google_oauth_credentials(
     req: GoogleOAuthAppRequest, 
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     if user:
         req.project_id = await get_or_create_user_project(db, user.id)
@@ -1422,7 +1484,7 @@ async def save_google_oauth_credentials(
             )
             db.add(integration)
             
-        if user:
+        if user and hasattr(user, "id"):
             integration.user_id = user.id
 
         config = dict(integration.config_json) if (integration.config_json and isinstance(integration.config_json, dict)) else {}
@@ -1448,10 +1510,10 @@ async def get_google_oauth_credentials(
     project_id: int, 
     service: str, 
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     target_project_id = project_id
-    if user:
+    if user and hasattr(user, "id"):
         target_project_id = await get_or_create_user_project(db, user.id)
 
     result = await db.execute(select(Integration).where(
@@ -1496,12 +1558,12 @@ async def get_google_oauth_credentials(
 
 @router.get("/google/auth")
 async def google_auth_redirect(
-    request: Request, 
-    project_id: int, 
-    service: str, 
+    request: Request,
+    service: str,
+    project_id: Optional[int] = None,  # ignored: the workspace comes from the authenticated user
     redirect_uri: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     target_project_id = project_id
     if user:
@@ -1534,20 +1596,9 @@ async def google_auth_redirect(
                     break
 
     google_client_id = (custom_client_id or os.environ.get("GOOGLE_CLIENT_ID", "")).strip().strip('"\'')
-    origin = request.headers.get("origin") or ""
-    referer = request.headers.get("referer") or ""
-    
-    if redirect_uri and redirect_uri.strip():
-        base_host = redirect_uri.rstrip("/")
-    elif origin and origin.strip():
-        base_host = origin.rstrip("/")
-    elif referer and referer.strip():
-        from urllib.parse import urlparse
-        parsed = urlparse(referer)
-        base_host = f"{parsed.scheme}://{parsed.netloc}"
-    else:
-        base_host = "http://localhost:3000"
-        
+    if service not in GOOGLE_OAUTH_SERVICES:
+        raise HTTPException(status_code=400, detail="Unsupported Google service")
+    base_host = _allowed_frontend_base(request, redirect_uri)
     frontend_callback = f"{base_host}/integrations/callback"
     
     if google_client_id:
@@ -1559,6 +1610,7 @@ async def google_auth_redirect(
         else:
             scope = "https://www.googleapis.com/auth/business.manage openid email profile"
 
+        state, code_challenge = _issue_oauth_state(user.id, target_project_id, service, frontend_callback)
         params = {
             "client_id": google_client_id,
             "redirect_uri": frontend_callback,
@@ -1566,8 +1618,10 @@ async def google_auth_redirect(
             "scope": scope,
             "access_type": "offline",
             "prompt": "consent select_account",
-            "state": f"{target_project_id}:{service}",
-            "include_granted_scopes": "true",
+            "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "include_granted_scopes": "false",
         }
         auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
         return {"configured": True, "auth_url": auth_url, "status": "ok"}
@@ -1584,7 +1638,7 @@ async def google_auth_redirect(
 async def link_google_account(
     req: LinkGoogleAccountRequest,
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     """
     Seamlessly links a Google service (e.g. Google Business Profile) with the project's
@@ -1660,21 +1714,29 @@ async def link_google_account(
     }
 
 
+class GoogleCallbackRequest(BaseModel):
+    code: str
+    state: str
+
+
 @router.post("/google/callback")
 async def google_auth_callback(
-    project_id: int, 
-    service: str, 
-    code: str, 
-    redirect_uri: Optional[str] = None,
+    req: GoogleCallbackRequest,
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
+    # code/state travel in the body so the authorization code never lands in URL access logs.
+    code, state = req.code, req.state
     if not code:
         raise HTTPException(status_code=400, detail="Missing auth code")
-        
-    target_project_id = project_id
-    if user:
-        target_project_id = await get_or_create_user_project(db, user.id)
+
+    # project/service/redirect come only from the server-issued state, never from the request.
+    oauth_state = _consume_oauth_state(state, user.id)
+    target_project_id = await get_or_create_user_project(db, user.id)
+    if oauth_state.get("p") != target_project_id:
+        raise HTTPException(status_code=400, detail="This Google sign-in does not belong to your workspace.")
+    service = oauth_state["s"]
+    redirect_uri = oauth_state["cb"]
 
     try:
         from app.models.domain import Project
@@ -1747,7 +1809,8 @@ async def google_auth_callback(
             "client_secret": google_client_secret,
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": redirect_uri or "http://localhost:3000/integrations/callback",
+            "redirect_uri": redirect_uri,
+            "code_verifier": oauth_state["v"],
         }
         async with httpx.AsyncClient(timeout=15.0) as client:
             res = await client.post(token_endpoint, data=data)
@@ -1910,7 +1973,7 @@ class RecordOAuthErrorRequest(BaseModel):
 async def record_oauth_error(
     req: RecordOAuthErrorRequest, 
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     target_project_id = req.project_id
     if user:
@@ -1949,7 +2012,7 @@ async def clear_integration_error(
     project_id: int, 
     service: str, 
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     target_project_id = project_id
     if user:
@@ -1968,66 +2031,82 @@ async def clear_integration_error(
         await db.commit()
     return {"status": "cleared"}
 
+GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+
+
+def _is_oauth_token(value: Optional[str]) -> bool:
+    # Google OAuth refresh tokens start with "1//", access tokens with "ya29."; API keys and
+    # service-account JSON are not revocable grants.
+    return bool(value) and (value.startswith("1//") or value.startswith("ya29."))
+
+
+async def remove_integrations(db: AsyncSession, project_id: int, service: Optional[str] = None) -> int:
+    """Delete a workspace's integration rows (one service, or all), revoking Google OAuth grants at
+    Google first (RFC 7009) unless another remaining integration still uses the same grant."""
+    query = select(Integration).where(Integration.project_id == project_id)
+    if service:
+        query = query.where(Integration.integration_type == service)
+    doomed = (await db.execute(query)).scalars().all()
+    if not doomed:
+        return 0
+    doomed_ids = {i.id for i in doomed}
+    remaining = (await db.execute(select(Integration).where(Integration.project_id == project_id))).scalars().all()
+    still_used = {t for i in remaining if i.id not in doomed_ids for t in (i.refresh_token, i.access_token, i.api_key) if t}
+
+    to_revoke = set()
+    for integ in doomed:
+        token = integ.refresh_token if _is_oauth_token(integ.refresh_token) else integ.access_token
+        if _is_oauth_token(token) and token not in still_used:
+            to_revoke.add(token)
+    if to_revoke:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for token in to_revoke:
+                try:
+                    res = await client.post(GOOGLE_REVOKE_URL, data={"token": token},
+                                            headers={"Content-Type": "application/x-www-form-urlencoded"})
+                    if res.status_code not in (200, 400):  # 400 = already invalid/expired
+                        print(f"Google token revocation returned HTTP {res.status_code}")
+                except httpx.HTTPError as e:
+                    print(f"Google token revocation failed: {type(e).__name__}")
+
+    for integ in doomed:
+        await db.delete(integ)
+    await db.commit()
+    return len(doomed)
+
+
 @router.delete("/disconnect/{project_id}/{service}")
 async def disconnect_integration_delete(
-    project_id: int, 
-    service: str, 
+    project_id: int,
+    service: str,
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
-    target_project_id = project_id
-    if user:
-        target_project_id = await get_or_create_user_project(db, user.id)
-
+    target_project_id = await get_or_create_user_project(db, user.id)
     try:
-        project_ids = list(set([target_project_id, project_id]))
-        result = await db.execute(select(Integration).where(
-            Integration.project_id.in_(project_ids), 
-            Integration.integration_type == service
-        ))
-        integrations = result.scalars().all()
-        
-        for integration in integrations:
-            await db.delete(integration)
-            
-        await db.commit()
-            
-        return {"status": "success", "message": f"{service} disconnected and removed."}
-    except Exception as e:
+        await remove_integrations(db, target_project_id, service)
+    except Exception:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to disconnect {service}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to disconnect {service}. Please try again.")
+    return {"status": "success", "message": f"{service} disconnected and removed."}
+
 
 @router.post("/disconnect")
 async def disconnect_integration(
-    req: DisconnectRequest, 
+    req: DisconnectRequest,
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     service = req.service or req.service_name
     if not service:
         raise HTTPException(status_code=400, detail="Service identifier is required")
-
-    target_project_id = req.project_id
-    if user:
-        target_project_id = await get_or_create_user_project(db, user.id)
-
+    target_project_id = await get_or_create_user_project(db, user.id)
     try:
-        project_ids = list(set([target_project_id, req.project_id]))
-        result = await db.execute(select(Integration).where(
-            Integration.project_id.in_(project_ids), 
-            Integration.integration_type == service
-        ))
-        integrations = result.scalars().all()
-        
-        for integration in integrations:
-            await db.delete(integration)
-            
-        await db.commit()
-            
-        return {"status": "success", "message": f"{service} disconnected and removed."}
-    except Exception as e:
+        await remove_integrations(db, target_project_id, service)
+    except Exception:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to disconnect {service}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to disconnect {service}. Please try again.")
+    return {"status": "success", "message": f"{service} disconnected and removed."}
 
 
 @router.get("/data/{project_id}/{service}")
@@ -2036,7 +2115,7 @@ async def get_integration_data(
     service: str, 
     domain: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     """Retrieves cached integration data (GSC, GA4, GBP, PageSpeed) stored in the database."""
     target_project_id = project_id
@@ -2050,13 +2129,13 @@ async def get_integration_data(
         raise HTTPException(status_code=500, detail=f"Failed to fetch {service} data: {str(e)}")
 
 
-@router.post("/sync/{project_id}/{service}")
+@router.post("/sync/{project_id}/{service}", dependencies=[Depends(rate_limit("integration_sync"))])
 async def sync_integration_data(
     project_id: int, 
     service: str, 
     domain: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     """Forces an on-demand live fetch from the connected external API and updates database cache."""
     target_project_id = project_id
@@ -2073,24 +2152,25 @@ async def sync_integration_data(
 @router.get("/synergy/{crawl_id}")
 async def get_audit_synergy(
     crawl_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: UserSession = Depends(get_current_user)
 ):
     """Cross-correlates crawl audit URLs with connected GSC and GA4 telemetry to surface high-priority SEO opportunities."""
-    try:
-        synergy_report = await IntelligenceService.get_audit_synergy(db=db, crawl_id=crawl_id)
-        return synergy_report
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate synergy report: {str(e)}")
+    from app.models.domain import Crawl
+    project_id = await get_or_create_user_project(db, user.id)
+    crawl = await db.get(Crawl, crawl_id)
+    if not crawl or crawl.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Crawl not found")
+    return await IntelligenceService.get_audit_synergy(db=db, crawl_id=crawl_id)
 
 
-@router.post("/ai-analytics-insights/{project_id}")
-@router.get("/ai-analytics-insights/{project_id}")
+@router.post("/ai-analytics-insights/{project_id}", dependencies=[Depends(rate_limit("ai"))])
 async def get_ai_analytics_insights(
     project_id: int,
     crawl_id: Optional[int] = None,
     domain: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     """
     Synthesizes GA4 + GSC cross-correlated telemetry into an actionable
@@ -2110,7 +2190,7 @@ async def get_ai_analytics_insights(
         )
         return insights
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate AI analytics insights: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate AI analytics insights. Please try again.")
 
 
 @router.get("/google/properties/{project_id}")
@@ -2118,7 +2198,7 @@ async def get_google_properties(
     project_id: int,
     service: str = "search_console",
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     """Fetches all verified Google Search Console or GA4 properties for the authenticated account."""
     target_project_id = project_id
@@ -2179,8 +2259,8 @@ async def get_google_properties(
                 if service == "search_console"
                 else ["https://www.googleapis.com/auth/analytics.readonly"]
             )
-            creds = service_account.Credentials.from_service_account_info(sa_info, scopes=scopes)
-            creds.refresh(GoogleRequest())
+            creds = safe_service_account_credentials(sa_info, scopes=scopes)
+            await refresh_credentials(creds)
             token = creds.token
         except Exception as sa_err:
             return {
@@ -2415,7 +2495,7 @@ class SelectPropertyRequest(BaseModel):
 async def select_google_property(
     req: SelectPropertyRequest,
     db: AsyncSession = Depends(get_db),
-    user: Optional[UserSession] = Depends(get_optional_user)
+    user: UserSession = Depends(get_current_user)
 ):
     """Saves user's chosen GSC property or GA4 property, connects integration, and triggers instant telemetry sync."""
     if user:

@@ -1,128 +1,138 @@
 import os
+import time
 import logging
 from typing import Optional
 from pydantic import BaseModel
 from fastapi import Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 import jwt
 from jwt import PyJWKClient
 
 logger = logging.getLogger("auth")
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://tewwcfqxrunsoemtgcns.supabase.co").rstrip("/")
-JWKS_URL = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+SUPABASE_URL = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
+# Legacy Supabase projects sign access tokens with a shared HS256 secret instead of JWKS.
+SUPABASE_JWT_SECRET = (os.getenv("SUPABASE_JWT_SECRET") or "").strip()
 
-try:
-    jwks_client = PyJWKClient(JWKS_URL, cache_keys=True, max_cached_keys=10)
-except Exception as e:
-    logger.warning(f"Could not initialize PyJWKClient for {JWKS_URL}: {e}")
-    jwks_client = None
+jwks_client: Optional[PyJWKClient] = None
+if SUPABASE_URL:
+    try:
+        jwks_client = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json", cache_keys=True, max_cached_keys=10)
+    except Exception as e:
+        logger.warning("Could not initialize PyJWKClient: %s", e)
+if not jwks_client and not SUPABASE_JWT_SECRET:
+    logger.error("Neither SUPABASE_URL nor SUPABASE_JWT_SECRET is configured: every authenticated request will be rejected.")
+
+MAX_SESSION_AGE_SECONDS = 3 * 24 * 3600  # 3 days
+# Tolerate small clock drift between this server and Supabase; without it, fresh tokens fail the iat check.
+JWT_LEEWAY_SECONDS = 30
+
 
 class UserSession(BaseModel):
     id: str
     email: Optional[str] = None
     role: Optional[str] = "authenticated"
+    is_anonymous: bool = False
 
-def decode_supabase_jwt(token: str) -> dict:
-    """Decodes and validates a Supabase JWT token using Supabase JWKS or fallback."""
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing authentication token")
-    
-    clean_token = token.replace("Bearer ", "").strip()
-    
-    # 1. Cryptographic JWKS verification
-    if jwks_client:
-        try:
-            signing_key = jwks_client.get_signing_key_from_jwt(clean_token)
-            payload = jwt.decode(
-                clean_token,
-                signing_key.key,
-                algorithms=["ES256", "HS256", "RS256"],
-                audience="authenticated",
-                options={"verify_exp": True}
-            )
-            return payload
-        except jwt.ExpiredSignatureError:
-            raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
-        except Exception as e:
-            logger.debug(f"JWKS verification failed: {e}. Trying unverified claims if valid structure.")
 
-    # 2. Fallback to claims decode if JWKS is temporarily unreachable or symmetric
+def _verify_signature(token: str) -> dict:
+    """Verify a Supabase access token. Tokens whose signature cannot be verified are always rejected."""
     try:
-        unverified = jwt.decode(clean_token, options={"verify_signature": False, "verify_exp": False})
-        if unverified.get("sub"):
-            return unverified
-    except Exception:
-        pass
-        
+        header = jwt.get_unverified_header(token)
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+    alg = header.get("alg")
+    decode_opts = {"require": ["exp", "sub"]}
+    try:
+        if alg == "HS256":
+            if not SUPABASE_JWT_SECRET:
+                raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+            return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated", options=decode_opts, leeway=JWT_LEEWAY_SECONDS)
+        if alg in ("ES256", "RS256") and jwks_client:
+            signing_key = jwks_client.get_signing_key_from_jwt(token)
+            return jwt.decode(token, signing_key.key, algorithms=[alg], audience="authenticated", options=decode_opts, leeway=JWT_LEEWAY_SECONDS)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
+    except jwt.PyJWKClientError:
+        logger.warning("JWKS unavailable while verifying token")
+        raise HTTPException(status_code=503, detail="Authentication service temporarily unavailable")
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
     raise HTTPException(status_code=401, detail="Invalid authentication credentials")
 
-async def get_current_user(authorization: Optional[str] = Header(None)) -> UserSession:
-    """FastAPI dependency to extract and verify the current authenticated user."""
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authentication required. Please sign in.")
-    
-    payload = decode_supabase_jwt(authorization)
+
+def decode_supabase_jwt(token: str) -> dict:
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing authentication token")
+    scheme, _, credentials = token.strip().partition(" ")
+    clean_token = credentials.strip() if scheme.lower() == "bearer" else token.strip()
+    if not clean_token:
+        raise HTTPException(status_code=401, detail="Missing authentication token")
+
+    payload = _verify_signature(clean_token)
+
+    # Enforce the 3-day maximum session age from the original sign-in.
+    auth_ts = payload.get("auth_time") or payload.get("iat")
+    if auth_ts is not None:
+        try:
+            if int(time.time()) - int(auth_ts) > MAX_SESSION_AGE_SECONDS:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Session expired: Maximum session duration is 3 days. For your security, please sign in again.",
+                )
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    return payload
+
+
+def _session_from_payload(payload: dict) -> UserSession:
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token payload: missing user ID")
-    
     return UserSession(
         id=str(user_id),
         email=payload.get("email"),
-        role=payload.get("role", "authenticated")
+        role=payload.get("role", "authenticated"),
+        is_anonymous=bool(payload.get("is_anonymous", False)),
     )
 
-async def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[UserSession]:
-    """FastAPI dependency that returns the UserSession if valid token is provided, else None."""
+
+async def get_current_user(authorization: Optional[str] = Header(None)) -> UserSession:
+    """FastAPI dependency: the verified current user, or 401."""
     if not authorization:
-        return None
-    try:
-        payload = decode_supabase_jwt(authorization)
-        user_id = payload.get("sub")
-        if user_id:
-            return UserSession(
-                id=str(user_id),
-                email=payload.get("email"),
-                role=payload.get("role", "authenticated")
-            )
-    except Exception:
-        return None
-    return None
+        raise HTTPException(status_code=401, detail="Authentication required. Please sign in.")
+    return _session_from_payload(decode_supabase_jwt(authorization))
 
-async def get_or_create_user_project(db: AsyncSession, user_id: Optional[str] = None, default_name: str = "My Workspace") -> int:
-    """
-    Returns an isolated project ID for the given user_id.
-    If no user_id is provided, returns the default project.
-    """
+
+async def get_user_project_id(db: AsyncSession, user: UserSession) -> int:
+    return await get_or_create_user_project(db, user.id)
+
+
+async def get_or_create_user_project(db: AsyncSession, user_id: str, default_name: str = "My Workspace") -> int:
+    """Return the isolated workspace project owned by user_id, creating it on first use."""
     from app.models.domain import Project
-    
-    if not user_id:
-        # Fallback to project 1 or first unassigned workspace
-        stmt = select(Project).where(Project.id == 1)
-        res = await db.execute(stmt)
-        proj = res.scalars().first()
-        if not proj:
-            stmt = select(Project).where(Project.user_id.is_(None)).order_by(Project.id.asc())
-            res = await db.execute(stmt)
-            proj = res.scalars().first()
-        if not proj:
-            proj = Project(name="Default Workspace")
-            db.add(proj)
-            await db.commit()
-            await db.refresh(proj)
-        return proj.id
 
-    # Find project owned by this user
-    stmt = select(Project).where(Project.user_id == user_id).order_by(Project.id.asc())
-    res = await db.execute(stmt)
-    proj = res.scalars().first()
-    
-    if not proj:
-        proj = Project(name=default_name, user_id=user_id)
-        db.add(proj)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required. Please sign in.")
+
+    stmt = select(Project.id).where(Project.user_id == user_id).order_by(Project.id.asc()).limit(1)
+    project_id = (await db.execute(stmt)).scalar()
+    if project_id is not None:
+        return project_id
+
+    proj = Project(name=default_name, user_id=user_id)
+    db.add(proj)
+    try:
         await db.commit()
-        await db.refresh(proj)
-    
+    except IntegrityError:
+        # A concurrent first request created the workspace; use that one.
+        await db.rollback()
+        project_id = (await db.execute(stmt)).scalar()
+        if project_id is None:
+            raise
+        return project_id
+    await db.refresh(proj)
     return proj.id

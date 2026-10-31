@@ -1,24 +1,34 @@
-from pydantic import BaseModel, HttpUrl
-from typing import List, Optional, Dict, Any
+import os
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any, Literal
 from datetime import datetime
 
+# Upper bound on pages per crawl (team default 1000, keeps the one stored crawl small); override with
+# the MAX_CRAWL_PAGES env var, e.g. for larger plans once crawls run on a worker tier.
+MAX_CRAWL_PAGES = int(os.getenv("MAX_CRAWL_PAGES", "1000"))
+
 class CrawlRequest(BaseModel):
-    seed_url: str
-    max_depth: int = 4
-    max_concurrent: int = 5
-    max_pages: int = 500
-    stealth_delay: float = 0.0
+    seed_url: str = Field(..., min_length=3, max_length=2048)
+    # "site" crawls by following links; "page" audits only seed_url (following redirects).
+    mode: Literal["site", "page"] = "site"
+    max_depth: int = Field(4, ge=0, le=100)
+    max_concurrent: int = Field(10, ge=1, le=15)
+    max_pages: int = Field(500, ge=1, le=MAX_CRAWL_PAGES)
+    stealth_delay: float = Field(0.0, ge=0.0, le=10.0)
     ignore_url_params: bool = True
     check_external_links: bool = False
-    exclude_paths: str = ""
+    exclude_paths: str = Field("", max_length=5000)
     ignore_robots: bool = False
     js_rendering: bool = False
-    user_agent: str = "SEO-Spider-Bot"
+    user_agent: str = Field("", max_length=256)
     crawl_author_archives: bool = False
+    # Started from a sub-folder (e.g. /news/)? Only crawl inside it, as Screaming Frog does by default.
+    stay_in_folder: bool = True
 
 class CrawlResponse(BaseModel):
     id: int
     project_id: int
+    mode: str = "site"
     seed_url: str
     status: str
     started_at: datetime
