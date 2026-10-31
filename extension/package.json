@@ -1,0 +1,10 @@
+{
+  "name": "auditpro-helper",
+  "private": true,
+  "type": "module",
+  "description": "AuditPro Helper browser extension. No dependencies: build with `node build.mjs`, test with `node --test test`.",
+  "scripts": {
+    "test": "node --test test",
+    "build": "node build.mjs"
+  }
+}

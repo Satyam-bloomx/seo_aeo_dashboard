@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AuditPro Helper</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="popup">
+  <header class="brand"><img src="../icons/icon32.png" alt="" width="20" height="20"> AuditPro Helper <span class="ver" id="ver"></span></header>
+
+  <div class="status"><span class="dot" id="dot"></span><span id="conn">Checking…</span></div>
+  <div id="batches"></div>
+
+  <div class="card">
+    <strong>Audit this tab</strong>
+    <p class="small">Captures the page exactly as you see it now (after scripts ran, including anything you clicked open)
+      and hands it to AuditPro. Nothing is sent anywhere else.</p>
+    <button id="capture" class="primary">Audit this tab</button>
+    <p id="capmsg" class="msg" role="status"></p>
+    <p id="last" class="small"></p>
+  </div>
+
+  <div class="row"><button class="link" id="options">Settings and allowed sites</button></div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

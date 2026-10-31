@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AuditPro Helper settings</title>
+  <link rel="stylesheet" href="../popup/ui.css">
+</head>
+<body class="page">
+  <header class="brand"><img src="../icons/icon32.png" alt="" width="24" height="24"> AuditPro Helper <span class="ver" id="ver"></span></header>
+
+  <h2>Allowed sites</h2>
+  <p class="small">Sites you allowed from AuditPro. The helper fetches them without your cookies or logins.
+    "Use verification" lets it reuse only that site's bot-check pass cookie after you complete a check yourself.</p>
+  <table>
+    <thead><tr><th>Site</th><th>Use verification</th><th></th></tr></thead>
+    <tbody id="sites"></tbody>
+  </table>
+  <p id="nosites" class="small" hidden>No sites yet. Allow one from AuditPro.</p>
+
+  <h2>Bot-check cookies the helper may reuse</h2>
+  <p class="small">Exact cookie names, or a prefix ending in * (at least 5 characters). Only for sites with
+    "Use verification" on, only after you passed a check, and only for that site. Keep this list short.</p>
+  <textarea id="allowlist" rows="5" spellcheck="false"></textarea>
+  <div class="row"><button id="save">Save list</button><button id="reset">Restore defaults</button></div>
+  <p id="msg" class="msg" role="status"></p>
+
+  <h2>Connected app</h2>
+  <p class="small">Only these AuditPro addresses can talk to the helper: <span id="origins" class="mono"></span></p>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

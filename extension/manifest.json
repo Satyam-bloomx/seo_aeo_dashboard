@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "AuditPro Helper",
+  "short_name": "AuditPro",
+  "version": "0.1.0",
+  "description": "Lets the AuditPro audit app fetch pages from your browser for sites you approve, one site at a time.",
+  "minimum_chrome_version": "116",
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "AuditPro Helper",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "permissions": [
+    "storage",
+    "cookies",
+    "declarativeNetRequestWithHostAccess",
+    "webRequest",
+    "scripting",
+    "activeTab"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:3000/*"
+    ]
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjau6+TSCnWyfk6KpOvcNfFy6WnBQSxfz1K6TsBQI6IBbV0l0ijYl2Vvs7bscB2sG1257HXOn6RrKGqhr/cM+oc/Ky5yC7WMMHZ4p4bS4D6JIRI3laBWBBG5GFnda4iiw3WjpHE+8ZSNwlUH3p/XHUfuN4y274tAT6w8Ji2EDlK91PYCQVnR61jBZskQjPMGm6DpFSPpreva2/si5+K9zOr6hXJVEzSskdXBTYbiVn3SNTTWAVPxEZ3ZF3V+5tTLT+HHce7SDMcaDxmRLG0fVyyF8slxTQperI/3fs1yFFoKKocyRD0qNY1woL+s5G6uuFHjbTjzFyBYGqYSrvCu5hQIDAQAB"
+}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AuditPro Helper: allow a site</title>
+  <link rel="stylesheet" href="../popup/ui.css">
+</head>
+<body class="page">
+  <header class="brand"><img src="../icons/icon32.png" alt="" width="24" height="24"> AuditPro Helper</header>
+  <main id="main">
+    <p id="loading">Loading…</p>
+    <section id="form" hidden>
+      <h1>Allow AuditPro to fetch <span id="site" class="mono"></span>?</h1>
+      <p>The helper will download pages of this site from your browser, the way a search engine sees them:
+        <strong>without your cookies or logins</strong>. It respects the site's robots.txt and slows down if the site is busy.</p>
+      <p class="small">Hosts: <span id="hosts" class="mono"></span></p>
+
+      <label class="check"><input type="checkbox" id="owner">
+        <span>I own this site, or I have permission to audit it.</span></label>
+
+      <label class="check"><input type="checkbox" id="verification">
+        <span><strong>Use verification</strong> (optional). If the site shows a bot check, I will complete it myself
+          in a normal tab. The helper may then reuse only that site's bot-check pass cookie
+          (<span id="allowlist" class="mono small"></span>), never any other cookie or login.</span></label>
+
+      <p class="small">Chrome will ask you to confirm access next. You can remove it any time in the helper's options.</p>
+      <div class="row">
+        <button id="grant" class="primary" disabled>Allow</button>
+        <button id="cancel">Cancel</button>
+      </div>
+      <p id="msg" class="msg" role="status"></p>
+    </section>
+    <p id="error" class="error" hidden></p>
+  </main>
+  <script type="module" src="permission.js"></script>
+</body>
+</html>

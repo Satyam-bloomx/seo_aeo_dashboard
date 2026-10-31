@@ -1,0 +1,6 @@
+{
+  "dev_origins": [
+    "http://localhost:3000"
+  ],
+  "production_origins": []
+}
