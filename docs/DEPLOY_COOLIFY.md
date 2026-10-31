@@ -3,8 +3,13 @@
 How the team deploys, scales, monitors, backs up and rolls back the app. It covers Phase 4 of
 `docs/ROADMAP_RELIABILITY.md`.
 
-**Production data lives in the `postgres` container on the VPS disk (volume `postgres_data`), not in Supabase.**
-Supabase handles sign-in only (and is the development database).
+**Production data lives in the database `DATABASE_URL` points to: today the Supabase Postgres (shared with
+development).** Supabase also handles sign-in. The bundled `postgres` service is optional (profile `vps-db`) for
+moving the data onto the VPS later; that move is a migration of its own.
+
+Supabase connection notes: use the **session pooler (port 5432)** in `DATABASE_URL` when migrations run on deploy.
+The transaction pooler (6543) does not keep the session the migration lock needs; with 6543 set `RUN_MIGRATIONS=false`
+and apply migrations deliberately.
 
 ## 1. What runs
 
@@ -13,11 +18,11 @@ Supabase handles sign-in only (and is the development database).
 | `frontend` | `frontend/Dockerfile` | Next.js. Proxies `/api/*` to `http://backend:8000` | port 3000 (Coolify domain) |
 | `backend` | `backend/Dockerfile` | The API (uvicorn). Runs `alembic upgrade head` on start (`RUN_MIGRATIONS=true`). With `CRAWL_RUNNER=inline` it also runs crawls | internal only |
 | `worker` | same backend image, `python -m app.worker` | Runs crawls when `CRAWL_RUNNER=worker`; idles otherwise | nothing |
-| `postgres` | `postgres:16-alpine` | Production database (volume `postgres_data`) | internal network only |
+| `postgres` | `postgres:16-alpine` | Optional VPS database, only with `COMPOSE_PROFILES=vps-db` (volume `postgres_data`) | internal network only |
 | `redis` | `redis:7.4-alpine` | Optional today; kept for the future shared queue | internal network only |
 
-Start order (enforced by `depends_on`): postgres healthy → backend migrates, then becomes healthy → worker and
-frontend start. The worker never migrates.
+Start order (enforced by `depends_on`): backend migrates, then becomes healthy → worker and frontend start. The worker
+never migrates.
 
 ## 2. Coolify resource setup (once)
 
@@ -36,11 +41,12 @@ frontend start. The worker never migrates.
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `POSTGRES_PASSWORD` | yes | | Long random string. Changing it later needs `ALTER USER` inside Postgres too |
-| `POSTGRES_USER` / `POSTGRES_DB` | no | `seo_audit` | Only read when the volume is first created |
+| `DATABASE_URL` | yes | | `postgresql+asyncpg://...` The production database (Supabase session pooler, port 5432) |
+| `POSTGRES_PASSWORD` | only with `vps-db` | | For the optional VPS Postgres. Changing it later needs `ALTER USER` too |
+| `POSTGRES_USER` / `POSTGRES_DB` | no | `seo_audit` | Optional VPS Postgres; only read when the volume is first created |
 | `REDIS_PASSWORD` | yes | | Long random string |
 | `ENCRYPTION_KEY` | yes | | Fernet key; encrypts stored API keys / OAuth tokens. **Back it up separately**: a DB backup is useless without it |
-| `ENCRYPTION_KEYS_PREVIOUS` | no | empty | Old keys during a rotation |
+| `ENCRYPTION_KEYS_PREVIOUS` | no | empty | Old keys during a rotation. Values saved by a development setup without a key were encrypted with the built-in development key (`_DEV_FALLBACK_SECRET` in `backend/app/core/security.py`): list it here so they stay readable, then re-save them |
 | `CORS_ORIGINS` | yes | | Exact frontend origin(s), e.g. `https://audit.example.com` |
 | `FRONTEND_URL` | yes | | Frontend origin (Google OAuth return URL) |
 | `SUPABASE_URL` | yes | | Sign-in (JWKS) |

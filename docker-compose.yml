@@ -10,6 +10,11 @@
 #   worker:           the backend only queues crawls; the worker service claims and runs them.
 #   Do NOT switch to "worker" before the API changes listed in docs/DEPLOY_COOLIFY.md are deployed,
 #   or a crawl can run twice.
+#
+# Database: DATABASE_URL (set in Coolify) is used as given, e.g. the Supabase Postgres. The bundled `postgres` service
+# is optional: it only starts with the "vps-db" profile (COMPOSE_PROFILES=vps-db), and then DATABASE_URL must point
+# at it (postgresql+asyncpg://seo_audit:<POSTGRES_PASSWORD>@postgres:5432/seo_audit). Moving data between the two is
+# a migration of its own (docs/DEPLOY_COOLIFY.md).
 
 services:
   frontend:
@@ -68,7 +73,7 @@ services:
       - JS_CRAWL_SLOTS=${JS_CRAWL_SLOTS:-1}
       - MAX_CRAWL_PAGES=${MAX_CRAWL_PAGES:-1000}
       - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-seo_audit}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seo_audit}
+      - DATABASE_URL=${DATABASE_URL:?set DATABASE_URL}
       - REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
       - CORS_ORIGINS=${CORS_ORIGINS:?set CORS_ORIGINS}
       - FRONTEND_URL=${FRONTEND_URL:?set FRONTEND_URL}
@@ -85,8 +90,6 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_started  # Redis is optional today (reserved for the future shared queue)
     healthcheck:
@@ -131,7 +134,7 @@ services:
       - WORKER_GRACE_SECONDS=${WORKER_GRACE_SECONDS:-100}   # keep below stop_grace_period
       - WORKER_MAX_MEMORY_PCT=${WORKER_MAX_MEMORY_PCT:-75}
       - WORKER_HEALTH_FILE=/tmp/worker-heartbeat
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-seo_audit}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seo_audit}
+      - DATABASE_URL=${DATABASE_URL:?set DATABASE_URL}
       - REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
       - CORS_ORIGINS=${CORS_ORIGINS:?set CORS_ORIGINS}
       - FRONTEND_URL=${FRONTEND_URL:?set FRONTEND_URL}
@@ -148,8 +151,6 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
     depends_on:
-      postgres:
-        condition: service_healthy
       backend:
         condition: service_healthy  # the API has finished migrating before the worker touches the database
     healthcheck:
@@ -172,11 +173,13 @@ services:
         limits: { cpus: "${WORKER_CPUS:-3.0}", memory: "${WORKER_MEMORY:-6g}", pids: 2048 }
 
   postgres:
+    # Optional VPS database: started only with COMPOSE_PROFILES=vps-db (Postgres itself refuses an empty password).
+    profiles: ["vps-db"]
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-seo_audit}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
       - POSTGRES_DB=${POSTGRES_DB:-seo_audit}
     volumes:
       - postgres_data:/var/lib/postgresql/data
