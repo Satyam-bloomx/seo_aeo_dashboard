@@ -1,5 +1,5 @@
 'use client';
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { DialogTitle } from '@headlessui/react';
 import { motion } from 'framer-motion';
 import AnimatedModal from '@/components/ui/AnimatedModal';
@@ -16,7 +16,8 @@ import {
   CheckCircle2,
   Layers,
   ArrowDownToLine,
-  ShieldCheck
+  ShieldCheck,
+  Bot
 } from 'lucide-react';
 import {
   exportMasterAuditToExcel,
@@ -24,23 +25,27 @@ import {
   exportIssuesToCSV
 } from '@/utils/exportUtils';
 import { generateIssuesReport } from '@/utils/IssuesEngine';
+import { useCrawlSummary } from '@/context/CrawlSummaryContext';
 
 export default function ExportAuditModal({
   isOpen,
   onClose,
   pages = [],
   targetUrl = '',
-  onOpenPdfReport
+  onOpenPdfReport,
+  onOpenAiAudit
 }) {
-  const issuesReport = useMemo(() => generateIssuesReport(pages), [pages]);
+  const [hideEmptyIntegrations, setHideEmptyIntegrations] = useState(true);
+  const crawlSummary = useCrawlSummary();
+  const issuesReport = useMemo(() => generateIssuesReport(pages, crawlSummary), [pages, crawlSummary]);
   const totalPages = pages.length;
 
   const handleExportExcel = () => {
-    exportMasterAuditToExcel(pages, targetUrl, issuesReport);
+    exportMasterAuditToExcel(pages, targetUrl, issuesReport, { hideEmptyIntegrations });
   };
 
   const handleExportCsv = () => {
-    exportMasterAuditToCSV(pages, targetUrl);
+    exportMasterAuditToCSV(pages, targetUrl, { hideEmptyIntegrations });
   };
 
   const handleExportIssuesCsv = () => {
@@ -119,6 +124,25 @@ export default function ExportAuditModal({
             </div>
           </motion.div>
 
+          {/* Export options */}
+          <motion.label
+            variants={staggerItem}
+            className="flex items-start gap-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 px-4 py-2.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer"
+          >
+            <input
+              type="checkbox"
+              checked={hideEmptyIntegrations}
+              onChange={(e) => setHideEmptyIntegrations(e.target.checked)}
+              className="mt-0.5 h-3.5 w-3.5 accent-emerald-500"
+            />
+            <span>
+              <strong className="font-bold text-slate-900 dark:text-white">Hide columns from integrations that aren&apos;t connected</strong>
+              <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                Drops Search Console, Analytics, AI and Core Web Vitals columns that are empty for every URL (Excel and Master CSV).
+              </span>
+            </span>
+          </motion.label>
+
           {/* HERO CARD: Master Excel Workbook (.xlsx) */}
           <motion.div
             variants={staggerItem}
@@ -189,7 +213,7 @@ export default function ExportAuditModal({
           {/* SECONDARY FORMATS GRID */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
             
-            {/* 1. Master Screaming Frog CSV */}
+            {/* 1. Master CSV */}
             <motion.div
               variants={staggerItem}
               className="flex flex-col justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 p-4 transition-all hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md"
@@ -208,7 +232,7 @@ export default function ExportAuditModal({
                     Master Site Audit CSV
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                    Screaming Frog style dataset with all 35+ parameters encoded in universal UTF-8 BOM.
+                    Spreadsheet-ready dataset with all 35+ parameters encoded in universal UTF-8 BOM.
                   </p>
                 </div>
               </div>
@@ -298,6 +322,45 @@ export default function ExportAuditModal({
                 <span>Open PDF View</span>
               </motion.button>
             </motion.div>
+            {/* 4. AI page audit (only when the dashboard wires it) */}
+            {onOpenAiAudit && (
+              <motion.div
+                variants={staggerItem}
+                className="flex flex-col justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 p-4 transition-all hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
+                      <Bot size={16} />
+                    </div>
+                    <span className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase">
+                      .PDF / .MD
+                    </span>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                      AI page audit (PDF/Markdown)
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                      Audit a single page with AI and download the findings as a PDF or Markdown file.
+                    </p>
+                  </div>
+                </div>
+
+                <motion.button
+                  onClick={() => {
+                    onClose();
+                    onOpenAiAudit();
+                  }}
+                  whileTap={tapPress}
+                  transition={spring.press}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  <Sparkles size={13} className="text-emerald-600 dark:text-emerald-400" />
+                  <span>Open AI page audit</span>
+                </motion.button>
+              </motion.div>
+            )}
           </div>
 
           {/* Subtle Encoding Guarantee Footnote */}

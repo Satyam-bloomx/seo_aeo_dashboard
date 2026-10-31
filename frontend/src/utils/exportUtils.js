@@ -1,10 +1,26 @@
-import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
+
+
+// OWASP CSV injection defence: crawled text (titles, URLs, meta) is untrusted. A cell starting with
+// = + - @ TAB or CR is executed as a formula by Excel/Sheets, so it is prefixed with a quote.
+export const csvCell = (value) => {
+  if (value === null || value === undefined) return '""';
+  let text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+  text = text.replace(/\s+/g, ' ').trim(); // collapse newlines/tabs/runs of spaces so cells stay on one line
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+};
+
+// TRUE/FALSE when the value exists, blank when the check never ran (so empty integration columns can be hidden).
+const boolOrBlank = (v) => (v === undefined || v === null ? '' : v ? 'TRUE' : 'FALSE');
 
 export const MASTER_EXPORT_FIELDS = [
   { header: 'URL', getter: (p) => p.url },
-  { header: 'Status Code', getter: (p) => p.status_code || 200 },
+  { header: 'Page Type', getter: (p) => p.audit_data?.Page_Type?.Type || '' },
+  { header: 'Status Code', getter: (p) => p.status_code ?? 0 },
   { header: 'Status', getter: (p) => p.status_name || (p.status_code >= 400 ? 'Client Error' : p.status_code >= 300 ? 'Redirect' : 'OK') },
+  { header: 'Redirect URL', getter: (p) => p.audit_data?.Response_Codes?.['Redirect URL'] || p.audit_data?.Response_Codes?.['Redirection (Meta Refresh)']?.url || '' },
+  { header: 'Redirect Type', getter: (p) => p.audit_data?.Response_Codes?.['Redirect Type'] || '' },
   { header: 'Indexability', getter: (p) => p.indexability || 'Indexable' },
   { header: 'Indexability Status', getter: (p) => p.indexability_status || 'None' },
   { header: 'Content Type', getter: (p) => p.content_type || 'text/html' },
@@ -40,31 +56,33 @@ export const MASTER_EXPORT_FIELDS = [
   { header: 'H2 Count', getter: (p) => !p.h2_1 || p.h2_1.trim() === '' ? 0 : (p.h2_2 && p.h2_2.trim() !== '' ? 2 : 1) },
   { header: 'Canonical Link Element 1', getter: (p) => p.canonical_link_element_1 || '' },
   { header: 'Meta Robots 1', getter: (p) => p.meta_robots_1 || '' },
-  { header: 'Core Web Vitals - LCP', getter: (p) => p.audit_data?.PageSpeed?.mobile?.metrics?.lcp || '' },
-  { header: 'Core Web Vitals - CLS', getter: (p) => p.audit_data?.PageSpeed?.mobile?.metrics?.cls || '' },
-  { header: 'Core Web Vitals - INP', getter: (p) => p.audit_data?.PageSpeed?.mobile?.metrics?.inp || '' },
-  { header: 'Core Web Vitals - TTFB', getter: (p) => p.audit_data?.PageSpeed?.mobile?.metrics?.ttfb || '' },
-  { header: 'AEO Extractable Answer Score', getter: (p) => p.audit_data?.AEO_Audit?.aeo_score || p.audit_data?.AEO_Audit?.AEO_Readability_Score || '' },
-  { header: 'Perplexity Citation Status', getter: (p) => p.audit_data?.AEO_Audit?.Perplexity_Citation_Status || '' },
-  { header: 'Perplexity AI Citation Win', getter: (p) => p.audit_data?.AEO_Audit?.Perplexity_Citation_Win ? 'TRUE' : 'FALSE' },
-  { header: 'OpenAI Synthesis Score', getter: (p) => p.audit_data?.AEO_Audit?.OpenAI_Synthesis_Score || '' },
-  { header: 'Google Index Status', getter: (p) => p.audit_data?.Search_Console?.Google_Index_Status || '' },
-  { header: 'Google Index Coverage', getter: (p) => p.audit_data?.Search_Console?.Index_Coverage_State || '' },
-  { header: 'GSC Organic Clicks (30d)', getter: (p) => p.audit_data?.Search_Console?.Organic_Clicks_30d || '' },
-  { header: 'GSC Impressions', getter: (p) => p.audit_data?.Search_Console?.Search_Impressions || '' },
-  { header: 'GSC Average SERP Position', getter: (p) => p.audit_data?.Search_Console?.Average_SERP_Position || '' },
-  { header: 'GA4 Organic Sessions (30d)', getter: (p) => p.audit_data?.Google_Analytics?.Sessions_30d || '' },
-  { header: 'GA4 Bounce Rate', getter: (p) => p.audit_data?.Google_Analytics?.Bounce_Rate || '' },
-  { header: 'Zombie Page Flag', getter: (p) => p.audit_data?.Google_Analytics?.Is_Zombie_Page ? 'TRUE' : 'FALSE' },
-  { header: 'Zombie Pruning Action', getter: (p) => p.audit_data?.Google_Analytics?.Zombie_Recommended_Action || '' },
-  { header: 'Revenue At Risk', getter: (p) => p.audit_data?.Google_Analytics?.Revenue_At_Risk || '' },
-  { header: 'Google AI Overview Featured', getter: (p) => p.audit_data?.SERP_Data?.has_ai_overview ? 'TRUE' : 'FALSE' },
-  { header: 'GEO Local Score', getter: (p) => p.audit_data?.GEO_Audit?.geo_score || '' },
+  { integration: true, header: 'Core Web Vitals - LCP', getter: (p) => p.audit_data?.PageSpeed?.mobile?.metrics?.lcp || '' },
+  { integration: true, header: 'Core Web Vitals - CLS', getter: (p) => p.audit_data?.PageSpeed?.mobile?.metrics?.cls || '' },
+  { integration: true, header: 'Core Web Vitals - INP', getter: (p) => p.audit_data?.PageSpeed?.mobile?.metrics?.inp || '' },
+  { integration: true, header: 'Core Web Vitals - TTFB', getter: (p) => p.audit_data?.PageSpeed?.mobile?.metrics?.ttfb || '' },
+  { integration: true, header: 'AEO Extractable Answer Score', getter: (p) => p.audit_data?.AEO_Audit?.aeo_score || p.audit_data?.AEO_Audit?.AEO_Readability_Score || '' },
+  { integration: true, header: 'Perplexity Citation Status', getter: (p) => p.audit_data?.AEO_Audit?.Perplexity_Citation_Status || '' },
+  { integration: true, header: 'Perplexity AI Citation Win', getter: (p) => boolOrBlank(p.audit_data?.AEO_Audit?.Perplexity_Citation_Win) },
+  { integration: true, header: 'OpenAI Synthesis Score', getter: (p) => p.audit_data?.AEO_Audit?.OpenAI_Synthesis_Score || '' },
+  { integration: true, header: 'Google Index Status', getter: (p) => p.audit_data?.Search_Console?.Google_Index_Status || '' },
+  { integration: true, header: 'Google Index Coverage', getter: (p) => p.audit_data?.Search_Console?.Index_Coverage_State || '' },
+  { integration: true, header: 'GSC Organic Clicks (30d)', getter: (p) => p.audit_data?.Search_Console?.Organic_Clicks_30d || '' },
+  { integration: true, header: 'GSC Impressions', getter: (p) => p.audit_data?.Search_Console?.Search_Impressions || '' },
+  { integration: true, header: 'GSC Average SERP Position', getter: (p) => p.audit_data?.Search_Console?.Average_SERP_Position || '' },
+  { integration: true, header: 'GA4 Organic Sessions (30d)', getter: (p) => p.audit_data?.Google_Analytics?.Sessions_30d || '' },
+  { integration: true, header: 'GA4 Bounce Rate', getter: (p) => p.audit_data?.Google_Analytics?.Bounce_Rate || '' },
+  { integration: true, header: 'Zombie Page Flag', getter: (p) => boolOrBlank(p.audit_data?.Google_Analytics?.Is_Zombie_Page) },
+  { integration: true, header: 'Zombie Pruning Action', getter: (p) => p.audit_data?.Google_Analytics?.Zombie_Recommended_Action || '' },
+  { integration: true, header: 'Revenue At Risk', getter: (p) => p.audit_data?.Google_Analytics?.Revenue_At_Risk || '' },
+  { integration: true, header: 'Google AI Overview Featured', getter: (p) => boolOrBlank(p.audit_data?.SERP_Data?.has_ai_overview) },
+  { integration: true, header: 'GEO Local Score', getter: (p) => p.audit_data?.GEO_Audit?.geo_score || '' },
   { header: 'Multiple Head Tags', getter: (p) => p.audit_data?.Validation?.['Multiple <head> Tags'] ? 'TRUE' : 'FALSE' },
   { header: 'Multiple Body Tags', getter: (p) => p.audit_data?.Validation?.['Multiple <body> Tags'] ? 'TRUE' : 'FALSE' },
   { header: 'Duplicate Title', getter: (p) => p.audit_data?.Page_Titles?.['Duplicate'] ? 'TRUE' : 'FALSE' },
+  { header: 'Duplicate Meta Description', getter: (p) => p.audit_data?.Meta_Description?.['Duplicate'] ? 'TRUE' : 'FALSE' },
   { header: 'Duplicate H1', getter: (p) => p.audit_data?.H1?.['Duplicate'] ? 'TRUE' : 'FALSE' },
   { header: 'Duplicate Content', getter: (p) => p.audit_data?.Content?.['Exact Duplicates'] ? 'TRUE' : 'FALSE' },
+  { header: 'Paginated', getter: (p) => (p.audit_data?.Pagination?.Paginated ? 'TRUE' : 'FALSE') },
   { header: 'Missing Alt Text', getter: (p) => p.audit_data?.Images?.['Missing Alt Text'] ? 'TRUE' : 'FALSE' }
 ];
 
@@ -78,23 +96,98 @@ export function getCleanDomain(url) {
   }
 }
 
+
+const isEmptyCell = (v) =>
+  v === '' || v === null || v === undefined || (typeof v === 'string' && /^(not connected|unverified)/i.test(v));
+
+/** Master columns to export; optionally drops integration columns that are empty on every row. */
+export function getMasterFields(pages, hideEmptyIntegrations = false) {
+  if (!hideEmptyIntegrations) return MASTER_EXPORT_FIELDS;
+  return MASTER_EXPORT_FIELDS.filter((f) => {
+    if (!f.integration) return true;
+    return (pages || []).some((p) => {
+      try { return !isEmptyCell(f.getter(p)); } catch { return false; }
+    });
+  });
+}
+
+const cleanCellText = (v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : v);
+
+function downloadCsv(csvContent, filename) {
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+const slug = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+/**
+ * Filtered view export. `columns` = [{ header, getter(page) }] with human labels; booleans become TRUE/FALSE
+ * exactly like the Master CSV.
+ */
+export function exportFilteredViewToCSV(pages, columns, { targetUrl = '', category = '', filter = '' } = {}) {
+  if (!pages || pages.length === 0) {
+    toast.error('No URLs match the current filter.');
+    return;
+  }
+  const headers = columns.map((c) => csvCell(c.header));
+  const rows = pages.map((page) => columns.map((c) => {
+    try {
+      let v = c.getter(page);
+      if (v === true || v === 'true') v = 'TRUE';
+      else if (v === false || v === 'false') v = 'FALSE';
+      return csvCell(v);
+    } catch {
+      return '""';
+    }
+  }).join(','));
+  const name = [getCleanDomain(targetUrl), slug(category), slug(filter)].filter(Boolean).join('_');
+  downloadCsv('\uFEFF' + [headers.join(','), ...rows].join('\r\n'), `${name}.csv`);
+  toast.success('Filtered View Exported', {
+    description: `Exported ${pages.length} rows${category ? ` for ${category}` : ''}${filter ? ` (${filter})` : ''}.`
+  });
+}
+
+/** Duplicate groups export: value, count, URLs, page types. */
+export function exportDuplicateGroupsToCSV(groups, { targetUrl = '', kindLabel = 'duplicates', valueLabel = 'Value' } = {}) {
+  if (!groups || groups.length === 0) {
+    toast.error('No duplicate groups to export.');
+    return;
+  }
+  const headers = [valueLabel, 'Count', 'Source', 'URLs', 'Page Types'].map(csvCell);
+  const rows = groups.map((g) => [
+    csvCell(g.value),
+    csvCell(g.count),
+    csvCell(g.fromPagination === 'all' ? 'From pagination' : g.fromPagination === 'some' ? 'Includes pagination' : ''),
+    csvCell(g.urls.join(' | ')),
+    csvCell(g.pageTypes.join(', ')),
+  ].join(','));
+  downloadCsv('\uFEFF' + [headers.join(','), ...rows].join('\r\n'), `${getCleanDomain(targetUrl)}_duplicate_${slug(kindLabel)}_groups.csv`);
+  toast.success('Duplicate groups exported', { description: `${groups.length} groups.` });
+}
+
 /**
  * Export full 35+ column technical site audit to CSV
  */
-export function exportMasterAuditToCSV(pages, targetUrl = '') {
+export function exportMasterAuditToCSV(pages, targetUrl = '', { hideEmptyIntegrations = false } = {}) {
   if (!pages || pages.length === 0) {
     toast.error('No crawl data available to export.');
     return;
   }
 
-  const headers = MASTER_EXPORT_FIELDS.map(f => `"${f.header.replace(/"/g, '""')}"`);
+  const fields = getMasterFields(pages, hideEmptyIntegrations);
+  const headers = fields.map(f => `"${f.header.replace(/"/g, '""')}"`);
   const rows = pages.map(page => {
-    return MASTER_EXPORT_FIELDS.map(f => {
+    return fields.map(f => {
       try {
         const val = f.getter(page);
-        if (val === null || val === undefined) return '""';
-        if (typeof val === 'object') return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
-        return `"${String(val).replace(/"/g, '""')}"`;
+        return csvCell(val);
       } catch {
         return '""';
       }
@@ -121,21 +214,24 @@ export function exportMasterAuditToCSV(pages, targetUrl = '') {
 /**
  * Export multi-tab Excel Workbook (.xlsx) with Master URLs, Issues, and Summary
  */
-export function exportMasterAuditToExcel(pages, targetUrl = '', issuesReport = []) {
+export async function exportMasterAuditToExcel(pages, targetUrl = '', issuesReport = [], { hideEmptyIntegrations = false } = {}) {
   if (!pages || pages.length === 0) {
     toast.error('No crawl data available to export.');
     return;
   }
 
+  // Loaded on demand: SheetJS is large and only needed when an export is requested.
+  const XLSX = await import('xlsx');
   const wb = XLSX.utils.book_new();
 
   // 1. Sheet 1: Master Site Audit
+  const excelFields = getMasterFields(pages, hideEmptyIntegrations);
   const masterData = pages.map(page => {
     const row = {};
-    MASTER_EXPORT_FIELDS.forEach(f => {
+    excelFields.forEach(f => {
       try {
         const val = f.getter(page);
-        row[f.header] = val !== null && val !== undefined ? val : '';
+        row[f.header] = val !== null && val !== undefined ? cleanCellText(val) : '';
       } catch {
         row[f.header] = '';
       }
@@ -165,7 +261,7 @@ export function exportMasterAuditToExcel(pages, targetUrl = '', issuesReport = [
   // 3. Sheet 3: Crawl Summary
   const indexable = pages.filter(p => p.indexability !== 'Non-Indexable').length;
   const nonIndexable = pages.length - indexable;
-  const status200 = pages.filter(p => (p.status_code || 200) === 200).length;
+  const status200 = pages.filter(p => (p.status_code ?? 0) === 200).length;
   const status3xx = pages.filter(p => p.status_code >= 300 && p.status_code < 400).length;
   const status4xx = pages.filter(p => p.status_code >= 400 && p.status_code < 500).length;
   const status5xx = pages.filter(p => p.status_code >= 500).length;
@@ -203,14 +299,14 @@ export function exportIssuesToCSV(issuesReport, targetUrl = '') {
 
   const headers = ['"Issue Name"', '"Category"', '"Type"', '"Priority"', '"Affected Count"', '"Percentage (%)"', '"Root Cause"', '"Fix Guide"'];
   const rows = issuesReport.map(i => [
-    `"${(i.name || '').replace(/"/g, '""')}"`,
-    `"${(i.category || '').replace(/"/g, '""')}"`,
-    `"${(i.type || '').replace(/"/g, '""')}"`,
-    `"${(i.priority || '').replace(/"/g, '""')}"`,
+    csvCell(i.name || ''),
+    csvCell(i.category || ''),
+    csvCell(i.type || ''),
+    csvCell(i.priority || ''),
     `"${i.count || 0}"`,
     `"${i.percentage || 0}"`,
-    `"${(i.rootCause || '').replace(/"/g, '""')}"`,
-    `"${(i.fixGuide || '').replace(/"/g, '""')}"`
+    csvCell(i.rootCause || ''),
+    csvCell(i.fixGuide || '')
   ].join(','));
 
   const domain = getCleanDomain(targetUrl);
