@@ -1,4 +1,6 @@
+import asyncio
 import datetime
+from app.core.google_credentials import safe_service_account_credentials, refresh_credentials
 import time
 import httpx
 import os
@@ -258,7 +260,7 @@ class IntelligenceService:
                 recent_crawl = crawl_res.scalars().first()
                 if recent_crawl:
                     from app.services.enrichment_service import EnrichmentService
-                    enricher = EnrichmentService(db, recent_crawl.id)
+                    enricher = EnrichmentService(recent_crawl.id, db)
                     pages_res = await db.execute(
                         select(Page).where(Page.crawl_id == recent_crawl.id)
                     )
@@ -273,7 +275,7 @@ class IntelligenceService:
                             p.audit_data = p_ad
                             flag_modified(p, "audit_data")
                             db.add(p)
-                    elif service == "search_console":
+                    elif service == "search_console" and isinstance(data_payload.get("page_map"), dict):
                         for idx, p in enumerate(recent_pages):
                             p_ad = dict(p.audit_data or {})
                             p_ad["Search_Console"] = enricher._generate_gsc_metrics(
@@ -282,7 +284,11 @@ class IntelligenceService:
                             p.audit_data = p_ad
                             flag_modified(p, "audit_data")
                             db.add(p)
-                            
+
+                    # Page data changed after completion: drop cached scores so they are recomputed.
+                    if recent_crawl.summary and "scores" in recent_crawl.summary:
+                        recent_crawl.summary = {k: v for k, v in recent_crawl.summary.items() if k != "scores"}
+                        flag_modified(recent_crawl, "summary")
                     await db.commit()
             except Exception as enrich_err:
                 print(f"Retroactive page enrichment notice: {enrich_err}")
@@ -352,11 +358,11 @@ class IntelligenceService:
                 from google.oauth2 import service_account
                 from google.auth.transport.requests import Request as GoogleRequest
                 sa_info = json.loads(token)
-                creds = service_account.Credentials.from_service_account_info(
+                creds = safe_service_account_credentials(
                     sa_info,
                     scopes=["https://www.googleapis.com/auth/webmasters.readonly"]
                 )
-                creds.refresh(GoogleRequest())
+                await refresh_credentials(creds)
                 token = creds.token
                 user_email = sa_info.get("client_email")
             except Exception as sa_err:
@@ -595,13 +601,7 @@ class IntelligenceService:
             "top_queries": queries_list,
             "top_pages": pages_list,
             "devices": device_list,
-            "sync_latency_ms": 14.5,
-            "index_coverage": {
-                "valid_indexed": len(pages_list) or 0,
-                "crawled_not_indexed": 0,
-                "excluded_canonical": 0,
-                "blocked_robots": 0
-            }
+            "pages_with_impressions": len(pages_list),
         }
 
     @staticmethod
@@ -625,11 +625,11 @@ class IntelligenceService:
                 from google.oauth2 import service_account
                 from google.auth.transport.requests import Request as GoogleRequest
                 sa_info = json.loads(token)
-                creds = service_account.Credentials.from_service_account_info(
+                creds = safe_service_account_credentials(
                     sa_info,
                     scopes=["https://www.googleapis.com/auth/analytics.readonly"]
                 )
-                creds.refresh(GoogleRequest())
+                await refresh_credentials(creds)
                 token = creds.token
                 user_email = sa_info.get("client_email")
             except Exception as sa_err:
@@ -912,157 +912,30 @@ class IntelligenceService:
                 print(f"GA4 Data API query notice: {e}")
 
         totals_summary = {}
-        # If live Google API query returned 0 sessions or was restricted, but we have a selected property,
-        # generate realistic, deterministic telemetry based on the domain so dashboard is never blank!
-        if selected_property_id and total_sessions_30d == 0:
-            seed_val = sum(ord(c) for c in (clean_dom + str(selected_property_id)))
-            base_total = 1381 + (seed_val % 350)
-            total_sessions_30d = base_total
-            sessions_90d = int(total_sessions_30d * 2.85)
-
-            # High-fidelity 7-channel acquisition suite matching GA4 Traffic Acquisition schema
-            ch_raw = [
-                {
-                    "channel": "Organic Search",
-                    "sessions": int(total_sessions_30d * 0.5119),
-                    "engaged_sessions": int(total_sessions_30d * 0.5119 * 0.6124),
-                    "engagement_rate": "61.24%",
-                    "avg_time": "1m 35s",
-                    "events_per_session": 9.19,
-                    "event_count": int(total_sessions_30d * 0.5119 * 9.19),
-                    "pillar": "SEO",
-                    "verdict": "🏆 Core Organic SEO Growth"
-                },
-                {
-                    "channel": "Direct",
-                    "sessions": int(total_sessions_30d * 0.2607),
-                    "engaged_sessions": int(total_sessions_30d * 0.2607 * 0.2472),
-                    "engagement_rate": "24.72%",
-                    "avg_time": "10s",
-                    "events_per_session": 4.09,
-                    "event_count": int(total_sessions_30d * 0.2607 * 4.09),
-                    "pillar": "BRAND",
-                    "verdict": "💎 Loyal Direct Traffic"
-                },
-                {
-                    "channel": "Organic Social",
-                    "sessions": int(total_sessions_30d * 0.0898),
-                    "engaged_sessions": int(total_sessions_30d * 0.0898 * 0.50),
-                    "engagement_rate": "50.00%",
-                    "avg_time": "29s",
-                    "events_per_session": 4.64,
-                    "event_count": int(total_sessions_30d * 0.0898 * 4.64),
-                    "pillar": "SOCIAL",
-                    "verdict": "✨ Social Audience Reach"
-                },
-                {
-                    "channel": "Paid Search",
-                    "sessions": int(total_sessions_30d * 0.0739),
-                    "engaged_sessions": int(total_sessions_30d * 0.0739 * 0.1667),
-                    "engagement_rate": "16.67%",
-                    "avg_time": "2s",
-                    "events_per_session": 3.20,
-                    "event_count": int(total_sessions_30d * 0.0739 * 3.20),
-                    "pillar": "PAID",
-                    "verdict": "⚠️ High Drop-off / Low Dwell"
-                },
-                {
-                    "channel": "Referral",
-                    "sessions": int(total_sessions_30d * 0.0558),
-                    "engaged_sessions": int(total_sessions_30d * 0.0558 * 0.7273),
-                    "engagement_rate": "72.73%",
-                    "avg_time": "1m 31s",
-                    "events_per_session": 11.86,
-                    "event_count": int(total_sessions_30d * 0.0558 * 11.86),
-                    "pillar": "AUTHORITY",
-                    "verdict": "🌐 High Authority Citation"
-                },
-                {
-                    "channel": "AI Assistant",
-                    "sessions": max(7, int(total_sessions_30d * 0.0051)),
-                    "engaged_sessions": max(3, int(total_sessions_30d * 0.0051 * 0.4286)),
-                    "engagement_rate": "42.86%",
-                    "avg_time": "17s",
-                    "events_per_session": 4.00,
-                    "event_count": max(28, int(total_sessions_30d * 0.0051 * 4.00)),
-                    "pillar": "AEO",
-                    "verdict": "🔥 High AEO Intent (AI Referral)"
-                },
-                {
-                    "channel": "Unassigned",
-                    "sessions": max(2, int(total_sessions_30d * 0.0014)),
-                    "engaged_sessions": 0,
-                    "engagement_rate": "0.00%",
-                    "avg_time": "2s",
-                    "events_per_session": 2.50,
-                    "event_count": 5,
-                    "pillar": "OTHER",
-                    "verdict": "🔍 Untagged Direct Inbound"
-                }
-            ]
-
-            calc_total_sessions = sum(c["sessions"] for c in ch_raw)
-            calc_total_engaged = sum(c["engaged_sessions"] for c in ch_raw)
-            calc_total_events = sum(c["event_count"] for c in ch_raw)
-
-            total_sessions_30d = calc_total_sessions
-            engaged_sessions_total = calc_total_engaged
-            organic_sessions_30d = ch_raw[0]["sessions"]
-            avg_engagement_time = "59s"
-            engagement_rate_pct = f"{round(calc_total_engaged / calc_total_sessions * 100, 2)}%" if calc_total_sessions > 0 else "47.72%"
-            avg_bounce_rate = f"{round(100.0 - (calc_total_engaged / calc_total_sessions * 100), 1)}%" if calc_total_sessions > 0 else "52.3%"
-
-            for c in ch_raw:
-                c["percentage"] = f"{round(c['sessions'] / calc_total_sessions * 100, 2)}%" if calc_total_sessions > 0 else "0.00%"
-                c["engaged_percentage"] = f"{round(c['engaged_sessions'] / calc_total_engaged * 100, 2)}%" if calc_total_engaged > 0 else "0.00%"
-
-            channels_list = ch_raw
+        # Zero sessions are reported as zero: no synthetic telemetry is ever substituted.
+        is_connected_real = bool(selected_property_id and not google_permission_error)
+        if not totals_summary and channels_list:
+            tot_s = sum(c.get("sessions", 0) for c in channels_list)
+            tot_e = sum(c.get("engaged_sessions", 0) for c in channels_list)
+            tot_ev = sum(c.get("event_count", 0) for c in channels_list)
             totals_summary = {
-                "sessions": calc_total_sessions,
+                "sessions": tot_s,
                 "sessions_percentage": "100%",
-                "engaged_sessions": calc_total_engaged,
+                "engaged_sessions": tot_e,
                 "engaged_percentage": "100%",
-                "engagement_rate": engagement_rate_pct,
+                "engagement_rate": f"{round(tot_e / tot_s * 100, 2)}%" if tot_s > 0 else "0.00%",
                 "avg_time": avg_engagement_time,
-                "events_per_session": round(calc_total_events / calc_total_sessions, 2) if calc_total_sessions > 0 else 7.11,
-                "event_count": calc_total_events
+                "events_per_session": round(tot_ev / tot_s, 2) if tot_s > 0 else 0.0,
+                "event_count": tot_ev
             }
-
-            landing_pages_list = [
-                {"path": "/", "sessions": int(total_sessions_30d * 0.42), "bounce_rate": "34.2%", "avg_time": "3m 12s"},
-                {"path": "/services", "sessions": int(total_sessions_30d * 0.24), "bounce_rate": "38.5%", "avg_time": "2m 40s"},
-                {"path": "/about", "sessions": int(total_sessions_30d * 0.14), "bounce_rate": "41.0%", "avg_time": "1m 55s"},
-                {"path": "/contact", "sessions": int(total_sessions_30d * 0.11), "bounce_rate": "32.0%", "avg_time": "1m 30s"},
-                {"path": "/blog", "sessions": int(total_sessions_30d * 0.09), "bounce_rate": "44.1%", "avg_time": "2m 15s"},
-            ]
-            if not selected_property_name:
-                selected_property_name = f"GA4 Property ({selected_property_id.replace('properties/', '')})"
-            is_connected_real = True
-            google_permission_error = None
-        else:
-            is_connected_real = bool(selected_property_id and not google_permission_error)
-            if not totals_summary and channels_list:
-                tot_s = sum(c.get("sessions", 0) for c in channels_list)
-                tot_e = sum(c.get("engaged_sessions", 0) for c in channels_list)
-                tot_ev = sum(c.get("event_count", 0) for c in channels_list)
-                totals_summary = {
-                    "sessions": tot_s,
-                    "sessions_percentage": "100%",
-                    "engaged_sessions": tot_e,
-                    "engaged_percentage": "100%",
-                    "engagement_rate": f"{round(tot_e / tot_s * 100, 2)}%" if tot_s > 0 else "0.00%",
-                    "avg_time": avg_engagement_time,
-                    "events_per_session": round(tot_ev / tot_s, 2) if tot_s > 0 else 0.0,
-                    "event_count": tot_ev
-                }
 
         ai_channel = next((c for c in channels_list if c.get("pillar") == "AEO"), None)
         aeo_spotlight = {
-            "ai_assistant_sessions": ai_channel.get("sessions", 7) if ai_channel else 7,
-            "ai_share": ai_channel.get("percentage", "0.51%") if ai_channel else "0.51%",
-            "ai_engagement_rate": ai_channel.get("engagement_rate", "42.86%") if ai_channel else "42.86%",
-            "ai_avg_time": ai_channel.get("avg_time", "17s") if ai_channel else "17s",
-            "detected_engines": ["ChatGPT / SearchGPT", "Perplexity AI", "Google Gemini", "Claude", "Microsoft Copilot"]
+            "ai_assistant_sessions": ai_channel.get("sessions", 0) if ai_channel else 0,
+            "ai_share": ai_channel.get("percentage") if ai_channel else None,
+            "ai_engagement_rate": ai_channel.get("engagement_rate") if ai_channel else None,
+            "ai_avg_time": ai_channel.get("avg_time") if ai_channel else None,
+            "detected_engines": ai_channel.get("engines", []) if ai_channel else [],
         }
 
         return {
@@ -1188,10 +1061,12 @@ class IntelligenceService:
                         "rating": candidate.get("rating"),
                         "total_reviews": candidate.get("user_ratings_total", 0),
                         "status": candidate.get("business_status", "OPERATIONAL"),
-                        "verified_google_maps": True,
-                        "nap_consistency_score": "100%",
-                        "local_pack_ready": True,
-                        "schema_present": True,
+                        # First text-search match for the domain: the user must confirm it is their business.
+                        "match_confidence": "unconfirmed",
+                        "verified_google_maps": False,
+                        "nap_consistency_score": None,
+                        "local_pack_ready": None,
+                        "schema_present": None,
                         "is_live_data": True
                     }
                 else:
@@ -1205,9 +1080,9 @@ class IntelligenceService:
                         "total_reviews": 0,
                         "status": "NOT_FOUND",
                         "verified_google_maps": False,
-                        "nap_consistency_score": "40%",
-                        "local_pack_ready": False,
-                        "schema_present": False,
+                        "nap_consistency_score": None,
+                        "local_pack_ready": None,
+                        "schema_present": None,
                         "is_live_data": True,
                         "message": f"API key valid, but no matching Google Business profile found for '{domain}'"
                     }
@@ -1242,27 +1117,25 @@ class IntelligenceService:
             params["key"] = token
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.get("https://www.googleapis.com/pagespeedonline/v5/runPagespeed", params=params, headers=headers)
-                if res.status_code == 200:
-                    data = res.json()
-                    lh = data.get("lighthouseResult", {})
-                    score = int((lh.get("categories", {}).get("performance", {}).get("score", 0.0)) * 100)
-                    audits = lh.get("audits", {})
-                    return {
-                        "url": url,
-                        "mobile_score": score,
-                        "desktop_score": min(100, score + 8),
-                        "metrics": {
-                            "lcp": audits.get("largest-contentful-paint", {}).get("displayValue", "N/A"),
-                            "cls": audits.get("cumulative-layout-shift", {}).get("displayValue", "N/A"),
-                            "inp": audits.get("interactive", {}).get("displayValue", "N/A"),
-                            "fcp": audits.get("first-contentful-paint", {}).get("displayValue", "N/A"),
-                            "tbt": audits.get("total-blocking-time", {}).get("displayValue", "N/A")
-                        }
-                    }
-        except Exception:
-            pass
+            from app.services.enrichment_service import _parse_psi_strategy
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                async def run(strategy: str):
+                    res = await client.get(
+                        "https://www.googleapis.com/pagespeedonline/v5/runPagespeed",
+                        params={**params, "strategy": strategy}, headers=headers,
+                    )
+                    return _parse_psi_strategy(res.json()) if res.status_code == 200 else None
+                mobile, desktop = await asyncio.gather(run("mobile"), run("desktop"))
+            if mobile or desktop:
+                return {
+                    "url": url,
+                    "mobile_score": (mobile or {}).get("performance_score"),
+                    "desktop_score": (desktop or {}).get("performance_score"),
+                    "metrics": (mobile or desktop or {}).get("metrics", {}),
+                    "field_data": (mobile or {}).get("field_data"),
+                }
+        except Exception as e:
+            print(f"PageSpeed benchmark failed: {type(e).__name__}")
 
         return {
             "url": url,
@@ -1394,10 +1267,10 @@ class IntelligenceService:
         # Compact summary payload (~250 words / ~350 tokens)
         telemetry_digest = {
             "domain": clean_dom,
-            "total_30d_sessions": summary.get("total_sessions", 1381),
-            "engaged_sessions": summary.get("engaged_sessions", 659),
-            "engagement_rate": summary.get("engagement_rate", "47.7%"),
-            "avg_engagement_time": summary.get("average_engagement_time", "59s"),
+            "total_30d_sessions": summary.get("total_sessions", 0),
+            "engaged_sessions": summary.get("engaged_sessions"),
+            "engagement_rate": summary.get("engagement_rate"),
+            "avg_engagement_time": summary.get("average_engagement_time"),
             "channel_acquisition": [
                 {
                     "channel": c.get("channel"),
@@ -1445,10 +1318,8 @@ class IntelligenceService:
             try:
                 import google.generativeai as genai
                 genai.configure(api_key=api_key)
-                try:
-                    g_model = genai.GenerativeModel("gemini-2.5-flash")
-                except Exception:
-                    g_model = genai.GenerativeModel("gemini-1.5-flash")
+                from app.core.config import chosen_ai_model
+                g_model = genai.GenerativeModel(chosen_ai_model(g_int, "gemini"))
 
                 prompt = f"""You are a senior SEO, AEO (Answer Engine Optimization for ChatGPT, Perplexity, Claude, Gemini), and GEO strategist.
 Analyze this website telemetry digest and produce an actionable, high-impact review.
@@ -1459,7 +1330,7 @@ TELEMETRY DIGEST:
 You MUST return a VALID JSON OBJECT with these exact keys:
 {{
   "executive_diagnostic": "2-3 sentences assessing overall traffic health, the balance between traditional Organic Search and modern AI Search (AEO), and brand retention.",
-  "aeo_readiness_score": 75,
+  "aeo_readiness_score": null,
   "aeo_status": "Brief verdict on readiness for Perplexity, ChatGPT, Claude, and Gemini citations (e.g. 'Emerging AI Citations Detected').",
   "strategic_pillars": [
     {{
@@ -1501,40 +1372,19 @@ Return ONLY JSON. No markdown backticks outside JSON.
                 ai_result = None
 
         if not ai_result:
-            org_share = next((c.get("percentage") for c in channels if c.get("pillar") == "SEO"), "51.19%")
+            org_share = next((c.get("percentage") for c in channels if c.get("pillar") == "SEO"), None)
             ai_ch = next((c for c in channels if c.get("pillar") == "AEO"), None)
-            ai_sess = ai_ch.get("sessions") if ai_ch else 7
-            ai_rate = ai_ch.get("engagement_rate") if ai_ch else "42.86%"
-
             ai_result = {
-                "executive_diagnostic": f"{clean_dom.capitalize()} demonstrates a solid organic search core ({org_share} of total traffic), with emerging high-intent AI engine referrals ({ai_sess} sessions from AI Assistants with {ai_rate} engagement rate). Synthesizing traditional Google rankings with LLM answer citations (AEO) will accelerate high-converting inbound traffic.",
-                "aeo_readiness_score": 78,
-                "aeo_status": "Emerging AI Search Footprint (Active LLM Citations Detected)",
-                "strategic_pillars": [
-                  {
-                    "pillar": "AEO (Answer Engine Optimization)",
-                    "health": "High Growth Potential",
-                    "metric_highlight": f"{ai_sess} sessions via AI Assistants ({ai_rate} engagement rate)",
-                    "recommendation": "Add structured FAQPage schema, concise definition callouts, and high information-gain summary tables on top landing pages to secure citations in ChatGPT and Perplexity."
-                  },
-                  {
-                    "pillar": "Traditional Organic SEO",
-                    "health": "Primary Traffic Driver",
-                    "metric_highlight": f"{org_share} of overall acquisition",
-                    "recommendation": "Target striking-distance keywords (positions 8-15) with power hooks in meta titles to double click-through rates."
-                  },
-                  {
-                    "pillar": "Brand & Authority",
-                    "health": "Strong Baseline",
-                    "metric_highlight": "Direct & Referral represent over 31% of visits",
-                    "recommendation": "Leverage digital PR and niche directory citations to fortify domain authority and cross-platform entity trust."
-                  }
-                ],
-                "quick_wins": [
-                  "Deploy FAQPage and Article structured data on top landing pages for AI Overviews.",
-                  "Refactor H2/H3 headers on top pages to directly answer conversational user queries.",
-                  "301 Redirect or prune 0-visit zombie URLs to consolidate topical authority and crawl budget."
-                ]
+                "is_ai_generated": False,
+                "executive_diagnostic": (
+                    f"Connect an AI provider (Gemini, OpenAI or Claude) for a written strategy. Measured so far: "
+                    f"organic search share {org_share or 'unavailable'}; AI-assistant referrals "
+                    f"{ai_ch.get('sessions') if ai_ch else 'not detected'}."
+                ),
+                "aeo_readiness_score": None,
+                "aeo_status": "Not assessed",
+                "strategic_pillars": [],
+                "quick_wins": [],
             }
 
         ai_result["generated_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
