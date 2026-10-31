@@ -141,7 +141,7 @@ export default function ThemeToggle({
 
         {/* Small theme mode indicator badge if set to 'system' */}
         {theme === 'system' && (
-          <span className="rounded bg-indigo-500/10 dark:bg-indigo-400/15 px-1 py-0.2 text-[9px] font-mono text-indigo-600 dark:text-indigo-400">
+          <span className="rounded bg-indigo-500/10 dark:bg-indigo-400/15 px-1 py-0.2 text-[10px] font-mono text-indigo-600 dark:text-indigo-400">
             AUTO
           </span>
         )}

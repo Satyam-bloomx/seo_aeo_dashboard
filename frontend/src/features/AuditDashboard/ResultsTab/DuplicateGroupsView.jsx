@@ -107,12 +107,12 @@ export default function DuplicateGroupsView({ pages, crawlSummary, targetUrl, in
                     <span className="flex-1 min-w-0 text-xs font-semibold text-slate-900 dark:text-slate-100 break-words">{g.value}</span>
                     <span className="shrink-0 flex flex-wrap items-center justify-end gap-1">
                       {label && (
-                        <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900/50">
+                        <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900/50">
                           {label}
                         </span>
                       )}
                       {g.pageTypes.map((t) => (
-                        <span key={t} className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">{t}</span>
+                        <span key={t} className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">{t}</span>
                       ))}
                     </span>
                   </button>

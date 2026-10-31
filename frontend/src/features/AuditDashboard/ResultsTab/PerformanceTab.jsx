@@ -298,10 +298,10 @@ export default function PerformanceTab({ pages }) {
   }, [metrics, targetOffset, circumference, strategy, inspectedUrl]);
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-2 space-y-5 pb-20 md:pb-6">
+    <div className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-2 space-y-5 pb-20 lg:pb-6">
 
       {/* Header & Device Strategy Toggle */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 shrink-0">
+      <div className="flex flex-col @4xl:flex-row @4xl:items-center justify-between gap-3 sm:gap-4 shrink-0">
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
             <Zap className="text-amber-500 shrink-0" size={24} />
@@ -426,7 +426,7 @@ export default function PerformanceTab({ pages }) {
         {/* Quick Selection Chips of Crawled URLs */}
         {crawledUrls.length > 0 && (
           <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar max-w-full pt-1 text-[11px] font-mono">
-            <span className="text-slate-400 dark:text-slate-500 font-semibold shrink-0">Quick Select:</span>
+            <span className="text-slate-400 dark:text-slate-400 font-semibold shrink-0">Quick Select:</span>
             {crawledUrls.slice(0, 6).map((u, i) => (
               <button
                 key={i}
@@ -481,7 +481,7 @@ export default function PerformanceTab({ pages }) {
                   <span ref={numberRef} className={`text-4xl font-extrabold font-mono ${scoreMeta.text}`}>
                     {metrics.overallScore}
                   </span>
-                  <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500">Score</span>
+                  <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-400">Score</span>
                 </div>
               </div>
 
@@ -517,16 +517,16 @@ export default function PerformanceTab({ pages }) {
                     className="metric-card-item p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-colors"
                   >
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[9px] sm:text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase truncate">{v.label}</span>
+                      <span className="text-[10px] sm:text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 uppercase truncate">{v.label}</span>
                       {v.status && (
-                        <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border ${toneStyle.badge}`}>
+                        <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded border ${toneStyle.badge}`}>
                           {v.status}
                         </span>
                       )}
                     </div>
                     <div className="my-1.5 sm:my-2">
                       <div className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white font-mono truncate">{v.value}</div>
-                      <p className={`text-[9px] sm:text-[10px] font-semibold truncate ${toneStyle.text}`}>
+                      <p className={`text-[10px] sm:text-[10px] font-semibold truncate ${toneStyle.text}`}>
                         Target: {v.target}
                       </p>
                     </div>

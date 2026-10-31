@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { toast } from 'sonner';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'framer-motion';
 import Sidebar from './Sidebar/Sidebar';
 import OverviewTab from './ResultsTab/OverviewTab';
 // Secondary tabs, modals and drawers load on first use instead of shipping in the initial bundle.
 const IssuesTab = dynamic(() => import('./ResultsTab/IssuesTab'), { ssr: false });
 const URLExplorerTab = dynamic(() => import('./ResultsTab/URLExplorerTab'), { ssr: false });
 const PerformanceTab = dynamic(() => import('./ResultsTab/PerformanceTab'), { ssr: false });
+const KeywordsTab = dynamic(() => import('./ResultsTab/KeywordsTab'), { ssr: false });
 const ExecutiveReportModal = dynamic(() => import('./ExecutiveReportModal'), { ssr: false });
 const ExportAuditModal = dynamic(() => import('./ExportAuditModal'), { ssr: false });
 const AiAssistantDrawer = dynamic(() => import('./AiAssistantDrawer'), { ssr: false });
@@ -75,6 +76,7 @@ import {
   LayoutDashboard,
   ListTree,
   Zap,
+  ListOrdered,
 } from 'lucide-react';
 
 const fireCelebrationCannons = async () => {
@@ -113,6 +115,7 @@ const SLUG_TO_TAB = {
   performance: 'performance',
   'speed-vitals': 'performance',
   vitals: 'performance',
+  keywords: 'keywords',
   integrations: 'integrations',
 };
 
@@ -121,6 +124,7 @@ const TAB_TO_SLUG = {
   issues: 'issues',
   explorer: 'explorer',
   performance: 'performance',
+  keywords: 'keywords',
   integrations: 'integrations',
 };
 
@@ -384,7 +388,10 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
   const mountAiAssistantDrawer = useMountedOnceOpened(isAiCopilotOpen);
 
   // Scores and issue results from the backend scoring engine, shared with every tab and modal.
-  const crawlSummary = useCrawlSummaryFetch(crawlId, status, pages.length);
+  // Bumped after a keyword check so the dashboard's keyword and AI-answer cards reload.
+  const [summaryVersion, setSummaryVersion] = useState(0);
+  const refreshSummary = useCallback(() => setSummaryVersion((v) => v + 1), []);
+  const crawlSummary = useCrawlSummaryFetch(crawlId, status, pages.length, summaryVersion);
 
   // New browser or device: start from the settings the last whole-site crawl used, once.
   const lastCrawlSettings = crawlSummary?.crawl?.mode !== 'page' ? crawlSummary?.crawl?.settings : null;
@@ -705,7 +712,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
           animate="animate"
           exit="exit"
           onClick={() => setSelectedRow(null)}
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs 2xl:hidden"
         />
       )}
       {selectedRow && (
@@ -715,7 +722,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
           initial="initial"
           animate="animate"
           exit="exit"
-          className="fixed inset-y-0 right-0 z-50 flex h-full w-full flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-[#07090E] text-slate-900 dark:text-slate-100 shadow-[0_0_60px_-12px_rgba(15,23,42,0.25)] will-change-transform sm:w-[420px] md:relative md:w-[440px] xl:w-[480px]"
+          className="fixed inset-y-0 right-0 z-50 flex h-full w-full flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-[#07090E] text-slate-900 dark:text-slate-100 shadow-[0_0_60px_-12px_rgba(15,23,42,0.25)] will-change-transform sm:w-[440px] 2xl:relative 2xl:w-[480px]"
         >
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0B0F19] p-3.5 sm:p-4 shrink-0">
             <div className="min-w-0 flex-1 pr-2">
@@ -844,7 +851,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                     <span className="flex items-center gap-1.5">
                       <Layers size={13} className="text-amber-600 dark:text-amber-400" /> Duplicate Pages Detected
                     </span>
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
                       {totalDuplicates} {totalDuplicates === 1 ? 'Duplicate' : 'Duplicates'}
                     </span>
                   </h4>
@@ -926,7 +933,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                 <span className="flex items-center gap-1.5">
                   <ChevronRight size={13} className="text-indigo-600" /> On-Page Elements & Headings
                 </span>
-                <span className="text-[9px] text-slate-400 font-normal">Exact text & character lengths</span>
+                <span className="text-[10px] text-slate-400 font-normal">Exact text & character lengths</span>
               </h4>
               <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
                 {/* Page Title */}
@@ -1130,7 +1137,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                 <span className="flex items-center gap-1.5">
                   <Link2 size={13} className="text-indigo-600" /> Discovered On ({inlinks.length} Inlinks)
                 </span>
-                <span className="text-[9px] text-slate-400 font-normal">Internal crawl source</span>
+                <span className="text-[10px] text-slate-400 font-normal">Internal crawl source</span>
               </h4>
 
               {isLoadingInlinks ? (
@@ -1293,7 +1300,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                       <motion.div key={category} variants={staggerItem} className="space-y-2">
                         <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 dark:text-slate-300 px-1">
                           <span>{category.replace(/_/g, ' ')}</span>
-                          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
+                          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-400">
                             {items.filter(i => i.priority === 'High').length > 0 && (
                               <span className="text-rose-600 dark:text-rose-400 font-bold mr-1.5">
                                 {items.filter(i => i.priority === 'High').length} High
@@ -1553,7 +1560,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
             variants={staggerContainer(0.05)}
             className="flex max-w-md w-full flex-wrap items-center justify-center gap-2 px-2"
           >
-            <motion.span variants={staggerItem} className="mb-1 w-full font-mono text-[11px] text-slate-400 dark:text-slate-500 text-center">
+            <motion.span variants={staggerItem} className="mb-1 w-full font-mono text-[11px] text-slate-400 dark:text-slate-400 text-center">
               Quick Launch Seed Targets:
             </motion.span>
             {QUICK_TARGETS.map((target) => (
@@ -1609,11 +1616,17 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
       return <PerformanceTab pages={pages} />;
     }
 
+    if (activeTab === 'keywords') {
+      return <KeywordsTab onNavigateToTab={(tab) => handleTabChange(tab)} onChecked={refreshSummary} />;
+    }
+
 
     return null;
   };
 
   return (
+    // reducedMotion="user": every Framer animation below follows the system "reduce motion" setting.
+    <MotionConfig reducedMotion="user">
     <CrawlSummaryProvider value={crawlSummary}>
       <div className="relative flex h-screen h-[100dvh] w-full overflow-hidden bg-[#F8FAFC] dark:bg-[#050505] font-sans text-slate-900 dark:text-[#FFFFFF] transition-colors duration-200">
         <div className="ambient-bg" />
@@ -1621,7 +1634,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
         {/* ---------------------------------------------------------------- */}
         {/* Sidebar — static on desktop, animated drawer on mobile            */}
         {/* ---------------------------------------------------------------- */}
-        <div className="z-20 hidden w-[260px] shrink-0 md:block">
+        <div className="z-20 hidden w-[260px] shrink-0 lg:block">
           <Sidebar
             activeTab={activeTab}
             setActiveTab={handleTabChange}
@@ -1643,7 +1656,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
               animate="animate"
               exit="exit"
               onClick={() => setIsMobileSidebarOpen(false)}
-              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
+              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs lg:hidden"
             />
           )}
           {isMobileSidebarOpen && (
@@ -1653,7 +1666,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
               initial="initial"
               animate="animate"
               exit="exit"
-              className="fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] will-change-transform md:hidden shadow-2xl bg-white dark:bg-[#07080B]"
+              className="fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] will-change-transform lg:hidden shadow-2xl bg-white dark:bg-[#07080B]"
             >
               <Sidebar
                 activeTab={activeTab}
@@ -1689,7 +1702,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
         {/* ---------------------------------------------------------------- */}
         {/* Main column                                                      */}
         {/* ---------------------------------------------------------------- */}
-        <main className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="@container relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden">
           <motion.header
             initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1700,7 +1713,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
               onClick={() => setIsMobileSidebarOpen(true)}
               whileTap={tapPress}
               transition={spring.press}
-              className="flex items-center justify-center rounded-xl p-2 text-slate-600 dark:text-[#D6E5FC]/70 hover:bg-slate-100 dark:hover:bg-[#121620] hover:text-slate-900 dark:hover:text-white md:hidden shrink-0 touch-target"
+              className="flex items-center justify-center rounded-xl p-2 text-slate-600 dark:text-[#D6E5FC]/70 hover:bg-slate-100 dark:hover:bg-[#121620] hover:text-slate-900 dark:hover:text-white lg:hidden shrink-0 touch-target"
               aria-label="Open navigation menu"
             >
               <Menu size={20} />
@@ -1736,7 +1749,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                   <X size={14} />
                 </button>
               )}
-              <div role="group" aria-label="Audit scope" className="hidden sm:flex shrink-0 items-center rounded-full bg-slate-100 dark:bg-white/[0.06] p-0.5 mr-1 text-[11px] font-bold">
+              <div role="group" aria-label="Audit scope" className="hidden @2xl:flex shrink-0 items-center rounded-full bg-slate-100 dark:bg-white/[0.06] p-0.5 mr-1 text-[11px] font-bold">
                 {[{ id: 'page', label: 'Single page' }, { id: 'site', label: 'Whole site' }].map(opt => (
                   <button
                     key={opt.id}
@@ -1783,7 +1796,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                       </>
                     ) : (
                       <>
-                        <span className="hidden sm:inline">Run </span>Audit
+                        <span className="hidden @md:inline">Run </span>Audit
                       </>
                     )}
                   </motion.span>
@@ -1804,15 +1817,15 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                 aria-label="Clear audit data"
               >
                 <Trash2 size={14} className="text-rose-500" />
-                <span className="hidden sm:inline">Clear</span>
+                <span className="hidden @3xl:inline">Clear</span>
               </motion.button>
             </div>
           </motion.header>
 
           {/* Audit scope: mobile toggle + switcher between the kept single-page and whole-site audits */}
           {/* Always shown on mobile (toggle); on desktop only when there are two audits to switch between. */}
-          <div className={`${latestByMode.site && latestByMode.page ? 'flex' : 'flex sm:hidden'} flex-wrap items-center gap-2 px-3 sm:px-5 pt-2 text-[11px]`}>
-              <div role="group" aria-label="Audit scope" className="flex sm:hidden items-center rounded-full bg-slate-100 dark:bg-white/[0.06] p-0.5 font-bold">
+          <div className={`${latestByMode.site && latestByMode.page ? 'flex' : 'flex @2xl:hidden'} flex-wrap items-center gap-2 px-3 sm:px-5 pt-2 text-[11px]`}>
+              <div role="group" aria-label="Audit scope" className="flex @2xl:hidden items-center rounded-full bg-slate-100 dark:bg-white/[0.06] p-0.5 font-bold">
                 {[{ id: 'page', label: 'Single page' }, { id: 'site', label: 'Whole site' }].map(opt => (
                   <button
                     key={opt.id}
@@ -1951,7 +1964,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
           </AnimatePresence>
 
           {/* Tab body with mobile safe area bottom clearance */}
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6 pb-20 md:pb-6">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6 pb-20 lg:pb-6">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={`${activeTab}-${pages.length > 0}`}
@@ -1972,13 +1985,14 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
         {/* ---------------------------------------------------------------- */}
         <nav
           aria-label="Mobile Navigation"
-          className="fixed bottom-0 inset-x-0 z-30 md:hidden flex items-center justify-around border-t border-slate-200/90 dark:border-white/[0.08] bg-white/95 dark:bg-[#07080B]/95 backdrop-blur-xl px-1.5 py-1 pb-safe shadow-[0_-4px_24px_rgba(0,0,0,0.06)] dark:shadow-[0_-8px_32px_rgba(0,0,0,0.65)]"
+          className="fixed bottom-0 inset-x-0 z-30 lg:hidden flex items-center justify-around border-t border-slate-200/90 dark:border-white/[0.08] bg-white/95 dark:bg-[#07080B]/95 backdrop-blur-xl px-1.5 py-1 pb-safe shadow-[0_-4px_24px_rgba(0,0,0,0.06)] dark:shadow-[0_-8px_32px_rgba(0,0,0,0.65)]"
         >
           {[
             { id: 'overview', label: 'Overview', icon: LayoutDashboard },
             { id: 'issues', label: 'Issues', icon: AlertTriangle, badge: issuesReport.length },
             { id: 'explorer', label: 'URLs', icon: ListTree, badge: pages.length },
             { id: 'performance', label: 'Speed', icon: Zap },
+            { id: 'keywords', label: 'Keywords', icon: ListOrdered },
             { id: 'integrations', label: 'APIs', icon: Layers },
           ].map((tab) => {
             const isActive = activeTab === tab.id;
@@ -1997,7 +2011,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                 <div className="relative">
                   <Icon size={18} className={isActive ? 'stroke-[2.5]' : 'stroke-2'} />
                   {tab.badge > 0 && (
-                    <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold font-mono flex items-center justify-center leading-none">
+                    <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold font-mono flex items-center justify-center leading-none">
                       {tab.badge > 99 ? '99+' : tab.badge}
                     </span>
                   )}
@@ -2081,5 +2095,6 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
         />
       </div>
     </CrawlSummaryProvider>
+    </MotionConfig>
   );
 }

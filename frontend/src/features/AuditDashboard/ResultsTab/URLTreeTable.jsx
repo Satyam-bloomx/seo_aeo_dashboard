@@ -259,7 +259,7 @@ export default function URLTreeTable({ pages, onRowClick, searchQuery = '', isCo
                       className={`inline-flex items-center justify-center p-1 rounded-md border transition-all cursor-pointer ${
                         isCompact
                           ? 'bg-indigo-600 text-white border-indigo-500 hover:bg-indigo-700 shadow-2xs'
-                          : 'bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:text-indigo-600 dark:hover:text-[#CAE366] hover:border-indigo-400'
+                          : 'bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-indigo-600 dark:hover:text-[#CAE366] hover:border-indigo-400'
                       }`}
                       title={isCompact ? "Restore full header & filters" : "Compact table (hide header & filters for full screen view)"}
                     >
@@ -319,7 +319,7 @@ export default function URLTreeTable({ pages, onRowClick, searchQuery = '', isCo
                           <button
                             type="button"
                             onClick={(e) => toggleExpand(row.id, e)}
-                            className="p-0.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0"
+                            className="p-0.5 text-slate-400 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0"
                           >
                             {row.isExpanded ? (
                               <ChevronDown size={13} className="text-slate-600 dark:text-slate-400" />
@@ -357,19 +357,19 @@ export default function URLTreeTable({ pages, onRowClick, searchQuery = '', isCo
                         </span>
 
                         {isAuthor && (
-                          <span className="shrink-0 px-1 py-0.2 text-[9px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
+                          <span className="shrink-0 px-1 py-0.2 text-[10px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
                             Author
                           </span>
                         )}
 
                         {statusCode >= 400 && (
-                          <span className="shrink-0 px-1 py-0.2 text-[9px] font-mono font-bold rounded bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50">
+                          <span className="shrink-0 px-1 py-0.2 text-[10px] font-mono font-bold rounded bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50">
                             404 Error
                           </span>
                         )}
 
                         {statusCode >= 300 && statusCode < 400 && (
-                          <span className="shrink-0 px-1 py-0.2 text-[9px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
+                          <span className="shrink-0 px-1 py-0.2 text-[10px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
                             301 Redirect
                           </span>
                         )}

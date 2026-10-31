@@ -226,7 +226,7 @@ export default function SettingsModal({ isOpen, onClose, initialSettings, onSave
 
         {/* Left Sidebar on desktop, horizontal tabs on mobile */}
         <div className="w-full md:w-60 bg-slate-50/70 dark:bg-slate-900/90 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 p-2 md:p-3 flex flex-row md:flex-col gap-1 shrink-0 overflow-x-auto md:overflow-y-auto custom-scrollbar">
-          <div className="hidden md:block px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          <div className="hidden md:block px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 dark:text-slate-400">
             Settings Menu
           </div>
           <LayoutGroup id="settings-nav">

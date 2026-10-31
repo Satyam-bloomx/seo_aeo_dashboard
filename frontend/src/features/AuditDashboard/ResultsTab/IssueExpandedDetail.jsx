@@ -211,7 +211,7 @@ export default function IssueExpandedDetail({
           <div className="min-w-0">
             <h5 className="text-xs font-bold text-white flex items-center gap-2 flex-wrap">
               <span>{isAiEnriched ? 'AI-Tailored Diagnostic Intelligence' : 'Automated Diagnostic Guidance'}</span>
-              <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold border ${
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
                 isAiEnriched
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                   : 'bg-indigo-500/30 text-indigo-300 border-indigo-400/30'
@@ -427,7 +427,7 @@ export default function IssueExpandedDetail({
                                 MAIN / PRIMARY URL
                               </span>
                               {main.canonical_link_element_1 && (
-                                <span className="text-[9px] font-mono text-emerald-700 dark:text-emerald-400 font-semibold" title={main.canonical_link_element_1}>
+                                <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 font-semibold" title={main.canonical_link_element_1}>
                                   {main.canonical_link_element_1 === main.url ? '(Self-Canonical)' : '(Has Canonical)'}
                                 </span>
                               )}
@@ -518,7 +518,7 @@ export default function IssueExpandedDetail({
                                   DUPLICATE OF MAIN
                                 </span>
                                 {dup.canonical_link_element_1 && dup.canonical_link_element_1 !== dup.url && (
-                                  <span className="text-[9px] font-mono text-slate-500 truncate max-w-xs" title={`Canonical: ${dup.canonical_link_element_1}`}>
+                                  <span className="text-[10px] font-mono text-slate-500 truncate max-w-xs" title={`Canonical: ${dup.canonical_link_element_1}`}>
                                     → Canonical: {dup.canonical_link_element_1}
                                   </span>
                                 )}

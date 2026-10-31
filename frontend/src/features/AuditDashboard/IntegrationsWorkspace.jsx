@@ -541,7 +541,7 @@ export default function IntegrationsWorkspace({
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
               <span>{data?.property || data?.property_name || selectedPropertyUrl || 'Telemetry Hub'}</span>
               <span>•</span>
-              <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500 flex items-center gap-1">
+              <span className="font-mono text-[11px] text-slate-400 dark:text-slate-400 flex items-center gap-1">
                 <Clock size={11} /> Last synced: {formattedSyncedTime}
               </span>
             </p>
@@ -1279,7 +1279,7 @@ export default function IntegrationsWorkspace({
                                   {p.title}
                                 </div>
                                 <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1.5 font-mono">
-                                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                  <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
                                     p.statusCode >= 400 ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                                   }`}>
                                     {p.statusCode}
@@ -1888,7 +1888,7 @@ export default function IntegrationsWorkspace({
                                   </td>
                                   <td className="py-2.5 px-3">
                                     <div className="flex items-center gap-2">
-                                      <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono w-3.5">
+                                      <span className="text-[11px] text-slate-400 dark:text-slate-400 font-mono w-3.5">
                                         {idx + 1}
                                       </span>
                                       <span className="font-extrabold text-slate-900 dark:text-white">{c.channel}</span>
@@ -2229,7 +2229,7 @@ export default function IntegrationsWorkspace({
                                   {p.title}
                                 </div>
                                 <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1.5 font-mono">
-                                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                  <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
                                     p.statusCode >= 400 ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                                   }`}>
                                     {p.statusCode}

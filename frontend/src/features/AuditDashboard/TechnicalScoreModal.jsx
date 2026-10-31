@@ -121,7 +121,7 @@ export default function TechnicalScoreModal({
             whileTap={tapPress}
             transition={spring.press}
             aria-label="Close dialog"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors"
           >
             <X size={18} />
           </motion.button>
@@ -288,7 +288,7 @@ export default function TechnicalScoreModal({
                             }`}>
                               {pillar.score ?? '—'}
                             </span>
-                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">/100</span>
+                            <span className="text-[10px] text-slate-400 dark:text-slate-400 font-mono">/100</span>
                           </div>
                           <div className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
                             {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -362,7 +362,7 @@ export default function TechnicalScoreModal({
                               </button>
                             </div>
 
-                            <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
+                            <span className="text-[10px] font-mono text-slate-400 dark:text-slate-400">
                               Categories: {pillar.categories?.join(', ').replace(/_/g, ' ')}
                             </span>
                           </div>
@@ -407,7 +407,7 @@ export default function TechnicalScoreModal({
                                           <span className="font-bold text-slate-900 dark:text-white">
                                             {check.name}
                                           </span>
-                                          <span className={`px-1.5 py-0.2 rounded font-mono text-[9px] font-bold uppercase ${
+                                          <span className={`px-1.5 py-0.2 rounded font-mono text-[10px] font-bold uppercase ${
                                             isPassing
                                               ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
                                               : isHigh
@@ -569,10 +569,10 @@ export default function TechnicalScoreModal({
                               <span className="font-bold text-slate-900 dark:text-white">
                                 {check.name}
                               </span>
-                              <span className="px-1.5 py-0.2 rounded font-mono text-[9px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                              <span className="px-1.5 py-0.2 rounded font-mono text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                                 {check.category.replace(/_/g, ' ')}
                               </span>
-                              <span className={`px-1.5 py-0.2 rounded font-mono text-[9px] font-bold uppercase ${
+                              <span className={`px-1.5 py-0.2 rounded font-mono text-[10px] font-bold uppercase ${
                                 isPassing
                                   ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
                                   : isHigh

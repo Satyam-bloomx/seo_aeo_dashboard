@@ -15,6 +15,7 @@ import {
   Layers,
   Sparkles,
   X,
+  ListOrdered,
 } from 'lucide-react';
 import {
   duration,
@@ -63,7 +64,8 @@ export default function Sidebar({
       badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-[#CAE366]/10 dark:text-[#CAE366] dark:border-[#CAE366]/25',
     },
     { id: 'performance', label: 'Speed & Vitals', icon: Zap, badge: 'Lighthouse', badgeColor: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-[#4B88FF]/10 dark:text-[#4B88FF] dark:border-[#4B88FF]/25' },
-    { id: 'integrations', label: 'API Integrations', icon: Layers, badge: 'SEO/AEO', badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-[#4B88FF]/10 dark:text-[#4B88FF] dark:border-[#4B88FF]/25' }
+    { id: 'keywords', label: 'Keywords & AI answers', icon: ListOrdered, badge: null },
+    { id: 'integrations', label: 'API Integrations', icon: Layers, badge: null, badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-[#4B88FF]/10 dark:text-[#4B88FF] dark:border-[#4B88FF]/25' }
   ];
 
   const indicatorTransition = reduced ? { duration: 0 } : spring.snap;
@@ -112,7 +114,7 @@ export default function Sidebar({
           className="mb-1 flex items-center justify-between px-3 font-sans text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-[#D6E5FC]/40"
         >
           <span>Navigation</span>
-          <span className="text-[9px] font-normal text-[#CAE366]">v20.4</span>
+          <span className="text-[10px] font-normal text-[#CAE366]">v20.4</span>
         </motion.div>
 
         <LayoutGroup id="sidebar-nav">
@@ -221,7 +223,7 @@ export default function Sidebar({
               </span>
               <span>Client report</span>
             </span>
-            <span className="font-mono text-[10px] uppercase text-slate-400 dark:text-slate-500">PDF</span>
+            <span className="font-mono text-[10px] uppercase text-slate-400 dark:text-slate-400">PDF</span>
           </motion.button>
         )}
 
@@ -237,7 +239,7 @@ export default function Sidebar({
               </span>
               <span>AI page audit</span>
             </span>
-            <span className="font-mono text-[10px] uppercase text-slate-400 dark:text-slate-500">Rewrites</span>
+            <span className="font-mono text-[10px] uppercase text-slate-400 dark:text-slate-400">Rewrites</span>
           </motion.button>
         )}
 
@@ -255,7 +257,7 @@ export default function Sidebar({
             </span>
             <span>Crawler Settings</span>
           </span>
-          <span className="font-mono text-[10px] uppercase text-slate-400 dark:text-slate-500">Config</span>
+          <span className="font-mono text-[10px] uppercase text-slate-400 dark:text-slate-400">Config</span>
         </motion.button>
 
         {/* Theme Preference Switcher in Sidebar Footer */}

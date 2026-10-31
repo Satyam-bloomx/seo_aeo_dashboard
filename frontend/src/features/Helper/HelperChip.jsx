@@ -37,7 +37,7 @@ export default function HelperChip({ helper, onOpen }) {
         {status === 'connected' && outdated ? <RefreshCw size={14} /> : <Puzzle size={14} />}
         <span className={`absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-2 ring-white dark:ring-[#07080B] ${dot}`} />
       </span>
-      <span className="hidden lg:inline whitespace-nowrap">{label}</span>
+      <span className="hidden @4xl:inline whitespace-nowrap">{label}</span>
     </button>
   );
 }

@@ -721,7 +721,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     }
     if (colKey === 'Revenue_At_Risk') {
       if (value === 'N/A' || !value) {
-        return <span className="text-slate-400 dark:text-slate-500 font-mono">-</span>;
+        return <span className="text-slate-400 dark:text-slate-400 font-mono">-</span>;
       }
       const isCritical = String(value).includes('P0');
       return (
@@ -749,7 +749,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
 
     if (colKey === 'link_score' || colKey === 'Link_Score') {
       if (value === '' || value === undefined || value === null) {
-        return <span className="text-slate-400 dark:text-slate-500 font-mono">-</span>;
+        return <span className="text-slate-400 dark:text-slate-400 font-mono">-</span>;
       }
       const num = parseInt(value, 10) || 0;
       let badgeClass = 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
@@ -826,7 +826,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
               const cellId = `${page?.url || ''}-${colKey}`;
               handleCopyTextCell(String(value), cellId, getColumnLabel(colKey));
             }}
-            className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 dark:text-slate-500 dark:hover:text-indigo-400 rounded bg-slate-50 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200/60 dark:border-slate-700 opacity-0 group-hover/cell:opacity-100 transition-opacity"
+            className="shrink-0 p-1 text-slate-400 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded bg-slate-50 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200/60 dark:border-slate-700 opacity-0 group-hover/cell:opacity-100 transition-opacity"
             title={`Copy exact ${getColumnLabel(colKey)}`}
           >
             {copiedCellId === `${page?.url || ''}-${colKey}` ? (
@@ -842,7 +842,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     // 4. Length Without Spaces Dedicated Column
     if (colKey.endsWith('_length_no_spaces')) {
       if (value === null || value === undefined || value === '' || value === 0) {
-        return <span className="text-slate-400 dark:text-slate-500 font-mono">-</span>;
+        return <span className="text-slate-400 dark:text-slate-400 font-mono">-</span>;
       }
       return (
         <span className="inline-flex items-center px-2 py-0.5 rounded font-mono text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/70 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-900/50" title="Character count without spaces">
@@ -854,7 +854,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     // 5. Standard Length columns: show length with spaces and sub-badge without spaces
     if (colKey.endsWith('_length') || colKey === 'word_count') {
       if (value === null || value === undefined || value === '' || value === 0) {
-        return <span className="text-slate-400 dark:text-slate-500 font-mono">-</span>;
+        return <span className="text-slate-400 dark:text-slate-400 font-mono">-</span>;
       }
       // Look up corresponding no-spaces length if applicable
       let noSpaces = undefined;
@@ -881,7 +881,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     // 6. Pixel width columns
     if (colKey.endsWith('_pixel_width')) {
       if (value === null || value === undefined || value === 0 || value === '') {
-        return <span className="text-slate-400 dark:text-slate-500 font-mono">-</span>;
+        return <span className="text-slate-400 dark:text-slate-400 font-mono">-</span>;
       }
       const numVal = parseInt(value, 10);
       const isOver = (colKey.startsWith('title') && numVal > 561) || (colKey.startsWith('meta_desc') && numVal > 985);
@@ -960,7 +960,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
     }
 
     if (value === null || value === undefined || value === '') {
-      return <span className="text-slate-400 dark:text-slate-500 font-mono">-</span>;
+      return <span className="text-slate-400 dark:text-slate-400 font-mono">-</span>;
     }
     if (typeof value === 'object') {
       return <span className="font-mono text-[10px] text-indigo-700 dark:text-indigo-400 truncate max-w-xs">{JSON.stringify(value)}</span>;
@@ -980,7 +980,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 shrink-0 overflow-hidden"
+            className="flex flex-col @6xl:flex-row @6xl:items-center justify-between gap-2.5 sm:gap-3 shrink-0 overflow-hidden"
           >
             <div>
               <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">URL Data Grid</h2>
@@ -988,7 +988,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             </div>
 
             {/* Toolbar: Table/Tree Switcher & Export Buttons in a clean swipeable rail on mobile */}
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto no-scrollbar max-w-full pb-0.5 flex-nowrap self-start sm:self-auto">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto no-scrollbar max-w-full pb-0.5 flex-nowrap self-start @6xl:self-auto">
               {/* View switcher: Table, Tree, Duplicate groups */}
               <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0">
                 <button
@@ -1166,13 +1166,13 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
             <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl text-xs shrink-0 shadow-2xs">
               <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                 <div className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-400">
-                  <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] uppercase tracking-wider">
+                  <span className="text-slate-400 dark:text-slate-400 font-mono text-[10px] uppercase tracking-wider">
                     {ON_PAGE_HTML_CATEGORIES.includes(activeCategory) ? 'Audited HTML Pages:' : 'Audited URLs:'}
                   </span>
                   <span className="font-mono font-bold text-slate-900 dark:text-white">
                     {categoryStats.total}
                     {pages?.length && categoryStats.total !== pages.length ? (
-                      <span className="text-slate-400 dark:text-slate-500 font-normal ml-1 text-[11px]">/ {pages.length} total crawled</span>
+                      <span className="text-slate-400 dark:text-slate-400 font-normal ml-1 text-[11px]">/ {pages.length} total crawled</span>
                     ) : null}
                   </span>
                 </div>
@@ -1208,7 +1208,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                 <div className="h-3 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
 
                 <div className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-400">
-                  <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] uppercase tracking-wider">Present:</span>
+                  <span className="text-slate-400 dark:text-slate-400 font-mono text-[10px] uppercase tracking-wider">Present:</span>
                   <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">{categoryStats.present}</span>
                 </div>
               </div>
@@ -1265,7 +1265,7 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                       className={`inline-flex items-center justify-center p-1 rounded-md border transition-all cursor-pointer ${
                         isCompact
                           ? 'bg-indigo-600 text-white border-indigo-500 hover:bg-indigo-700 shadow-2xs'
-                          : 'bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:text-indigo-600 dark:hover:text-[#CAE366] hover:border-indigo-400'
+                          : 'bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-indigo-600 dark:hover:text-[#CAE366] hover:border-indigo-400'
                       }`}
                       title={isCompact ? "Restore full header & filters" : "Compact table (hide header & filters for full screen view)"}
                     >
@@ -1319,22 +1319,22 @@ export default function URLExplorerTab({ pages, initialCategory, initialView, on
                           <ChevronRight size={13} className="text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5" />
                           <span className="truncate" title={page.url}>{page.url}</span>
                           {hasPageTypes && page.audit_data?.Page_Type?.Type && page.audit_data.Page_Type.Type !== 'Other' && (
-                            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
+                            <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
                               {page.audit_data.Page_Type.Type}
                             </span>
                           )}
                           {!hasPageTypes && page.url?.includes('/author/') && (
-                            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
+                            <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
                               Author
                             </span>
                           )}
                           {statusCode >= 400 && (
-                            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50">
+                            <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50">
                               Broken Link
                             </span>
                           )}
                           {statusCode >= 300 && statusCode < 400 && (
-                            <span className="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
+                            <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
                               Redirect
                             </span>
                           )}

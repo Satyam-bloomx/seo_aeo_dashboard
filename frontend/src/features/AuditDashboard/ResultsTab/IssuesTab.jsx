@@ -300,21 +300,21 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage, onOpenAiC
     switch (priority) {
       case 'High':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50">
             <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
             High Priority
           </span>
         );
       case 'Medium':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
             Medium Priority
           </span>
         );
       case 'Low':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/50">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/50">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
             Low Priority
           </span>
@@ -338,7 +338,7 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage, onOpenAiC
     <div className="flex flex-col min-h-full md:h-full space-y-3 sm:space-y-4 md:overflow-hidden">
 
       {/* Top Controls Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 sm:gap-4 shrink-0">
+      <div className="flex flex-col @5xl:flex-row @5xl:items-center justify-between gap-2.5 sm:gap-4 shrink-0">
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">Audit Diagnostic Issues</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -530,7 +530,7 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage, onOpenAiC
           <table className="w-full min-w-[650px] text-left text-xs text-slate-700 dark:text-slate-300 border-collapse">
             <thead className="bg-slate-50 dark:bg-slate-950/80 sticky top-0 z-20 border-b border-slate-200 dark:border-slate-800">
               <tr>
-                <th className="px-5 py-3.5 font-bold font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider">Diagnostic Rule</th>
+                <th className="min-w-[240px] px-5 py-3.5 font-bold font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider">Diagnostic Rule</th>
                 <th className="px-5 py-3.5 font-bold font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider">Category</th>
                 <th className="px-5 py-3.5 font-bold font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider">Priority</th>
                 <th className="px-5 py-3.5 font-bold font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Affected URLs</th>
@@ -561,8 +561,9 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage, onOpenAiC
                         onClick={() => handleToggleExpand(rowKey)}
                       >
                         <td
-                          className="px-5 py-3.5 font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors flex items-center gap-2"
+                          className="px-5 py-3.5 font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors"
                         >
+                          <div className="flex items-center gap-2">
                           <motion.span
                             animate={{ rotate: isExpanded ? 180 : 0 }}
                             transition={spring.snap}
@@ -574,9 +575,10 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage, onOpenAiC
                             />
                           </motion.span>
                           <span>{issue.name}</span>
+                          </div>
                         </td>
                         <td className="px-5 py-3.5">
-                          <span className="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono text-[10px] text-slate-700 dark:text-slate-300 font-semibold">
+                          <span className="inline-block whitespace-nowrap px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono text-[10px] text-slate-700 dark:text-slate-300 font-semibold">
                             {issue.category.replace(/_/g, ' ')}
                           </span>
                         </td>
@@ -599,7 +601,7 @@ export default function IssuesTab({ pages, onIssueClick, onSelectPage, onOpenAiC
                               whileHover={{ scale: 1.02 }}
                               whileTap={tapPress}
                               transition={spring.press}
-                              className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white border border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800/60 dark:hover:bg-indigo-600 dark:hover:text-white transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
+                              className="whitespace-nowrap px-2.5 py-1 text-[11px] font-bold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white border border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800/60 dark:hover:bg-indigo-600 dark:hover:text-white transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
                               title="Generate 1-Click AI Technical Fix"
                             >
                               <Sparkles size={11} className="text-amber-500" />

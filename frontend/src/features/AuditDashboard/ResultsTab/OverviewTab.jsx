@@ -143,7 +143,7 @@ function SpringTiltBentoCard({
           <div className="flex items-center gap-1.5 flex-wrap">
             <p className={`text-[10px] font-mono font-bold ${t.text} uppercase tracking-widest`}>{title || subtitle}</p>
             {subtitle && subtitle !== title && (
-              <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 font-medium">· {subtitle}</span>
+              <span className="text-[10px] font-mono text-slate-400 dark:text-slate-400 font-medium">· {subtitle}</span>
             )}
           </div>
           {score !== null && score !== undefined && !isDisconnected ? (
@@ -152,9 +152,9 @@ function SpringTiltBentoCard({
               <span className="text-sm sm:text-base text-slate-400 font-normal">/100</span>
             </h3>
           ) : (
-            <h3 className="text-3xl sm:text-4xl font-extrabold text-slate-400 dark:text-slate-500 mt-0.5 sm:mt-1 tabular-nums flex items-baseline gap-1">
+            <h3 className="text-3xl sm:text-4xl font-extrabold text-slate-400 dark:text-slate-400 mt-0.5 sm:mt-1 tabular-nums flex items-baseline gap-1">
               <span>--</span>
-              <span className="text-sm sm:text-base text-slate-400 dark:text-slate-500 font-normal">/100</span>
+              <span className="text-sm sm:text-base text-slate-400 dark:text-slate-400 font-normal">/100</span>
             </h3>
           )}
         </div>
@@ -513,6 +513,7 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
   }, { scope: containerRef, dependencies: [] });
 
   const crawlSummary = useCrawlSummary();
+  const keywordCard = crawlSummary?.integrations?.serp;
   const issuesReport = useMemo(() => generateIssuesReport(pages, crawlSummary), [pages, crawlSummary]);
 
   const highPriorityIssues = useMemo(() => issuesReport.filter(i => i.priority === 'High'), [issuesReport]);
@@ -780,7 +781,7 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
     <div ref={containerRef} className="flex flex-col h-full overflow-y-auto custom-scrollbar pr-1 sm:pr-2 space-y-5 sm:space-y-6 pb-20 md:pb-6">
 
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+      <div className="flex flex-col @2xl:flex-row @2xl:items-center justify-between gap-3 shrink-0">
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">Audit overview</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -884,7 +885,7 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
 
       <ScoreExplanation rows={crawlSummary?.crawl?.score_explanation || crawlSummary?.score_explanation} />
 
-      <IntegrationScoresPanel onConnect={() => onNavigateToTab?.('integrations')} />
+      <IntegrationScoresPanel onConnect={() => onNavigateToTab?.('integrations')} onOpenTab={(tab) => onNavigateToTab?.(tab)} />
 
       {/* Crawl Telemetry & Diagnostic Health Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -999,7 +1000,7 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
                   <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 mb-2 transition-colors">
                     <div className="flex items-center gap-1.5">
                       {cat.icon}
-                      <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md ${
+                      <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md ${
                         badge.color === 'emerald' ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/80' :
                         badge.color === 'purple' ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-800/80' :
                         badge.color === 'amber' ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/80' :
@@ -1056,25 +1057,25 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
             {/* 3 KPI metric gauges */}
             <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mb-3">
               <div className="p-2 sm:p-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-center">
-                <span className="text-[8px] xs:text-[9px] sm:text-[10px] font-mono text-blue-800 dark:text-blue-300 font-bold block uppercase truncate">Clicks (30d)</span>
+                <span className="text-[8px] xs:text-[10px] sm:text-[10px] font-mono text-blue-800 dark:text-blue-300 font-bold block uppercase truncate">Clicks (30d)</span>
                 <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block truncate">
                   {gscSummary?.isLive ? gscSummary.totalClicks.toLocaleString() : '0'}
                 </span>
-                <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-semibold truncate block">{gscSummary?.isLive ? 'Organic' : 'Offline'}</span>
+                <span className="text-[8px] xs:text-[10px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-semibold truncate block">{gscSummary?.isLive ? 'Organic' : 'Offline'}</span>
               </div>
               <div className="p-2 sm:p-2.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 text-center">
-                <span className="text-[8px] xs:text-[9px] sm:text-[10px] font-mono text-indigo-800 dark:text-indigo-300 font-bold block uppercase truncate">Impressions</span>
+                <span className="text-[8px] xs:text-[10px] sm:text-[10px] font-mono text-indigo-800 dark:text-indigo-300 font-bold block uppercase truncate">Impressions</span>
                 <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block truncate">
                   {gscSummary?.isLive ? gscSummary.totalImpressions.toLocaleString() : '0'}
                 </span>
-                <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-semibold truncate block">{gscSummary?.isLive ? 'SERP Views' : 'Offline'}</span>
+                <span className="text-[8px] xs:text-[10px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-semibold truncate block">{gscSummary?.isLive ? 'SERP Views' : 'Offline'}</span>
               </div>
               <div className="p-2 sm:p-2.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40 text-center">
-                <span className="text-[8px] xs:text-[9px] sm:text-[10px] font-mono text-purple-800 dark:text-purple-300 font-bold block uppercase truncate">GA4 Sessions</span>
+                <span className="text-[8px] xs:text-[10px] sm:text-[10px] font-mono text-purple-800 dark:text-purple-300 font-bold block uppercase truncate">GA4 Sessions</span>
                 <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white mt-0.5 block truncate">
                   {ga4Summary?.totalSessions ? ga4Summary.totalSessions.toLocaleString() : (gscSummary?.isLive ? `${gscSummary?.avgCtr || '0.0'}%` : '0')}
                 </span>
-                <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-semibold truncate block">
+                <span className="text-[8px] xs:text-[10px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-semibold truncate block">
                   {ga4Summary?.totalSessions ? 'Visitors' : 'CTR'}
                 </span>
               </div>
@@ -1194,8 +1195,10 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
                   </div>
                   <div className="p-2.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40">
                     <span className="text-[10px] font-mono text-indigo-700 dark:text-indigo-300 font-bold uppercase block">Google AI Overviews</span>
-                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1 mt-1">
-                      <CheckCircle2 size={13} /> {serpData?.has_ai_overview ? 'Featured in AI Carousel' : 'Standard Organic'}
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1 mt-1">
+                      {keywordCard?.aio_shown
+                        ? <><CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400" /> Cited in {keywordCard.aio_cited} of {keywordCard.aio_shown}</>
+                        : keywordCard?.status && keywordCard.status !== 'no_data' ? 'None shown for your searches' : 'Not checked yet'}
                     </span>
                   </div>
                 </div>
@@ -1238,9 +1241,13 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
 
           <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
             <span>Ground Truth: {perplexityData?.isConnected ? 'Perplexity Sonar Live' : 'API Engine Offline'}</span>
-            <span className={serpData?.top_ranking_position ? "text-indigo-600 dark:text-indigo-400 font-bold" : "text-slate-400 font-normal"}>
-              {serpData?.top_ranking_position ? `Top Rank: #${serpData.top_ranking_position}` : 'SerpAPI Disconnected'}
-            </span>
+            <button
+              type="button"
+              onClick={() => onNavigateToTab?.('keywords')}
+              className={keywordCard?.top10 != null ? "text-indigo-600 dark:text-indigo-400 font-bold hover:underline" : "text-slate-500 dark:text-slate-400 font-normal hover:underline"}
+            >
+              {keywordCard?.top10 != null ? `Top 10: ${keywordCard.top10} of ${keywordCard.positioned_items ?? keywordCard.tracked_keywords} searches` : 'Check keywords →'}
+            </button>
           </div>
         </div>
 
@@ -1279,25 +1286,25 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
                 {/* 3 Key Metric Gauges */}
                 <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 mb-4">
                   <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-center">
-                    <span className="text-[8px] xs:text-[9px] sm:text-[10px] font-mono text-emerald-800 dark:text-emerald-300 font-bold block uppercase truncate">LCP (Speed)</span>
+                    <span className="text-[8px] xs:text-[10px] sm:text-[10px] font-mono text-emerald-800 dark:text-emerald-300 font-bold block uppercase truncate">LCP (Speed)</span>
                     <span className="text-sm sm:text-base font-extrabold text-emerald-700 dark:text-emerald-400 mt-0.5 block truncate">{pageSpeedData?.metrics?.lcp || 'N/A'}</span>
-                    <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-0.5 mt-0.5 truncate">
+                    <span className="text-[8px] xs:text-[10px] sm:text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-0.5 mt-0.5 truncate">
                       {parseFloat(pageSpeedData?.metrics?.lcp) < 2.5 ? <><Check size={10} /> Pass</> : <span className="text-amber-700 dark:text-amber-400 font-medium">Review</span>}
                     </span>
                   </div>
 
                   <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-center">
-                    <span className="text-[8px] xs:text-[9px] sm:text-[10px] font-mono text-emerald-800 dark:text-emerald-300 font-bold block uppercase truncate">INP (Response)</span>
+                    <span className="text-[8px] xs:text-[10px] sm:text-[10px] font-mono text-emerald-800 dark:text-emerald-300 font-bold block uppercase truncate">INP (Response)</span>
                     <span className="text-sm sm:text-base font-extrabold text-emerald-700 dark:text-emerald-400 mt-0.5 block truncate">{pageSpeedData?.metrics?.inp || 'N/A'}</span>
-                    <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-0.5 mt-0.5 truncate">
+                    <span className="text-[8px] xs:text-[10px] sm:text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-0.5 mt-0.5 truncate">
                       {parseFloat(pageSpeedData?.metrics?.inp) < 200 ? <><Check size={10} /> Pass</> : <span className="text-amber-700 dark:text-amber-400 font-medium">Review</span>}
                     </span>
                   </div>
 
                   <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-center">
-                    <span className="text-[8px] xs:text-[9px] sm:text-[10px] font-mono text-emerald-800 dark:text-emerald-300 font-bold block uppercase truncate">CLS (Stability)</span>
+                    <span className="text-[8px] xs:text-[10px] sm:text-[10px] font-mono text-emerald-800 dark:text-emerald-300 font-bold block uppercase truncate">CLS (Stability)</span>
                     <span className="text-sm sm:text-base font-extrabold text-emerald-700 dark:text-emerald-400 mt-0.5 block truncate">{pageSpeedData?.metrics?.cls || 'N/A'}</span>
-                    <span className="text-[8px] xs:text-[9px] sm:text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-0.5 mt-0.5 truncate">
+                    <span className="text-[8px] xs:text-[10px] sm:text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-0.5 mt-0.5 truncate">
                       {parseFloat(pageSpeedData?.metrics?.cls) < 0.1 ? <><Check size={10} /> Pass</> : <span className="text-amber-700 dark:text-amber-400 font-medium">Review</span>}
                     </span>
                   </div>
@@ -1372,7 +1379,7 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
               {lowPriorityIssues.length} Low
             </span>
-            <span className="text-slate-400 dark:text-slate-500 font-normal ml-1">
+            <span className="text-slate-400 dark:text-slate-400 font-normal ml-1">
               ({issuesReport.length} total)
             </span>
           </div>
@@ -1437,7 +1444,7 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
                       <h5 className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
                         {issue.name}
                       </h5>
-                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold border shrink-0 ${
+                      <span className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-bold border shrink-0 ${
                         issue.priority === 'High'
                           ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-400 dark:border-rose-800/80'
                           : issue.priority === 'Medium'
@@ -1455,7 +1462,7 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
                   <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 shadow-xs">
                     {issue.count} URLs
                   </span>
-                  <ChevronRight size={14} className="text-slate-400 dark:text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300 transition-colors" />
+                  <ChevronRight size={14} className="text-slate-400 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-300 transition-colors" />
                 </div>
               </motion.div>
             ))}

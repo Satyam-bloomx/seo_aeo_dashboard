@@ -366,7 +366,7 @@ export default function ExportAuditModal({
           {/* Subtle Encoding Guarantee Footnote */}
           <motion.div
             variants={staggerItem}
-            className="flex items-center justify-center gap-2 pt-1 font-mono text-[11px] text-slate-400 dark:text-slate-500"
+            className="flex items-center justify-center gap-2 pt-1 font-mono text-[11px] text-slate-400 dark:text-slate-400"
           >
             <ShieldCheck size={13} className="text-emerald-500" />
             <span>Encodes with UTF-8 BOM · Zero server latency · 100% Client-Side Privacy</span>

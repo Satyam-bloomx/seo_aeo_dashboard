@@ -87,7 +87,7 @@ export default function SpiderLiveProgressScreen({
             <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
               <Activity size={13} className="text-[#CAE366] animate-pulse shrink-0" />
               <span className="font-medium truncate">{currentStage.label}</span>
-              <span className="hidden md:inline text-[11px] text-slate-400 dark:text-slate-500 truncate">
+              <span className="hidden md:inline text-[11px] text-slate-400 dark:text-slate-400 truncate">
                 — {currentStage.sub}
               </span>
             </div>
@@ -111,7 +111,7 @@ export default function SpiderLiveProgressScreen({
               />
             </div>
 
-            <div className="flex justify-between text-[10px] font-mono text-slate-400 dark:text-slate-500">
+            <div className="flex justify-between text-[10px] font-mono text-slate-400 dark:text-slate-400">
               <span>Depth: {crawlerSettings.maxDepth || 4}</span>
               <span>Threads: {crawlerSettings.maxConcurrent || 5}</span>
             </div>
@@ -158,7 +158,7 @@ export default function SpiderLiveProgressScreen({
                         {page.url}
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 shrink-0">
+                    <span className="text-[10px] font-mono text-slate-400 dark:text-slate-400 shrink-0">
                       {page.content_type || 'text/html'}
                     </span>
                   </motion.div>
@@ -234,7 +234,7 @@ export default function SpiderLiveProgressScreen({
             </div>
           </div>
 
-          <div className="text-[11px] font-mono text-slate-400 dark:text-slate-500 text-center pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="text-[11px] font-mono text-slate-400 dark:text-slate-400 text-center pt-2 border-t border-slate-100 dark:border-slate-800">
             Final synthesis reveals automatically on completion
           </div>
         </div>
