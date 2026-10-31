@@ -47,3 +47,5 @@ new-frontend/
 # Cache files
 *.pagespeed_cache.json
 .pagespeed_cache.json
+
+!.env.example
