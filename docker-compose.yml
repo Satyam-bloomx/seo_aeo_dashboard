@@ -1,8 +1,9 @@
 # Deployed by Coolify on the Hostinger VPS. See docs/DEPLOY_COOLIFY.md.
 #
-# Resource limits are sized for Hostinger KVM 4 (4 vCPU / 16 GB; ~13 GB left after the OS and Coolify).
-# KVM 2 (2 vCPU / 8 GB; ~5.5 GB left) values are in the comments and the *_CPUS / *_MEMORY variables, so a plan change
-# is an environment change in Coolify, not a code change. CPU limits may add up to more than the host (they are
+# Default resource limits fit Hostinger KVM 2 (2 vCPU / 8 GB; ~5.5 GB left after the OS and Coolify), the current
+# server: Docker refuses a CPU limit above the host's CPU count, so defaults must fit the smallest plan in use.
+# KVM 4 (4 vCPU / 16 GB) values are in the comments; set them through the *_CPUS / *_MEMORY variables in Coolify,
+# so a plan change is an environment change, not a code change. CPU limits may add up to more than the host (they are
 # ceilings). Memory ceilings of the services doing real work must fit; an idle worker (inline mode) uses ~150 MB.
 #
 # Crawl runner (CRAWL_RUNNER, same value on backend and worker):
@@ -50,8 +51,8 @@ services:
       options: { max-size: "10m", max-file: "5" }
     deploy:
       resources:
-        # KVM 2: 0.75 CPU / 768m
-        limits: { cpus: "${FRONTEND_CPUS:-1.0}", memory: "${FRONTEND_MEMORY:-1g}", pids: 512 }
+        # KVM 4: 1 CPU / 1g
+        limits: { cpus: "${FRONTEND_CPUS:-0.75}", memory: "${FRONTEND_MEMORY:-768m}", pids: 512 }
 
   # The API. Kept under the name "backend" so existing Coolify domain settings and INTERNAL_API_URL keep working.
   backend:
@@ -69,7 +70,7 @@ services:
       - RUN_MIGRATIONS=${RUN_MIGRATIONS:-true}
       - MIGRATIONS_BASELINE=${MIGRATIONS_BASELINE:-}
       - CRAWL_RUNNER=${CRAWL_RUNNER:-inline}
-      - CRAWL_SLOTS=${CRAWL_SLOTS:-3}
+      - CRAWL_SLOTS=${CRAWL_SLOTS:-2}   # KVM 4: 3
       - JS_CRAWL_SLOTS=${JS_CRAWL_SLOTS:-1}
       - MAX_CRAWL_PAGES=${MAX_CRAWL_PAGES:-1000}
       - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
@@ -110,7 +111,7 @@ services:
       resources:
         # Inline mode (crawls run here): 2 CPU / 3g on KVM 4, 1.5 CPU / 2560m on KVM 2.
         # Worker mode (API only):         1 CPU / 1536m on KVM 4, 0.75 CPU / 1g on KVM 2; API_SHM_SIZE=64mb.
-        limits: { cpus: "${API_CPUS:-2.0}", memory: "${API_MEMORY:-3g}", pids: 1024 }
+        limits: { cpus: "${API_CPUS:-1.5}", memory: "${API_MEMORY:-2560m}", pids: 1024 }
 
   # Runs crawls when CRAWL_RUNNER=worker (idles otherwise). Same image as the API; never migrates.
   # More capacity: raise CRAWL_SLOTS / JS_CRAWL_SLOTS (per worker) or add a second worker service
@@ -127,7 +128,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - RUN_MIGRATIONS=false
       - CRAWL_RUNNER=${CRAWL_RUNNER:-inline}
-      - CRAWL_SLOTS=${CRAWL_SLOTS:-3}         # KVM 2: 2
+      - CRAWL_SLOTS=${CRAWL_SLOTS:-2}         # KVM 4: 3
       - JS_CRAWL_SLOTS=${JS_CRAWL_SLOTS:-1}   # KVM 2: 1
       - MAX_CRAWL_PAGES=${MAX_CRAWL_PAGES:-1000}
       - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
@@ -169,8 +170,9 @@ services:
       options: { max-size: "10m", max-file: "5" }
     deploy:
       resources:
-        # KVM 4: 3 CPU / 6g (3 normal + 1 JS crawl). KVM 2: 1.5 CPU / 3g with CRAWL_SLOTS=2.
-        limits: { cpus: "${WORKER_CPUS:-3.0}", memory: "${WORKER_MEMORY:-6g}", pids: 2048 }
+        # Inline mode (default) the worker only idles (~150 MB). Worker mode: KVM 2 1.5 CPU / 3g with CRAWL_SLOTS=2;
+        # KVM 4 3 CPU / 6g (3 normal + 1 JS crawl).
+        limits: { cpus: "${WORKER_CPUS:-0.5}", memory: "${WORKER_MEMORY:-512m}", pids: 2048 }
 
   postgres:
     # Optional VPS database: started only with COMPOSE_PROFILES=vps-db (Postgres itself refuses an empty password).
@@ -197,8 +199,8 @@ services:
       options: { max-size: "10m", max-file: "5" }
     deploy:
       resources:
-        # KVM 2: 1 CPU / 1g
-        limits: { cpus: "${POSTGRES_CPUS:-1.5}", memory: "${POSTGRES_MEMORY:-2g}" }
+        # KVM 4: 1.5 CPU / 2g
+        limits: { cpus: "${POSTGRES_CPUS:-1.0}", memory: "${POSTGRES_MEMORY:-1g}" }
 
   # Optional today (connected at start-up, not yet used for the crawl queue). Kept for the future shared queue.
   redis:
