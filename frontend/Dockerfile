@@ -18,6 +18,10 @@ ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_SITE_URL
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+# The /api rewrite target is baked into the standalone build (routes-manifest), so it must be set at build time;
+# setting it only at runtime leaves the default 127.0.0.1:8000 and every /api call fails with 500.
+ARG INTERNAL_API_URL=http://backend:8000
+ENV INTERNAL_API_URL=$INTERNAL_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL

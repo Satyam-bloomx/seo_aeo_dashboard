@@ -27,6 +27,8 @@ services:
         - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
         - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:?set NEXT_PUBLIC_SUPABASE_URL}
         - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        # Baked into the /api rewrite at build time (Next.js standalone); the runtime value below is not enough.
+        - INTERNAL_API_URL=http://backend:8000
     restart: unless-stopped
     ports:
       - "3000:3000"
