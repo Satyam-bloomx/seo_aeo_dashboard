@@ -58,7 +58,7 @@ const CORE_AUDIT_CATEGORIES = [
   { id: 'Directives', label: 'Robots Directives', icon: <Bot size={14} /> },
   { id: 'Structured_Data', label: 'Structured Schema', icon: <Sparkles size={14} /> },
   { id: 'AEO_Audit', label: 'AEO Voice & LLM', icon: <Bot size={14} /> },
-  { id: 'GEO_Audit', label: 'GEO Local Search', icon: <Globe size={14} /> },
+  { id: 'GEO_Audit', label: 'Local Search', icon: <Globe size={14} /> },
   { id: 'PageSpeed', label: 'Core Web Vitals', icon: <Zap size={14} /> },
   { id: 'Images', label: 'Image Assets', icon: <ListTree size={14} /> }
 ];
@@ -82,7 +82,10 @@ function SpringTiltBentoCard({
   onMouseMoveCard,
   isDisconnected = false,
   actionText,
-  onAction
+  onAction,
+  // A count instead of a /100 score, e.g. headline={1} headlineSuffix="error" for a single-page check.
+  headline,
+  headlineSuffix,
 }) {
   const cardRef = useRef(null);
   const [props, set] = useSpring(() => ({
@@ -146,7 +149,12 @@ function SpringTiltBentoCard({
               <span className="text-[10px] font-mono text-slate-400 dark:text-slate-400 font-medium">· {subtitle}</span>
             )}
           </div>
-          {score !== null && score !== undefined && !isDisconnected ? (
+          {headline !== undefined && headline !== null ? (
+            <h3 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white mt-0.5 sm:mt-1 tabular-nums">
+              <AnimatedNumber value={headline} />
+              <span className="text-sm sm:text-base text-slate-400 font-normal"> {headlineSuffix}</span>
+            </h3>
+          ) : score !== null && score !== undefined && !isDisconnected ? (
             <h3 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white mt-0.5 sm:mt-1 tabular-nums">
               <AnimatedNumber value={score} />
               <span className="text-sm sm:text-base text-slate-400 font-normal">/100</span>
@@ -169,7 +177,7 @@ function SpringTiltBentoCard({
           ) : (
             <CheckCircle2 size={13} className={`${t.text} shrink-0`} />
           )}
-          <span className="truncate">{statusText}</span>
+          <span className="truncate" title={typeof statusText === 'string' ? statusText : undefined}>{statusText}</span>
         </span>
         {actionText && (
           <button
@@ -462,24 +470,43 @@ function CrawlCoverageNotice({ coverage }) {
   );
 }
 
-// Why the headline score is what it is: each row is points taken off (or added), from the backend.
-function ScoreExplanation({ rows }) {
-  if (!Array.isArray(rows) || rows.length === 0) return null;
+// Why each score is what it is: every row is points taken off, from the backend. Each score starts at 100.
+function ScoreExplanation({ sections }) {
+  const shown = (sections || []).filter(s => s.score != null);
+  if (shown.length === 0) return null;
   return (
     <details className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 px-4 py-2.5 text-xs">
-      <summary className="cursor-pointer font-bold text-slate-700 dark:text-slate-200">How the headline score is calculated</summary>
-      <ul className="mt-2 space-y-1">
-        {rows.map((r, i) => (
-          <li key={`${r.label}-${i}`} className="flex items-start justify-between gap-3">
-            <span className="text-slate-600 dark:text-slate-300">
-              <span className="font-semibold">{r.label}</span>{r.detail ? <span className="text-slate-500 dark:text-slate-400"> · {r.detail}</span> : null}
-            </span>
-            <span className={`shrink-0 font-mono font-bold ${Number(r.impact) < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-              {Number(r.impact) > 0 ? '+' : ''}{Math.round(Number(r.impact) * 10) / 10}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <summary className="cursor-pointer font-bold text-slate-700 dark:text-slate-200">How the scores are calculated</summary>
+      <p className="mt-2 text-slate-500 dark:text-slate-400">
+        Site Health is the share of crawled URLs with zero errors (the Ahrefs Health Score method). An error is a
+        Screaming Frog Issue of high or medium priority, such as a broken page, a missing title or a missing H1.
+        Warnings and opportunities are listed with the share of URLs they affect but never change the score.
+        AEO and GEO are scored separately.
+      </p>
+      {shown.map(section => (
+        <div key={section.title} className="mt-3">
+          <div className="flex items-baseline justify-between gap-3 font-semibold text-slate-800 dark:text-slate-100">
+            <span>{section.title}{section.note ? <span className="font-normal text-slate-500 dark:text-slate-400"> · {section.note}</span> : null}</span>
+            <span className="font-mono">{section.scoreText ?? `${section.score}/100`}</span>
+          </div>
+          {section.rows?.length ? (
+            <ul className="mt-1 space-y-1">
+              {section.rows.map((r, i) => (
+                <li key={`${r.label}-${i}`} className="flex items-start justify-between gap-3">
+                  <span className="text-slate-600 dark:text-slate-300">
+                    <span className="font-semibold">{r.label}</span>{r.detail ? <span className="text-slate-500 dark:text-slate-400"> · {r.detail}</span> : null}
+                  </span>
+                  <span className={`shrink-0 font-mono font-bold ${r.value || Number(r.impact) < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                    {r.value ?? `${Number(r.impact) > 0 ? '+' : ''}${Math.round(Number(r.impact) * 10) / 10}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-slate-500 dark:text-slate-400">No points lost.</p>
+          )}
+        </div>
+      ))}
     </details>
   );
 }
@@ -553,8 +580,14 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
   }, [pages, issuesReport, crawlSummary]);
 
   const healthScore = pages?.length > 0 ? technicalSeoResult.siteHealthScore : null;
-  const seoScore = technicalSeoResult.weightedPassRate ?? null;
+  const geo = pages?.length > 0 ? crawlSummary?.geo_readiness : null;
+  // GEO = content score x access multiplier; the backend splits the points lost into whole numbers per part.
+  const geoRows = geo?.status === 'ok' && Array.isArray(geo.explanation) ? geo.explanation : [];
   const isPageMode = crawlSummary?.mode === 'page';
+  const sh = crawlSummary?.site_health;
+  const pageCheck = crawlSummary?.page_check;
+  const issueCounts = crawlSummary?.issues;
+  const plural = (n, word) => `${n} ${n === 1 ? word : word.endsWith('y') ? `${word.slice(0, -1)}ies` : `${word}s`}`;
   const answerReadiness = crawlSummary?.integrations?.answer_readiness;
   const structuredScore = crawlSummary?.categories?.['Structured data']?.score ?? null;
   const pagesWithSchema = (pages || []).filter(p => (p.audit_data?.Structured_Data?.Schema_Types || []).length > 0).length;
@@ -821,47 +854,82 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
       )}
 
       {/* 4 Score Bento Cards with React Spring 3D Tilt & Aceternity Spotlight */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-3.5 sm:gap-4">
 
-        {/* Health Index */}
-        <SpringTiltBentoCard
-          title={isPageMode ? "Page Score" : "Site Health"}
-          subtitle={isPageMode ? "Single-page audit" : "Overall: page checks, broken pages and speed"}
-          score={isPageMode ? technicalSeoResult.pageScore : healthScore}
-          statusText={
-            !crawlSummary ? (pages?.length > 0 ? 'Calculating scores…' : 'Awaiting Audit URL')
-              : isPageMode ? 'Site-level checks need a whole-site crawl'
-              : `${technicalSeoResult.checksSummary.errorFreePages} URLs without critical errors (${technicalSeoResult.checksSummary.errorFreeRatio ?? "—"}%)`
-          }
-          icon={Activity}
-          colorTheme="emerald"
-          onMouseMoveCard={handleMouseMoveSpotlight}
-        />
+        {/* Site Health = share of URLs with zero errors (Ahrefs method). One URL gets a page check instead. */}
+        {isPageMode ? (
+          <SpringTiltBentoCard
+            title="Page Check"
+            subtitle="Errors on this page (single-page audit)"
+            headline={pageCheck ? pageCheck.errors : undefined}
+            headlineSuffix={pageCheck?.errors === 1 ? 'error' : 'errors'}
+            isDisconnected={!pageCheck}
+            statusText={!crawlSummary ? (pages?.length > 0 ? 'Calculating…' : 'Awaiting Audit URL')
+              : pageCheck ? `${plural(pageCheck.warnings, 'warning')} · run Whole site for Site Health` : 'Not checked'}
+            icon={Activity}
+            colorTheme={pageCheck?.errors ? 'rose' : 'emerald'}
+            onMouseMoveCard={handleMouseMoveSpotlight}
+          />
+        ) : (
+          <SpringTiltBentoCard
+            title="Site Health"
+            subtitle={sh?.provisional ? 'URLs with zero errors (provisional: small crawl)' : 'Share of URLs with zero errors'}
+            score={healthScore}
+            isDisconnected={Boolean(crawlSummary) && healthScore == null}
+            statusText={!crawlSummary ? (pages?.length > 0 ? 'Calculating scores…' : 'Awaiting Audit URL')
+              : healthScore == null ? (sh?.reason || 'Not scored')
+              : `${plural(sh.urls_with_errors, 'URL')} of ${sh.urls_total} with errors${sh.capped ? ' · capped by a site-wide error' : ''}`}
+            icon={Activity}
+            colorTheme="emerald"
+            onMouseMoveCard={handleMouseMoveSpotlight}
+          />
+        )}
 
-        {/* Technical SEO */}
+        {/* Issues found, by Screaming Frog type: only errors set Site Health */}
         <SpringTiltBentoCard
-          title="Checks Passed"
-          subtitle="Share of checks passed (serious problems count more)"
-          score={seoScore}
-          statusText={crawlSummary ? `${technicalSeoResult.checksSummary?.totalEvaluated ?? 0} of ${technicalSeoResult.checksSummary?.totalChecks ?? 0} checks evaluated` : (pages?.length > 0 ? 'Calculating scores…' : 'Awaiting Audit URL')}
-          actionText={crawlSummary ? "Score breakdown →" : undefined}
+          title="Issues"
+          subtitle="Errors · warnings · opportunities"
+          headline={issueCounts ? issueCounts.errors.checks : undefined}
+          headlineSuffix={issueCounts?.errors.checks === 1 ? 'error type' : 'error types'}
+          isDisconnected={!issueCounts}
+          statusText={issueCounts
+            ? `${plural(issueCounts.warnings.checks, 'warning')} · ${plural(issueCounts.opportunities.checks, 'opportunity')}`
+            : (pages?.length > 0 ? 'Calculating…' : 'Awaiting Audit URL')}
+          actionText={crawlSummary ? "See all →" : undefined}
           onAction={() => setShowTechScoreModal(true)}
           icon={Globe}
           colorTheme="indigo"
           onMouseMoveCard={handleMouseMoveSpotlight}
         />
 
-        {/* Answer readiness: share of answer-engine criteria met on AI-assessed pages */}
+        {/* AEO: an AI provider (Gemini / OpenAI) reads the pages and judges whether an answer engine can quote them */}
         <SpringTiltBentoCard
-          title="Answer Readiness"
-          subtitle="Can ChatGPT, Google AI and Perplexity quote you?"
-          score={answerReadiness?.score ?? null}
+          title="AEO Score"
+          subtitle="Answer engines: AI review of how quotable your pages are"
+          score={answerReadiness?.status === 'ok' ? answerReadiness.score : null}
           isDisconnected={answerReadiness?.status !== 'ok'}
           statusText={answerReadiness?.status === 'ok'
-            ? `${answerReadiness.pages_assessed} page${answerReadiness.pages_assessed === 1 ? '' : 's'} assessed`
+            ? (answerReadiness.access_multiplier != null && answerReadiness.access_multiplier < 1
+                ? `AI review ${answerReadiness.ai_review_score}, cut by blocked AI access`
+                : `${answerReadiness.pages_assessed} page${answerReadiness.pages_assessed === 1 ? '' : 's'} reviewed by AI`)
             : 'Needs an AI provider'}
           actionText={answerReadiness?.status !== 'ok' ? "Connect AI provider →" : undefined}
           onAction={() => onNavigateToTab?.('integrations')}
+          icon={Bot}
+          colorTheme="indigo"
+          onMouseMoveCard={handleMouseMoveSpotlight}
+        />
+
+        {/* GEO readiness: can AI search engines reach, read and quote the site (crawl-based, no API keys) */}
+        <SpringTiltBentoCard
+          title="GEO Readiness"
+          subtitle="Can ChatGPT, Perplexity and Google AI find and cite you?"
+          score={geo?.status === 'ok' ? geo.score : null}
+          isDisconnected={geo?.status !== 'ok'}
+          statusText={!crawlSummary ? (pages?.length > 0 ? 'Calculating scores…' : 'Awaiting Audit URL')
+            : geo?.status === 'ok'
+              ? `${geo.pages_measured} page${geo.pages_measured === 1 ? '' : 's'} checked${geo.ai_overview ? ` · ${geo.ai_overview}` : ''}`
+              : (geo?.reason || 'Not measured')}
           icon={Sparkles}
           colorTheme="purple"
           onMouseMoveCard={handleMouseMoveSpotlight}
@@ -883,7 +951,29 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
 
       </div>
 
-      <ScoreExplanation rows={crawlSummary?.crawl?.score_explanation || crawlSummary?.score_explanation} />
+      <ScoreExplanation sections={[
+        isPageMode
+          ? { title: 'Page Check', note: 'single-page audit: errors on this page; Site Health needs a whole-site crawl',
+              score: pageCheck ? 0 : null, scoreText: pageCheck ? plural(pageCheck.errors, 'error') : null,
+              rows: (pageCheck?.error_checks || []).map(id => ({ label: id, value: 'error',
+                detail: (crawlSummary?.rules || []).find(r => r.id === id)?.ours
+                  ? 'Our classification (Screaming Frog has no equivalent check).'
+                  : 'Screaming Frog: Issue of high or medium priority.' })) }
+          : { title: 'Site Health', note: sh?.provisional ? 'provisional: fewer than 30 URLs crawled' : null,
+              score: healthScore, rows: crawlSummary?.crawl?.score_explanation || crawlSummary?.score_explanation },
+        { title: 'AEO Score', note: 'AI provider review of how quotable the pages are',
+          score: answerReadiness?.status === 'ok' ? answerReadiness.score : null,
+          rows: answerReadiness?.status === 'ok' && answerReadiness.access_multiplier < 1
+            ? [{ label: `AI access (score x ${Number(answerReadiness.access_multiplier).toFixed(2)})`,
+                 impact: answerReadiness.score - answerReadiness.ai_review_score,
+                 detail: `The AI review gave ${answerReadiness.ai_review_score}/100. ${answerReadiness.access_note || ''}` }]
+            : [] },
+        { title: 'GEO Readiness',
+          note: [geo?.info?.llms_txt ? 'llms.txt found' : 'no llms.txt',
+                 geo?.info?.training_bots_blocked?.length ? `AI training blocked for ${geo.info.training_bots_blocked.join(', ')}` : null,
+                 'neither is scored; readiness, not predicted citations'].filter(Boolean).join(' · '),
+          score: geo?.status === 'ok' ? geo.score : null, rows: geoRows },
+      ]} />
 
       <IntegrationScoresPanel onConnect={() => onNavigateToTab?.('integrations')} onOpenTab={(tab) => onNavigateToTab?.(tab)} />
 

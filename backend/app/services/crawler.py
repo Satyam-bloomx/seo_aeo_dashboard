@@ -134,6 +134,7 @@ class Fetched:
     first_hop_status: Optional[int] = None
     response_time_ms: int = 0
     rendered: bool = False
+    raw_html: Optional[str] = None                      # the document as served, before JavaScript ran (rendered only)
     js_errors: List[str] = field(default_factory=list)
     violations: List[dict] = field(default_factory=list)
     fallback_reason: Optional[str] = None               # set when a plain fetch replaced a failed render
@@ -596,6 +597,12 @@ class CrawlerService:
                 failure = classify_response(status_code, headers, html, is_html)
                 if failure:
                     return failure
+                raw_html = None
+                if is_html:
+                    try:
+                        raw_html = await response.text()  # as served: what crawlers that skip JavaScript see
+                    except Exception:
+                        pass
                 first_hop = None
                 if self._clean_crawl_url(final_url) != self._clean_crawl_url(item.url):
                     first_hop, prev = 301, response.request.redirected_from
@@ -611,7 +618,7 @@ class CrawlerService:
                         print(f"Axe error: {e}")
                 return Fetched(status_code=status_code, headers=headers, content_type=content_type, final_url=final_url,
                                html=html, first_hop_status=first_hop, response_time_ms=response_time_ms, rendered=True,
-                               js_errors=js_errors, violations=violations)
+                               raw_html=raw_html, js_errors=js_errors, violations=violations)
         except Exception as e:
             return classify_js_exception(e)
 
@@ -1107,11 +1114,16 @@ class CrawlerService:
             "Missing Alt Text": missing_alt_text_count > 0,
             "Missing Alt Attribute": missing_alt_attr_count > 0,
             "Alt Text Over 100 Characters": alt_text_over_100_count > 0,
-            "Missing Size Attributes": missing_size_attrs_count > 0
+            "Missing Size Attributes": missing_size_attrs_count > 0,
+            # Counts let the score scale with how many images are affected (2 of 87 is not 87 of 87).
+            "Missing Alt Text Count": missing_alt_text_count,
+            "Missing Alt Attribute Count": missing_alt_attr_count,
+            "Missing Size Attributes Count": missing_size_attrs_count,
         }
         ad["Fetch"] = fetch or ok_block()
         if fetched is not None and fetched.rendered:
             self._apply_rendering_results(ad, fetched)
+            await self._compare_raw_html(ad, fetched)
 
         # PageSpeed is measured once per crawl by EnrichmentService with the workspace's own key.
 
@@ -1204,6 +1216,23 @@ class CrawlerService:
             Image(crawl_id=self.crawl_id, page=db_page, url=img["url"], alt_text=img["alt_text"], size_bytes=img["size_bytes"])
 
         await self._store_page(url, db_page)
+
+    @staticmethod
+    async def _compare_raw_html(audit_data: dict, f: "Fetched"):
+        """GEO: AI crawlers such as GPTBot and ClaudeBot do not run JavaScript. When most of the main content
+        appears only after rendering, those crawlers see a near-empty page."""
+        geo = audit_data.get("GEO")
+        if not isinstance(geo, dict) or f.raw_html is None:
+            return
+        from app.services.extractor import main_text_words
+        try:
+            raw_words = await asyncio.to_thread(main_text_words, f.raw_html)
+        except Exception:
+            return
+        rendered_words = geo.get("Words") or 0
+        geo["Raw_HTML_Words"] = raw_words
+        geo["JS_Dependent"] = rendered_words >= 100 and raw_words < 0.5 * rendered_words
+        geo["JS_Check"] = "compared"
 
     @staticmethod
     def _apply_rendering_results(audit_data: dict, f: "Fetched"):

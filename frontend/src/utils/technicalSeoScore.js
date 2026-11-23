@@ -1,8 +1,9 @@
 // View-model over the backend scoring engine (backend/app/services/scoring.py).
 //
-// Site Health = 50% URL pass rate (share of URLs with no critical error, the Ahrefs Health Score
-// method) + 50% severity-weighted check pass rate (the Lighthouse category method). Checks that could
-// not be evaluated are excluded, never counted as passes. No score is computed in the browser.
+// Site Health is the Ahrefs Health Score: the share of crawled URLs with zero errors. An error is a Screaming Frog
+// Issue of high or medium priority; warnings and opportunities are listed but never move the score. Single-page
+// audits get a page check (error / warning counts) instead of a score. Checks that could not be evaluated are
+// excluded, never counted as passes. No score is computed in the browser.
 import { generateAllEvaluatedChecks } from './IssuesEngine';
 
 const CATEGORY_GROUPS = {
@@ -18,8 +19,8 @@ const CATEGORY_GROUPS = {
     summary: 'HTTPS, mixed content and security response headers.' },
   'Structured data': { id: 'structured', categories: ['Structured_Data'],
     summary: 'Presence and validity of JSON-LD / microdata markup.' },
-  'Technical': { id: 'technical', categories: ['Validation', 'JavaScript'],
-    summary: 'HTML document validity and legacy crawling patterns.' },
+  'Technical': { id: 'technical', categories: ['Validation', 'JavaScript', 'PageSpeed'],
+    summary: 'HTML validity, legacy crawling patterns and real-user Core Web Vitals.' },
 };
 
 const GRADES = {
@@ -84,7 +85,11 @@ export function calculateTechnicalSeoScore(pages = [], _issuesReport = [], summa
     grade,
     technicalGrade: grade,
     urlPassRate: sh.url_pass_rate,
-    weightedPassRate: sh.weighted_pass_rate,
+    scoreReason: sh.reason ?? null,       // why there is no Site Health score (single page, small crawl)
+    provisional: Boolean(sh.provisional),
+    capped: Boolean(sh.capped),
+    pageCheck: summary.page_check ?? null,
+    issues: summary.issues ?? null,
     lowConfidence: sh.low_confidence,
     scoringVersion: summary.scoring_version,
     pillars,

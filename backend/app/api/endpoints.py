@@ -426,7 +426,9 @@ async def get_crawl_summary(
     )).all()
     integration_data = {t: (cfg or {}).get("data") or {} for t, cfg in integ_rows}
 
-    scores = compute_scores(pages, mode=getattr(crawl, "mode", "site") or "site", integration_data=integration_data)
+    scores = compute_scores(pages, mode=getattr(crawl, "mode", "site") or "site", integration_data=integration_data,
+                            site_facts={"ai_crawlers": (crawl.summary or {}).get("ai_crawlers"),
+                                        "site_issues": (crawl.summary or {}).get("site_issues") or []})
     if crawl.status == "completed":
         crawl.summary = {**(crawl.summary or {}), "scores": scores}
         flag_modified(crawl, "summary")
@@ -454,6 +456,8 @@ def _crawl_facts(crawl: Crawl, scores: Optional[dict] = None) -> dict:
         "id": crawl.id, "mode": getattr(crawl, "mode", "site"), "status": crawl.status,
         "seed_url": crawl.seed_url, "sitemap": summary.get("sitemap"),
         "ai_crawlers": summary.get("ai_crawlers"),
+        # Issues with files that serve the whole site (robots.txt, sitemap); error-level ones cap Site Health.
+        "site_issues": summary.get("site_issues") or [],
         # What was crawled and why any discovered URLs were left out (limits, exclusions).
         "coverage": summary.get("coverage"),
         # Settings the crawl ran with, and how many HTML pages were left out of duplicate checks (and why).
@@ -721,13 +725,24 @@ async def generate_ai_executive_summary(
     if scores:
         sh = scores["site_health"]
         lines.append(f"Audit type: {'single page' if scores['mode'] == 'page' else 'whole site'}; URLs evaluated: {scores['urls_evaluated']}")
-        lines.append(f"Site Health: {sh['score']}/100 ({sh['band']}); URLs without critical errors: {sh['url_pass_rate']}%; "
-                     f"severity-weighted check pass rate: {sh['weighted_pass_rate']}%")
-        lines.append("URLs with at least one issue: critical {critical}, warning {warning}, notice {notice}".format(**sh["urls_with"]))
+        if sh.get("score") is not None:
+            lines.append(f"Site Health (share of URLs with zero errors): {sh['score']}/100 ({sh['band']})"
+                         + (" [provisional: small crawl]" if sh.get("provisional") else "")
+                         + (" [capped at 70 by a site-wide error]" if sh.get("capped") else ""))
+        else:
+            lines.append(f"Site Health: not scored. {sh.get('reason') or ''}")
+        pc = scores.get("page_check")
+        if pc:
+            lines.append(f"Page check: {pc.get('errors', 0)} errors, {pc.get('warnings', 0)} warnings, "
+                         f"{pc.get('opportunities', 0)} opportunities")
+        lines.append("URLs with at least one: error {critical}, warning {warning}, opportunity {notice}".format(**sh["urls_with"]))
+        # Errors first (they set the score), then the widest-reaching warnings.
         failing = sorted((r for r in scores["rules"] if r["status"] == "fail" and not r.get("integration")),
-                         key=lambda r: ({"critical": 0, "warning": 1, "notice": 2}[r["severity"]], -r["failing_count"]))[:8]
-        lines.append("Top issues (severity, affected URLs / evaluated URLs):")
-        lines += [f"- {r['id']} ({r['severity']}, {r['failing_count']}/{r['evaluated_count']})" for r in failing] or ["- none"]
+                         key=lambda r: (not r.get("is_error"), {"High": 0, "Medium": 1, "Low": 2}.get(r["priority"], 3),
+                                        -r["failing_count"]))[:8]
+        lines.append("Top issues (type and priority, affected URLs / evaluated URLs):")
+        lines += [f"- {r['id']} ({r['type']}, {r['priority']}{', error' if r.get('is_error') else ''}, "
+                  f"{r['failing_count']}/{r['evaluated_count']})" for r in failing] or ["- none"]
         cats = ", ".join(f"{k} {v['score']}" for k, v in scores["categories"].items() if v["score"] is not None)
         lines.append(f"Category scores: {cats or 'none'}")
         integ = scores["integrations"]
@@ -916,7 +931,7 @@ async def generate_ai_page_deepdive(
 
     # Scores come from the scoring engine (page mode), never from the model.
     t1 = dossier["tier1_crawl"]
-    composite, breakdown = None, {}
+    page_check, breakdown = None, {}
     if t1.get("fetched", True):
         if page is not None:
             page_dict = {"id": page.id, "url": page.url, "status_code": page.status_code, "content_type": page.content_type,
@@ -928,7 +943,8 @@ async def generate_ai_page_deepdive(
                          "audit_data": dossier.get("_audit_data") or {}}
         if page_dict:
             sc = compute_scores([page_dict], mode="page")
-            composite = sc.get("page_score")
+            # One URL has no score under the URL-pass-rate method: report its page check (errors / warnings).
+            page_check = sc.get("page_check")
             breakdown = {name: {"score": c["score"], "status": c["band"] or "Not evaluated"}
                          for name, c in sc["categories"].items()}
             ps = sc["integrations"].get("pagespeed", {})
@@ -976,7 +992,8 @@ async def generate_ai_page_deepdive(
     # The UI labels this block as proposed copy, so a label from the model would end up in the pasted text.
     answer_block = str(data.get("aeo_direct_answer_block") or "")
     data["aeo_direct_answer_block"] = re.sub(r"^\s*proposed copy[^:]{0,30}:\s*", "", answer_block, flags=re.I)
-    data["composite_score"] = composite
+    data["composite_score"] = None  # no per-page score under the URL-pass-rate method
+    data["page_check"] = page_check  # {"errors", "warnings", "opportunities", "error_checks", "passed"}
     data["score_breakdown"] = breakdown
     data["content_rewrites"] = _merge_rewrites(elements, data.get("content_rewrites") if success else None)
     dossier.pop("_audit_data", None)

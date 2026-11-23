@@ -1931,10 +1931,10 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                   </motion.div>
                   <div>
                     <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                      Technical Audit Successfully Generated
+                      Audit complete
                     </h4>
                     <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                      All 32 technical parameters, Core Web Vitals, AEO and GEO metrics are live.
+                      Site Health (or a page check for single pages), issues, AEO and GEO Readiness are below. Speed and AI answer checks appear when their integrations are connected.
                     </p>
                   </div>
                 </div>

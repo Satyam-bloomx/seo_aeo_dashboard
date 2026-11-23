@@ -182,39 +182,39 @@ def test_product_pages_missing_product_schema():
     assert evaluate_rule(_rule(rid), no_schema) is True
     assert evaluate_rule(_rule(rid), with_schema) is False
     assert evaluate_rule(_rule(rid), other) is None  # only product pages are judged
-    assert _rule(rid).severity == "warning"
+    assert _rule(rid).type == "Warning" and _rule(rid).ours is True
 
 
 def test_missing_canonical_escalates_with_duplicates():
     rid = "Canonicals: Missing"
     clean = [_scored_page(i, Canonicals={"Missing": True}) for i in (1, 2)]
-    assert _result(compute_scores(clean), rid)["severity"] == "notice"
+    assert _result(compute_scores(clean), rid)["priority"] == "Low"
     dup = [_scored_page(1, Canonicals={"Missing": True}, Page_Titles={"Missing": False, "Duplicate": True}),
            _scored_page(2, Canonicals={"Missing": True}, Page_Titles={"Missing": False, "Duplicate": True})]
     escalated = _result(compute_scores(dup), rid)
-    assert escalated["severity"] == "warning" and escalated["escalated"] is True
+    assert escalated["priority"] == "Medium" and escalated["escalated"] is True
+    assert escalated["is_error"] is False  # still a Warning: it never sets the score
     exact = [_scored_page(1, Canonicals={"Missing": True}, Content={"Exact Duplicates": True})]
-    assert _result(compute_scores(exact), rid)["severity"] == "warning"
-    # single-page audits have no site-level duplicates, so the severity stays a notice
-    assert _result(compute_scores(dup, mode="page"), rid)["severity"] == "notice"
+    assert _result(compute_scores(exact), rid)["priority"] == "Medium"
+    # single-page audits have no site-level duplicates, so it stays low priority
+    assert _result(compute_scores(dup, mode="page"), rid)["priority"] == "Low"
 
 
-def test_noindex_notice_rule_barely_moves_the_score():
+def test_noindex_is_a_warning_and_never_moves_the_score():
     rid = "Directives: Noindex"
     noindexed = _scored_page(1, Directives={"NoIndex": True})
-    assert evaluate_rule(_rule(rid), noindexed) is True and _rule(rid).severity == "notice"
+    assert evaluate_rule(_rule(rid), noindexed) is True and _rule(rid).type == "Warning"
     pages = [_scored_page(i, Directives={"NoIndex": False}) for i in range(10)]
     pages[0] = noindexed
-    sh = compute_scores(pages)["site_health"]
-    assert _result(compute_scores(pages), rid)["failing_count"] == 1
-    assert sh["score"] >= 98
+    s = compute_scores(pages)
+    assert _result(s, rid)["failing_count"] == 1 and s["site_health"]["score"] == 100
 
 
 def test_pagination_rules_and_no_double_penalty():
     canon_rule = "Pagination: Paginated Page Canonicalised To First Page"
     p = _scored_page(1, Pagination={"Canonicalised To First Page": True, "Duplicate Title From Pagination": False})
-    assert evaluate_rule(_rule(canon_rule), p) is True and _rule(canon_rule).severity == "warning"
-    # a title duplicate explained by pagination is a notice on its own rule, not a second warning
+    assert evaluate_rule(_rule(canon_rule), p) is True and _rule(canon_rule).type == "Warning"
+    # a title duplicate explained by pagination is reported on its own rule, not as a second duplicate
     dup = _scored_page(2, Page_Titles={"Missing": False, "Duplicate": True},
                        Pagination={"Canonicalised To First Page": False, "Duplicate Title From Pagination": True})
     assert evaluate_rule(_rule("Page Titles: Duplicate"), dup) is False
@@ -252,51 +252,39 @@ def _impacts(scores):
 
 
 def test_score_explanation_sums_to_the_gap_from_100():
-    pages = [_scored_page(1, Page_Titles={"Missing": True}), _scored_page(2, Page_Titles={"Missing": False, "Duplicate": True}),
-             _scored_page(3), _scored_page(4, status=404), _scored_page(5)]
+    pages = ([_scored_page(1, Page_Titles={"Missing": True}), _scored_page(2, status=404)]
+             + [_scored_page(i) for i in range(3, 13)])
     s = compute_scores(pages)
-    assert s["site_health"]["score"] == 100 + _impacts(s)
+    assert s["site_health"]["score"] == 83 and s["site_health"]["score"] == 100 + _impacts(s)
     assert all(set(i) == {"label", "impact", "detail"} and isinstance(i["impact"], int) for i in s["score_explanation"])
-    assert [i["impact"] for i in s["score_explanation"]] == sorted(i["impact"] for i in s["score_explanation"])
-    assert compute_scores([_scored_page(1), _scored_page(2)])["score_explanation"] == []  # nothing lost: empty
+    assert compute_scores([_scored_page(i) for i in range(12)])["score_explanation"] == []  # nothing lost: empty
 
 
-def test_failing_core_web_vitals_lowers_the_headline():
-    clean = [_scored_page(i) for i in range(1, 7)]
-    base = compute_scores(clean)["site_health"]["score"]
-    failing = [_ps_page(1, {"available": True, "lcp_p75_ms": 32000, "inp_p75_ms": 900, "cls_p75": 0.4})] + clean[1:]
+def test_failing_core_web_vitals_counts_as_an_error_on_the_measured_page():
+    clean = [_scored_page(i) for i in range(1, 12)]
+    failing = [_ps_page(0, {"available": True, "lcp_p75_ms": 32000, "inp_p75_ms": 900, "cls_p75": 0.4})] + clean
     s = compute_scores(failing)
-    assert base == 100 and s["site_health"]["score"] == 90  # 4 + 2 x 3 failing metrics, capped at 10
-    assert s["site_health"]["base_score"] == 100
-    item = next(i for i in s["score_explanation"] if i["label"].startswith("Core Web Vitals"))
-    assert item["impact"] == -10 and "LCP" in item["detail"]
-    passing = [_ps_page(1, {"available": True, "lcp_p75_ms": 2000, "cls_p75": 0.02})] + clean[1:]
+    assert s["site_health"]["urls_with_errors"] == 1 and s["site_health"]["score"] == 92  # 11 of 12 URLs clean
+    passing = [_ps_page(0, {"available": True, "lcp_p75_ms": 2000, "cls_p75": 0.02})] + clean
     assert compute_scores(passing)["site_health"]["score"] == 100
 
 
-def test_poor_lab_score_without_field_data_lowers_the_headline():
-    clean = [_scored_page(i) for i in range(2, 7)]
-    s = compute_scores([_ps_page(1, None, 30)] + clean)
-    assert s["site_health"]["score"] == 90  # (90 - 30) / 6 = 10 points, the cap
-    assert compute_scores([_ps_page(1, None, 95)] + clean)["site_health"]["score"] == 100
+def test_lab_score_alone_is_not_an_error():
+    clean = [_scored_page(i) for i in range(2, 14)]
+    assert compute_scores([_ps_page(1, None, 30)] + clean)["site_health"]["score"] == 100
 
 
-def test_error_pages_weigh_in_proportionally():
+def test_error_pages_weigh_in_linearly():
     few = [_scored_page(i) for i in range(1, 100)] + [_scored_page(100, status=404)]
     many = [_scored_page(i) for i in range(1, 51)] + [_scored_page(i, status=500) for i in range(51, 101)]
-    a, b = compute_scores(few), compute_scores(many)
-    err_a = next(i for i in a["score_explanation"] if i["label"] == "Pages returning errors")
-    err_b = next(i for i in b["score_explanation"] if i["label"] == "Pages returning errors")
-    assert err_a["impact"] == -2 and err_b["impact"] == -20  # 1% -> 2 points; 50% -> capped at 20
-    assert a["site_health"]["score"] == 100 + _impacts(a) and b["site_health"]["score"] == 100 + _impacts(b)
-    assert b["site_health"]["score"] >= 0
+    assert compute_scores(few)["site_health"]["score"] == 99    # 1% of URLs broken
+    assert compute_scores(many)["site_health"]["score"] == 50   # half the site broken
 
 
-def test_penalties_never_push_the_score_below_zero():
-    pages = [_ps_page(i, {"available": True, "lcp_p75_ms": 9000, "cls_p75": 0.9}, status=404) for i in range(1, 6)]
+def test_score_never_goes_below_zero():
+    pages = [_ps_page(i, {"available": True, "lcp_p75_ms": 9000, "cls_p75": 0.9}, status=404) for i in range(1, 13)]
     s = compute_scores(pages)
-    assert s["site_health"]["score"] >= 0
-    assert s["site_health"]["score"] == 100 + _impacts(s)
+    assert s["site_health"]["score"] == 0 and s["site_health"]["score"] == 100 + _impacts(s)
 
 
 # ---------------------------------------------------------------- crawl settings and robustness

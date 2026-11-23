@@ -1,7 +1,8 @@
-"""AI crawler access (robots.txt) and llms.txt presence: informational, never scored.
+"""AI crawler access (robots.txt) and llms.txt presence.
 
-Blocking AI training crawlers is a legitimate policy choice, so this reports what each AI user agent
-may fetch rather than grading it. Uses the same Protego robots parser as the crawler.
+Blocking AI training crawlers is a legitimate policy choice, so training bots and llms.txt are reported, never
+graded. Access for the search/retrieval bots feeds the GEO readiness score (app/services/geo_readiness.py).
+Uses the same Protego robots parser as the crawler.
 """
 from typing import Any, Dict
 from urllib.parse import urlparse
@@ -13,6 +14,8 @@ from app.services.robots import robots_service
 
 # (user agent token, operator, purpose)
 AI_AGENTS = [
+    # Google AI Overviews / AI Mode use ordinary Search indexing, so Googlebot is the retrieval bot for Google.
+    ("Googlebot", "Google", "search"),
     ("GPTBot", "OpenAI", "training"),
     ("OAI-SearchBot", "OpenAI", "search"),
     ("ChatGPT-User", "OpenAI", "user_fetch"),

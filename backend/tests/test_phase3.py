@@ -1,4 +1,4 @@
-"""Phase 3: pagination parameters survive URL clean-up; site-wide template problems lower the headline score."""
+"""Phase 3: pagination parameters survive URL clean-up; a template problem fails every URL it affects."""
 from app.services.crawler import CrawlerService
 from app.services.scoring import compute_scores
 
@@ -29,19 +29,12 @@ def _page(i, h1_missing):
     }
 
 
-def test_check_failing_on_almost_every_page_lowers_the_headline():
+def test_missing_h1_is_an_error_on_each_url_that_lacks_one():
     everywhere = compute_scores([_page(i, True) for i in range(10)], "site")
     nowhere = compute_scores([_page(i, False) for i in range(10)], "site")
-    labels = [r["label"] for r in everywhere["score_explanation"]]
-    assert "Problems on almost every page" in labels
-    assert "Problems on almost every page" not in [r["label"] for r in nowhere["score_explanation"]]
-    assert sum(r["impact"] for r in everywhere["score_explanation"]) == everywhere["site_health"]["score"] - 100
-
-
-def test_a_few_pages_failing_is_not_site_wide():
-    pages = [_page(i, i < 3) for i in range(10)]  # 30%
-    labels = [r["label"] for r in compute_scores(pages, "site")["score_explanation"]]
-    assert "Problems on almost every page" not in labels
+    some = compute_scores([_page(i, i < 3) for i in range(10)], "site")
+    assert everywhere["site_health"]["score"] == 0 and nowhere["site_health"]["score"] == 100
+    assert some["site_health"]["score"] == 70  # 3 of 10 URLs without an H1
 
 
 def _type(url, head="", body=""):

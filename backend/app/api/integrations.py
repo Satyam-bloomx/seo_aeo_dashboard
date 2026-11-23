@@ -83,6 +83,8 @@ class IntegrationStatusResponse(BaseModel):
     diagnostic_help: Optional[str] = None
     selected_model: Optional[str] = None
     available_models: Optional[List[Dict[str, Any]]] = None
+    # True when this workspace has not connected its own key but audits still use one from the server's environment.
+    server_key: bool = False
 
 class SelectModelRequest(BaseModel):
     project_id: int = 1
@@ -117,6 +119,11 @@ class LinkGoogleAccountRequest(BaseModel):
     project_id: int = 1
     service: str = "google_business"
 
+
+# Environment fallbacks the enrichment step uses when a workspace has no key of its own
+# (app/services/enrichment_service.py). Shown in the UI so "Disconnected" never hides a key that is in use.
+SERVER_KEY_ENV = {"pagespeed": "PAGESPEED_API_KEY", "gemini": "GEMINI_API_KEY", "openai": "OPENAI_API_KEY",
+                  "perplexity": "PERPLEXITY_API_KEY", "serpapi": "SERPAPI_API_KEY"}
 
 SUPPORTED_SERVICES = [
     "pagespeed",
@@ -413,7 +420,8 @@ async def get_integration_status(
             no_properties_warning=no_properties_warning,
             diagnostic_help=diagnostic_help,
             selected_model=selected_model,
-            available_models=available_models
+            available_models=available_models,
+            server_key=bool(not connected and SERVER_KEY_ENV.get(svc) and (os.getenv(SERVER_KEY_ENV[svc]) or "").strip()),
         ))
         
     return response

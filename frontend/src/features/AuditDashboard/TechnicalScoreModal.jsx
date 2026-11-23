@@ -103,14 +103,14 @@ export default function TechnicalScoreModal({
                   Technical SEO Score Audit Breakdown
                 </DialogTitle>
                 <span className="rounded-md border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
-                  5-Pillar Standard
+                  Screaming Frog classification
                 </span>
                 <span className="rounded-md border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-700 dark:text-slate-300">
                   {totalChecks} Automated Tests
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Evaluates {totalChecks} granular technical rules across 14 categories based on Google Search Central guidance
+                {totalChecks} checks evaluated, weighted by their impact on search according to Google Search Central guidance
               </p>
             </div>
           </div>
@@ -149,7 +149,10 @@ export default function TechnicalScoreModal({
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
-                  Synthesizes <strong className="text-slate-900 dark:text-white">{totalChecks} diagnostic checks</strong> across <strong className="text-slate-900 dark:text-white">{totalPages}</strong> crawled URLs.
+                  {technicalSeoResult?.pageCheck
+                    ? <strong className="text-slate-900 dark:text-white">Page check: {technicalSeoResult.pageCheck.errors} errors, {technicalSeoResult.pageCheck.warnings} warnings</strong>
+                    : <strong className="text-slate-900 dark:text-white">Site Health {displayScore ?? '—'}{technicalSeoResult?.provisional ? ' (provisional)' : ''}</strong>}
+                  {' '}from {totalChecks} checks across {totalPages} crawled URLs.
                 </p>
                 <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
                   <span>URL Health Hygiene:</span>
@@ -185,10 +188,10 @@ export default function TechnicalScoreModal({
             <Info size={16} className="text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <div className="font-semibold text-slate-900 dark:text-white">
-                How Technical SEO Scoring Works: 5 Core Pillars Aggregating {totalChecks}+ Underlying Tests
+                How scoring works: {totalChecks} checks, classified the way Screaming Frog classifies them
               </div>
               <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
-                <strong>Site Health</strong> blends two measures equally: the share of URLs with no critical error (the method Ahrefs uses for its Health Score) and a severity-weighted pass rate across every check (critical 5, warning 3, notice 1, as in Lighthouse category scores). Checks without data are excluded rather than counted as passes. The categories below are a diagnostic breakdown; click one to see its checks.
+                Every check is an <strong>Issue</strong>, a <strong>Warning</strong> or an <strong>Opportunity</strong>, with a high, medium or low priority, as in Screaming Frog. An <strong>error</strong> is an Issue of high or medium priority (for example a broken page, a missing title or a missing H1). <strong>Site Health</strong> is the share of crawled URLs with zero errors, the Ahrefs Health Score method. Warnings and opportunities are listed with the share of URLs they affect but never change the score. A single-page audit shows a page check instead of a score. Each category below shows the share of URLs with no error from its checks; click one to see them.
               </p>
             </div>
           </div>

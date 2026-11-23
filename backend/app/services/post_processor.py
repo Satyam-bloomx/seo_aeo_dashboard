@@ -211,6 +211,8 @@ class PostProcessor:
                 if "Content" in p.audit_data:
                     p.audit_data["Content"]["Exact Duplicates"] = False
                     p.audit_data["Content"]["Near Duplicates"] = False
+                    p.audit_data["Content"]["Thin Templated Pages"] = False
+                    p.audit_data["Content"]["Product Variants"] = False
                     p.audit_data["Content"]["exact_duplicate_urls"] = []
                     p.audit_data["Content"]["duplicate_urls"] = []
                     p.audit_data["Content"]["near_duplicate_urls"] = []
@@ -308,49 +310,35 @@ class PostProcessor:
                             p.audit_data["Meta_Description"]["duplicate_count"] = len(all_urls)
                             flag_modified(p, "audit_data")
 
-            # 4e. Exact Duplicate Content
-            for c_hash, group in content_hash_groups.items():
-                if len(group) > 1:
-                    all_urls = [p.url for p in group]
-                    for p in group:
-                        if p.audit_data and "Content" in p.audit_data:
-                            p.audit_data["Content"]["Exact Duplicates"] = True
-                            p.audit_data["Content"]["exact_duplicate_urls"] = _url_sample(all_urls, p.url)
-                            p.audit_data["Content"]["duplicate_urls"] = _url_sample(all_urls, p.url)
-                            p.audit_data["Content"]["duplicate_count"] = len(all_urls)
-                            flag_modified(p, "audit_data")
-
-            # 4f. Near Duplicates Detection (Pages sharing identical H1 or Title + word count within 15%)
-            # Only between distinct Indexable pages that do NOT share a canonical target
-            indexable_pages = [p for p in pages if (self.is_page_indexable(p) and (p.word_count or 0) >= 30)]
-            # Same-H1 is required for a match, so compare only within H1 buckets (near-linear in practice).
-            h1_buckets: Dict[str, List[Page]] = collections.defaultdict(list)
+            # 4e-4f. Duplicate content, classified (see app/services/duplicates.py): real copies, product variants,
+            # thin templated pages and near duplicates. Pages that canonicalise elsewhere are already left out above,
+            # so the same product reachable at several URLs is never reported as a duplicate.
+            from app.services.duplicates import classify_duplicates
+            indexable_pages = [p for p in pages if self.is_page_indexable(p) and p.audit_data and "Content" in p.audit_data]
+            verdicts = classify_duplicates([
+                {"id": p.id, "url": p.url, "content_hash": getattr(p, "content_hash", None),
+                 "content": p.audit_data.get("Content") or {}, "structured": p.audit_data.get("Structured_Data") or {}}
+                for p in indexable_pages
+            ])
             for p in indexable_pages:
-                if p.h1_1 and p.h1_1.strip():
-                    h1_buckets[p.h1_1.strip().lower()].append(p)
-            canon_of = {p.id: normalize_url_for_canonical(p.canonical_link_element_1 or p.url) for p in indexable_pages}
-            near_matches: Dict[int, List[str]] = collections.defaultdict(list)
-            for bucket in h1_buckets.values():
-                if len(bucket) < 2:
+                v = verdicts.get(p.id)
+                if not v:
                     continue
-                for i in range(len(bucket)):
-                    p1 = bucket[i]
-                    for j in range(i + 1, len(bucket)):
-                        p2 = bucket[j]
-                        # Pages sharing a canonical target are consolidated, not competing duplicates.
-                        if p1.url == p2.url or canon_of[p1.id] == canon_of[p2.id]:
-                            continue
-                        w1, w2 = p1.word_count or 1, p2.word_count or 1
-                        if min(w1, w2) / max(w1, w2) >= 0.85:
-                            near_matches[p1.id].append(p2.url)
-                            near_matches[p2.id].append(p1.url)
-            for p in indexable_pages:
-                matches = near_matches.get(p.id)
-                if matches and p.audit_data and "Content" in p.audit_data:
-                    p.audit_data["Content"]["Near Duplicates"] = True
-                    p.audit_data["Content"]["near_duplicate_urls"] = matches[:URL_SAMPLE_CAP]
-                    p.audit_data["Content"]["near_duplicate_count"] = len(matches)
-                    flag_modified(p, "audit_data")
+                content = p.audit_data["Content"]
+                for flag, urls_key, count_key in (("Exact Duplicates", "exact_duplicate_urls", "duplicate_count"),
+                                                  ("Near Duplicates", "near_duplicate_urls", "near_duplicate_count"),
+                                                  ("Thin Templated Pages", "templated_urls", "templated_count"),
+                                                  ("Product Variants", "variant_urls", "variant_count")):
+                    urls = v.get(flag) or []
+                    content[flag] = bool(urls)
+                    if urls:
+                        content[urls_key] = urls[:URL_SAMPLE_CAP]
+                        content[count_key] = len(urls) + 1
+                if v.get("Exact Duplicates"):
+                    content["duplicate_urls"] = content["exact_duplicate_urls"]
+                if v.get("unique_words_estimate") is not None:
+                    content["Unique_Words_Estimate"] = v["unique_words_estimate"]
+                flag_modified(p, "audit_data")
 
             # 4g. Page type refinement: a page with no type signals that links to many product pages is a category.
             product_urls = {slash_key(p.url) for p in pages if (p.audit_data.get("Page_Type") or {}).get("Type") == "Product"}
@@ -433,7 +421,25 @@ class PostProcessor:
                 ai_crawlers = await check_ai_crawler_access(seed)
             except Exception as e:
                 ai_crawlers = {"status": "error", "reason": type(e).__name__, "agents": []}
+            # Site-wide issues: problems with files that serve the whole site rather than one URL.
+            from app.services.robots_validation import check_robots_txt
+            try:
+                site_issues = await check_robots_txt(seed)
+            except Exception as e:  # validation must never break the report
+                print(f"[PostProcessor] robots.txt validation failed: {type(e).__name__}")
+                site_issues = []
+            coverage = ((crawl_row.summary or {}).get("coverage") or {}) if crawl_row else {}
+            crawl_was_cut_short = bool(coverage.get("not_crawled_page_limit") or coverage.get("not_crawled_depth_limit"))
+            if self.mode != "page" and sitemap_only and not crawl_was_cut_short:
+                # Only meaningful when the crawl followed every link: otherwise the limit, not the site, left them out.
+                site_issues.append({
+                    "id": "sitemap_urls_not_linked", "label": "Sitemap URLs that no internal link reaches",
+                    "type": "Warning", "priority": "Medium", "source": "sitemap",
+                    "detail": f"{len(sitemap_only)} URL{'s' if len(sitemap_only) != 1 else ''} in the sitemap were never "
+                              f"found by following links (orphan pages), e.g. {', '.join(sitemap_only[:3])}.",
+                })
             crawl_summary_updates = {
+                "site_issues": site_issues,
                 "ai_crawlers": ai_crawlers,
                 "duplicates_excluded": duplicates_excluded,
                 "sitemap": {

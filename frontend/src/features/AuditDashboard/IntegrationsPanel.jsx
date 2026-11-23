@@ -953,6 +953,18 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                               </span>
                               Connected
                             </motion.span>
+                          ) : integrationState?.server_key ? (
+                            <motion.span
+                              key="server-key"
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.8 }}
+                              transition={spring.soft}
+                              title="Audits use a key from the server's environment (.env). Connect your own key to use your own quota."
+                              className="text-[10px] font-mono font-bold text-sky-800 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/50 border border-sky-300/80 dark:border-sky-700/60 px-2.5 py-0.5 rounded-full shadow-2xs"
+                            >
+                              Using server key (.env)
+                            </motion.span>
                           ) : hasConfiguredApp ? (
                             <motion.span
                               key="configured"

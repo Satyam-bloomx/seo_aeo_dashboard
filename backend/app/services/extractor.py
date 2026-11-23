@@ -3,7 +3,7 @@ from app.services.technology import detect_technology
 from bs4 import BeautifulSoup
 import hashlib
 import json
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse, parse_qs, parse_qsl, urlencode
 import re
 import html
@@ -81,9 +81,13 @@ def normalize_url_for_canonical(u: str) -> str:
 
 
 def extract_structured_data(soup) -> Dict[str, Any]:
-    """JSON-LD types (including @graph members), invalid blocks, and microdata/RDFa presence."""
+    """JSON-LD types (including @graph members), invalid blocks, and microdata/RDFa presence, plus the facts GEO
+    readiness reads from JSON-LD: publish/modify dates, an author, and Organization sameAs profile links."""
     types: List[str] = []
     blocks = invalid = 0
+    facts = {"published": None, "modified": None, "author": False, "org_same_as": 0,
+             "sku": None, "price": None, "group": None}
+    org_types = ("Organization", "Corporation", "LocalBusiness", "NewsMediaOrganization", "OnlineBusiness", "Person")
 
     def collect(node):
         if isinstance(node, list):
@@ -91,9 +95,30 @@ def extract_structured_data(soup) -> Dict[str, Any]:
                 collect(n)
         elif isinstance(node, dict):
             t = node.get("@type")
-            for name in (t if isinstance(t, list) else [t]):
-                if isinstance(name, str) and name:
-                    types.append(name.split("/")[-1])
+            names = [n.split("/")[-1] for n in (t if isinstance(t, list) else [t]) if isinstance(n, str) and n]
+            types.extend(names)
+            for key, slot in (("datePublished", "published"), ("dateModified", "modified")):
+                if isinstance(node.get(key), str) and not facts[slot]:
+                    facts[slot] = node[key][:40]
+            if node.get("author"):
+                facts["author"] = True
+            # Product identity, used to tell variants of one product apart from duplicate pages.
+            for key in ("sku", "gtin", "gtin13", "gtin12", "gtin8", "mpn"):
+                if isinstance(node.get(key), (str, int)) and not facts["sku"]:
+                    facts["sku"] = str(node[key])[:64]
+            for key in ("productGroupID", "inProductGroupWithID"):
+                if isinstance(node.get(key), (str, int)) and not facts["group"]:
+                    facts["group"] = str(node[key])[:64]
+            offers = node.get("offers")
+            for offer in (offers if isinstance(offers, list) else [offers]):
+                if isinstance(offer, dict) and offer.get("price") is not None and facts["price"] is None:
+                    facts["price"] = str(offer["price"])[:32]
+                if isinstance(offer, dict):
+                    collect(offer)
+            if any(n in org_types or n.endswith("Business") for n in names):
+                same_as = node.get("sameAs")
+                count = len(same_as) if isinstance(same_as, list) else (1 if isinstance(same_as, str) and same_as else 0)
+                facts["org_same_as"] = max(facts["org_same_as"], count)
             if "@graph" in node:
                 collect(node["@graph"])
 
@@ -118,6 +143,13 @@ def extract_structured_data(soup) -> Dict[str, Any]:
         "Microdata Present": bool(microdata),
         "RDFa Present": rdfa,
         "Missing Structured Data": not all_types,
+        "Date_Published": facts["published"],
+        "Date_Modified": facts["modified"],
+        "Author_Present": facts["author"],
+        "Org_SameAs_Count": facts["org_same_as"],
+        "Product_SKU": facts["sku"],
+        "Product_Price": facts["price"],
+        "Product_Group_ID": facts["group"],
     }
 
 def _header(headers: Dict[str, str], name: str) -> str:
@@ -334,6 +366,191 @@ def classify_page_type(url: str, soup, schema_types, pagination: Dict[str, Any])
     return done("Other")
 
 
+# ---------------------------------------------------------------- GEO readiness facts
+# Facts a reader (or an AI answer) can quote: percentages and figures with a scale ("50,000+ clients", "3 million").
+# Prices and discounts ("₹1,299", "15% off") are shop data, not evidence, so they are excluded: a product grid
+# would otherwise look like a research page.
+STAT_RE = re.compile(
+    r"(?<![\w.$€£₹])\d[\d,]*(?:\.\d+)?\s?(?:%|percent\b|per cent\b|million\b|billion\b|thousand\b|times\b|x\b|\+)"
+    r"(?!\s*(?:off|discount|cashback)\b)", re.I)
+# Links that are not citations of a source: app stores, shop platforms, payment and maps.
+NON_SOURCE_HOSTS = ("apps.apple.com", "itunes.apple.com", "play.google.com", "apps.shopify.com", "shopify.com",
+                    "maps.google.com", "goo.gl", "razorpay.com", "paypal.com", "stripe.com", "paytm.com")
+# A citation is a text link inside prose, not a badge, button or menu.
+PROSE_TAGS = ("p", "li", "td", "blockquote", "figcaption", "cite", "dd")
+QUOTE_RE = re.compile(r"[“\"]([^”\"]{40,400})[”\"]")
+QUESTION_START = re.compile(r"^(what|how|why|when|where|who|which|can|does|do|is|are|should|will)\b", re.I)
+APP_ROOT_IDS = ("root", "app", "__next", "__nuxt", "svelte", "q-app")
+# Share buttons and profile links are not citations of a source.
+SOCIAL_HOSTS = ("facebook.com", "twitter.com", "x.com", "linkedin.com", "instagram.com", "pinterest.com",
+                "whatsapp.com", "t.me", "reddit.com", "tiktok.com", "youtube.com", "wa.me", "threads.net")
+
+
+def _meta_content(soup, **attrs) -> Optional[str]:
+    tag = soup.find("meta", attrs=attrs)
+    value = (tag.get("content") or "").strip() if tag else ""
+    return value[:40] or None
+
+
+MAIN_IDS = ("MainContent", "main-content", "maincontent", "main", "content", "primary", "page-content")
+
+
+def content_region(soup):
+    """The page's main content: <main>, role=main, a common main-content container (#MainContent on Shopify,
+    #content / #primary on WordPress), a single <article>, else the body. Listing pages carry many <article> tiles
+    (one per product or post), and the first tile is not the page's content."""
+    region = soup.find("main") or soup.find(attrs={"role": "main"})
+    if region is None:
+        region = next((el for el in (soup.find(id=i) for i in MAIN_IDS) if el is not None), None)
+    if region is None:
+        articles = soup.find_all("article")
+        region = articles[0] if len(articles) == 1 else None
+    return region or soup.body or soup
+
+
+def geo_facts(soup, base_domain: str, structured: Dict[str, Any], script_count: int,
+              noscript_needs_js: bool, nosnippet: bool, inline_script_bytes: int = 0) -> Dict[str, Any]:
+    """Per-page signals for GEO readiness (how retrievable and quotable a page is for AI answer engines).
+    Call after <script>/<style> are stripped. Scored in app/services/geo_readiness.py."""
+    region = content_region(soup)
+    text = " ".join(region.get_text(" ").split())
+    words = get_word_count(text)
+
+    cited = set()
+    for a in region.find_all("a", href=True):
+        if a.find_parent(["nav", "header", "footer"]):
+            continue
+        href = (a.get("href") or "").strip()
+        if not href.lower().startswith(("http://", "https://")):
+            continue
+        host = urlparse(href).netloc.lower()
+        host = host[4:] if host.startswith("www.") else host
+        if not host or host == base_domain or host.endswith("." + base_domain):
+            continue
+        if any(host == s or host.endswith("." + s) for s in SOCIAL_HOSTS + NON_SOURCE_HOSTS):
+            continue
+        if get_word_count(element_text(a)) == 0 or not a.find_parent(PROSE_TAGS):
+            continue  # image badges and buttons are not citations
+        cited.add(host)
+
+    headings = [element_text(h) for h in region.find_all(["h2", "h3"])]
+    first_para = next((element_text(p) for p in region.find_all("p") if get_word_count(element_text(p)) >= 8), "")
+    lists = sum(1 for lst in region.find_all(["ul", "ol"])
+                if not lst.find_parent(["nav", "header", "footer"]) and len(lst.find_all("li", recursive=False)) >= 3)
+
+    time_tag = soup.find("time", attrs={"datetime": True})
+    published = (structured.get("Date_Published") or _meta_content(soup, property="article:published_time")
+                 or ((time_tag.get("datetime") or "")[:40] if time_tag else None))
+    modified = (structured.get("Date_Modified") or _meta_content(soup, property="article:modified_time")
+                or _meta_content(soup, property="og:updated_time"))
+    author = bool(structured.get("Author_Present")
+                  or soup.find("meta", attrs={"name": re.compile(r"^author$", re.I)})
+                  or soup.find("a", rel=lambda r: bool(r) and "author" in r)
+                  or soup.find(attrs={"itemprop": "author"})
+                  or soup.find(attrs={"class": re.compile(r"\b(author|byline)\b", re.I)}))
+
+    # Content that only exists after JavaScript runs is invisible to AI crawlers that do not render it.
+    # Without a rendered copy to compare against, judge it from the served HTML: almost no text, plus an empty app
+    # root, a "please enable JavaScript" notice, or a large inline script that builds the content.
+    empty_root = any((el := soup.find(id=i)) is not None and get_word_count(element_text(el)) < 20 for i in APP_ROOT_IDS)
+    js_shell = words < 50 and script_count > 0 and (empty_root or noscript_needs_js or inline_script_bytes >= 2000)
+
+    return {
+        "Words": words,
+        "Statistics": len(STAT_RE.findall(text)),
+        "Quotations": len(region.find_all(["blockquote", "q"])) + len(QUOTE_RE.findall(text)),
+        "Cited_Domains": len(cited),
+        "Question_Headings": sum(1 for h in headings if h.endswith("?") or QUESTION_START.match(h)),
+        "Answer_First": 8 <= get_word_count(first_para) <= 80,
+        "Lists": lists,
+        "Tables": len(region.find_all("table")),
+        "Date_Published": published,
+        "Date_Modified": modified,
+        "Author": author,
+        "Org_SameAs_Count": structured.get("Org_SameAs_Count") or 0,
+        "NoSnippet": nosnippet,
+        "JS_Dependent": js_shell,
+        "JS_Check": "heuristic",  # the JS-rendering crawler replaces this with a raw vs rendered comparison
+    }
+
+
+BOILERPLATE_TAGS = ("nav", "header", "footer", "aside")
+# Themes often build menus from <div>s: recognise them by class or id, as Screaming Frog's content-area settings do.
+BOILERPLATE_ATTR = re.compile(
+    r"(?:^|[\s_-])(?:nav|navbar|navigation|menu|megamenu|header|footer|drawer|breadcrumbs?|sidebar|cookie|"
+    r"announcement|newsletter|skip-link)(?:$|[\s_-])", re.I)
+
+
+def _is_boilerplate(tag) -> bool:
+    if tag.name in BOILERPLATE_TAGS or tag.get("role") in ("navigation", "banner", "contentinfo"):
+        return True
+    marker = " ".join(tag.get("class") or []) + " " + (tag.get("id") or "")
+    return bool(marker.strip()) and bool(BOILERPLATE_ATTR.search(marker))
+
+
+def main_content_text(soup) -> str:
+    """Text of the page's content area: the main region minus navigation, header, footer, menus and sidebars
+    (Screaming Frog's default content area excludes nav and footer). Text is collected from text nodes so the
+    soup itself is left untouched for the checks that run afterwards."""
+    region = content_region(soup)
+    parts = []
+    for node in region.find_all(string=True):
+        parent, skip = node.parent, False
+        while parent is not None and parent is not region:
+            if _is_boilerplate(parent):
+                skip = True
+                break
+            parent = parent.parent
+        if not skip:
+            parts.append(str(node))
+    return " ".join(" ".join(parts).split())
+
+
+def main_content_words(soup) -> int:
+    """Words in the content area. A page whose only text is the menu has ~0 here, even though its whole-page word
+    count can be several hundred."""
+    return get_word_count(main_content_text(soup))
+
+
+# ---------------------------------------------------------------- duplicate fingerprints
+# MinHash over word 5-shingles of the content area (the method Screaming Frog uses for near duplicates). 64 hash
+# functions estimate Jaccard similarity to about +/-0.06, enough to separate 97%-identical templates from real pages.
+MINHASH_PERMS = 64
+_MH_PRIME = (1 << 61) - 1
+_MH_COEFFS = [((i * 0x9E3779B97F4A7C15 + 0x632BE59BD9B4E019) % _MH_PRIME or 1,
+               (i * 0xC2B2AE3D27D4EB4F + 0x165667B19E3779F9) % _MH_PRIME) for i in range(1, MINHASH_PERMS + 1)]
+UNIT_WORDS = r"carats?|cts?|ratti|grams?|g|kg|mg|mm|cm|ml|l|inch(?:es)?|in|oz|lbs?|pcs?|pieces?|pack|size|xs|s|m|l|xl|xxl"
+
+
+def minhash_signature(text: str, k: int = 5) -> Optional[List[int]]:
+    words = re.findall(r"\w+", text.lower())
+    if len(words) < k:
+        return None
+    shingles = {hash_shingle(" ".join(words[i:i + k])) for i in range(len(words) - k + 1)}
+    return [min((a * s + b) % _MH_PRIME for s in shingles) & 0xFFFFFFFF for a, b in _MH_COEFFS]
+
+
+def hash_shingle(shingle: str) -> int:
+    return int.from_bytes(hashlib.blake2b(shingle.encode("utf-8"), digest_size=8).digest(), "big")
+
+
+def product_name_key(name: str) -> str:
+    """A product name with numbers and units removed: '8.29 Carats Natural Ruby' and 'Natural Ruby 12.36 Carats'
+    both become 'natural ruby', so per-size or per-weight listings can be recognised as variants of one product."""
+    s = re.sub(r"\d+(?:[.,]\d+)?", " ", (name or "").lower())
+    s = re.sub(rf"\b(?:{UNIT_WORDS})\b", " ", s)
+    s = re.sub(r"[^a-zऀ-ॿ ]+", " ", s)
+    return " ".join(s.split())
+
+
+def main_text_words(html_content: str) -> int:
+    """Words in the main content region of a raw HTML document (for the raw vs rendered comparison)."""
+    soup = _parse_html(html_content)
+    for tag in soup(["script", "style", "noscript", "svg"]):
+        tag.extract()
+    return get_word_count(" ".join(content_region(soup).get_text(" ").split()))
+
+
 def extract_seo_metrics(html_content: str, url: str, headers: Dict[str, str] = None, soup=None) -> Dict[str, Any]:
     if soup is None:
         soup = _parse_html(html_content)
@@ -398,8 +615,12 @@ def extract_seo_metrics(html_content: str, url: str, headers: Dict[str, str] = N
     d_len = len(desc_text)
     d_px_width = calculate_pixel_width(desc_text, DESCRIPTION_FONT_PX)
     
+    # A template default such as "- Brand Name" or a copy of the title is a description in name only.
+    desc_placeholder = bool(desc_text) and bool(
+        re.match(r"^[\s\-–—|:•·]+", desc_text) or desc_text.strip().lower() == title_text.strip().lower())
     desc_data = {
         "Missing": not bool(desc_text),
+        "Placeholder or Copy of Title": desc_placeholder,
         "Duplicate": False, 
         "Over 155 Characters": d_len > 155,
         "Below 70 Characters": d_len > 0 and d_len < 70,
@@ -472,6 +693,11 @@ def extract_seo_metrics(html_content: str, url: str, headers: Dict[str, str] = N
     # 11. Content
     # Script sources are captured before scripts are stripped so the mixed-content check still sees them.
     script_srcs = [(t.get("src") or "").strip().lower() for t in soup.find_all("script", src=True)]
+    script_count = len(soup.find_all("script"))
+    dom_nodes = len(soup.body.find_all(True)) if soup.body else 0  # Lighthouse DOM size counts body elements
+    inline_script_bytes = sum(len(t.string or "") for t in soup.find_all("script", src=False)
+                              if "json" not in (t.get("type") or "").lower())  # JSON-LD and data blocks are not code
+    noscript_needs_js = any("javascript" in n.get_text(" ").lower() for n in soup.find_all("noscript"))
     for script in soup(["script", "style", "noscript", "svg"]):
         script.extract()
     text = soup.get_text(separator=' ')
@@ -481,14 +707,24 @@ def extract_seo_metrics(html_content: str, url: str, headers: Dict[str, str] = N
     intro_source = " ".join(main_region.get_text(" ").split()) if main_region else clean_text
     intro_text = intro_source[:600]
     word_count = get_word_count(clean_text)
+    main_text = main_content_text(soup)
+    main_words = get_word_count(main_text)
     reading_ease = flesch_reading_ease(clean_text)
-    
+
     content_data = {
         "Exact Duplicates": False, 
         "Near Duplicates": False, 
         "Semantically Similar": False, 
         "Low Relevance Content": False,
-        "Low Content Pages": word_count > 0 and word_count < 200,
+        # Judged on the content area, not the whole page: menus and footers can add hundreds of words.
+        # 200 words is Screaming Frog's default; under 50 the page is effectively empty.
+        "Low Content Pages": main_words < 200,
+        "Empty Main Content": main_words < 50,
+        "Main Content Words": main_words,
+        # Duplicate fingerprints of the content area (menus and footers excluded), read by the post-processor.
+        "Main_Text_Hash": hashlib.md5(main_text.lower().encode("utf-8")).hexdigest() if main_words else None,
+        "MinHash": minhash_signature(main_text) if main_words >= 30 else None,
+        "Name_Key": product_name_key(h1_text or title_text),
         "Soft 404 Pages": "not found" in title_text.lower() or "404" in title_text,
         "Spelling Errors": False,
         "Grammar Errors": False,
@@ -561,7 +797,7 @@ def extract_seo_metrics(html_content: str, url: str, headers: Dict[str, str] = N
         if "nofollow" in content: directives_data["Nofollow"] = True; directives_data["Follow"] = False
         if "none" in content: directives_data["None"] = True; directives_data["NoIndex"] = True; directives_data["Nofollow"] = True
         if "noarchive" in content: directives_data["NoArchive"] = True
-        if "nosnippet" in content: directives_data["NoSnippet"] = True
+        if "nosnippet" in content or "max-snippet:0" in content.replace(" ", ""): directives_data["NoSnippet"] = True
         if "noimageindex" in content: directives_data["NoImageIndex"] = True
         if "notranslate" in content: directives_data["NoTranslate"] = True
 
@@ -580,6 +816,8 @@ def extract_seo_metrics(html_content: str, url: str, headers: Dict[str, str] = N
             directives_data["NoIndex"] = True; directives_data["Index"] = False
         if "nofollow" in x_robots or "none" in x_robots:
             directives_data["Nofollow"] = True; directives_data["Follow"] = False
+        if "nosnippet" in x_robots or "max-snippet:0" in x_robots.replace(" ", ""):
+            directives_data["NoSnippet"] = True
     directives_data["X-Robots-Tag"] = x_robots.rstrip(",") or None
     metrics["x_robots_tag_1"] = x_robots.rstrip(",") or None
 
@@ -622,7 +860,12 @@ def extract_seo_metrics(html_content: str, url: str, headers: Dict[str, str] = N
         "Multiple <head> Tags": len(soup.find_all("head")) > 1,
         "Missing <body> Tag": soup.find("body") is None,
         "Multiple <body> Tags": len(soup.find_all("body")) > 1,
-        "HTML Document Over 2MB": len(html_content) > 2000000,
+        # Googlebot fetches only the first 2 MB of an HTML file (developers.google.com/search/docs/crawling-indexing/googlebot).
+        "HTML Document Over 2MB": len(html_content.encode("utf-8", errors="ignore")) > 2 * 1024 * 1024,
+        "HTML Over 500KB": len(html_content.encode("utf-8", errors="ignore")) > 500 * 1024,
+        # Lighthouse warns above ~800 body elements and errors above ~1,400.
+        "DOM Over 1,400 Elements": dom_nodes > 1400,
+        "DOM Elements": dom_nodes,
         "Resource Over 2MB": False,
         "High Carbon Rating": False
     }
@@ -767,7 +1010,9 @@ def extract_seo_metrics(html_content: str, url: str, headers: Dict[str, str] = N
         "Search_Console": {},
         "Google_Analytics": {},
         "AEO_Audit": {},
-        "GEO_Audit": {}
+        "GEO_Audit": {},
+        "GEO": geo_facts(soup, base_domain, structured_data, script_count, noscript_needs_js,
+                         directives_data["NoSnippet"], inline_script_bytes),
     }
 
     return metrics

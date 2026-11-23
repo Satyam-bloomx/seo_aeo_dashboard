@@ -316,25 +316,20 @@ export default function AiAssistantDrawer({
                       <div className="flex items-center gap-3">
                         <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-slate-900 border border-slate-700 shadow-md">
                           <span className={`text-xl font-black font-mono ${
-                            typeof data.composite_score !== 'number' ? 'text-slate-400' :
-                            data.composite_score >= 80 ? 'text-emerald-400' :
-                            data.composite_score >= 60 ? 'text-amber-400' : 'text-rose-400'
+                            !data.page_check ? 'text-slate-400' :
+                            data.page_check.errors ? 'text-rose-400' : 'text-emerald-400'
                           }`}>
-                            {typeof data.composite_score === 'number' ? data.composite_score : '—'}
+                            {data.page_check ? data.page_check.errors : '—'}
                           </span>
                         </div>
                         <div>
                           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            Composite Audit Score
+                            Page check
                           </span>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className="text-sm font-bold text-slate-900 dark:text-white">
-                              {typeof data.composite_score !== 'number' ? 'Not scored (the page could not be fetched)' :
-                               data.composite_score >= 80 ? 'Good' :
-                               data.composite_score >= 60 ? 'Needs work' : 'Poor'}
-                              {typeof data.composite_score === 'number' && !deepdiveResult.is_live_ai && (
-                                <span className="font-medium text-slate-500 dark:text-slate-400"> (page checks only)</span>
-                              )}
+                              {!data.page_check ? 'Not checked (the page could not be fetched)' :
+                               `${data.page_check.errors} error${data.page_check.errors === 1 ? '' : 's'} · ${data.page_check.warnings} warning${data.page_check.warnings === 1 ? '' : 's'}`}
                             </span>
                             {platform && (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">

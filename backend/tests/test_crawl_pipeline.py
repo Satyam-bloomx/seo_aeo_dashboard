@@ -167,7 +167,8 @@ def test_single_page_mode_audits_one_url_and_replaces_site_crawl(client, fixture
     assert urls == ["/about/", "/old"], urls  # redirect recorded and its target audited, nothing else
 
     summary = client.get(f"/api/crawls/{page['id']}/summary", headers=h).json()
-    assert summary["mode"] == "page" and summary["page_score"] is not None
+    assert summary["mode"] == "page" and summary["page_check"] is not None
+    assert summary["site_health"]["score"] is None  # one URL gets a page check, not a site score
     dup = next(r for r in summary["rules"] if r["id"] == "Page Titles: Duplicate")
     assert dup["status"] == "not_evaluated" and dup["reason"] == "site_only"
     assert summary["crawl"]["sitemap"] is None or summary["crawl"]["sitemap"]["found"] is False

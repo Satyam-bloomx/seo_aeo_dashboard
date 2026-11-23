@@ -74,7 +74,9 @@ export default function AnimatedModal({
               initial="initial"
               animate="animate"
               exit="exit"
-              className={`relative w-full ${SIZES[size]} flex flex-col overflow-hidden rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-[0_24px_64px_-16px_rgba(15,23,42,0.28)] dark:shadow-[0_24px_64px_-16px_rgba(0,0,0,0.85)] text-slate-900 dark:text-slate-100 will-change-transform ${panelClassName}`}
+              // Never taller than the window: a centred panel taller than the viewport pushes its top off-screen
+              // where it cannot be scrolled to, so the panel itself scrolls instead.
+              className={`relative w-full ${SIZES[size]} flex flex-col max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] overflow-y-auto overscroll-contain rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-[0_24px_64px_-16px_rgba(15,23,42,0.28)] dark:shadow-[0_24px_64px_-16px_rgba(0,0,0,0.85)] text-slate-900 dark:text-slate-100 will-change-transform ${panelClassName}`}
             >
               {children}
             </DialogPanel>

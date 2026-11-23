@@ -403,7 +403,7 @@ def test_pages_that_are_not_the_sites_fault_do_not_count_in_the_score():
     by_id = {x["id"]: x for x in r["rules"]}
     assert by_id["Response Codes: Client Error (4xx)"]["failing_page_ids"] == [3]  # the 403 challenge is not a 4xx finding
     assert by_id["Response Codes: Blocked or Failed (No Response)"]["failing_count"] == 0
-    assert set(r["page_scores"]) == {"1", "2", "3"}
+    assert set(r["page_checks"]) == {"1", "2", "3"}
     note = next(i for i in r["score_explanation"] if i["label"] == "Pages not counted")
     assert note["impact"] == 0 and "problem on our side" in note["detail"] and "not counted in the score" in note["detail"]
 

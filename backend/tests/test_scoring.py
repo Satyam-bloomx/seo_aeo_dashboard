@@ -1,5 +1,6 @@
-"""Scoring engine spec tests (approved model: 50% URL pass rate + 50% severity-weighted pass rate)."""
-from app.services.scoring import compute_scores, evaluate_rule, RULES
+"""Scoring spec (2026.12): Site Health = Ahrefs Health Score (share of URLs with zero errors), errors defined by
+Screaming Frog's issue classification (an Issue of High or Medium priority)."""
+from app.services.scoring import RULES, compute_scores, evaluate_rule, is_error
 
 
 def page(pid, status=200, **audit):
@@ -9,33 +10,106 @@ def page(pid, status=200, **audit):
             "indexability": "Indexable", "indexability_status": "Indexable", "audit_data": base}
 
 
+def site(n, audit_for=None):
+    """n clean pages; audit_for maps page index -> audit overrides."""
+    return [page(i, **(audit_for or {}).get(i, {})) for i in range(n)]
+
+
 def rule(rule_id):
     return next(r for r in RULES if r.id == rule_id)
 
 
+def result(scores, rule_id):
+    return next(r for r in scores["rules"] if r["id"] == rule_id)
+
+
+def test_classification_follows_screaming_frog():
+    assert (rule("Page Titles: Missing").type, rule("Page Titles: Missing").priority) == ("Issue", "High")
+    assert (rule("H1: Missing").type, rule("H1: Missing").priority) == ("Issue", "Medium")
+    assert rule("Meta Description: Missing").type == "Opportunity"  # SF: Opportunity, Low
+    assert rule("Content: Near Duplicates").type == "Warning"
+    assert rule("Directives: Noindex").type == "Warning"  # often intentional
+    assert is_error("Issue", "High") and is_error("Issue", "Medium")
+    assert not is_error("Issue", "Low") and not is_error("Warning", "High") and not is_error("Opportunity", "Medium")
+
+
+def test_health_is_the_share_of_urls_with_zero_errors():
+    pages = site(20, {0: {"Page_Titles": {"Missing": True}}, 1: {"H1": {"Missing": True}}})
+    pages[2]["status_code"] = 404
+    sh = compute_scores(pages)["site_health"]
+    assert sh["urls_with_errors"] == 3 and sh["score"] == 85 and sh["band"] == "Good"  # 17 of 20 URLs clean
+
+
+def test_warnings_and_opportunities_never_move_the_score():
+    pages = site(20, {i: {"Meta_Description": {"Missing": True}, "H1": {"Multiple": True},
+                            "Directives": {"NoIndex": True}, "Images": {"Missing Alt Attribute": True}}
+                        for i in range(20)})
+    r = compute_scores(pages)
+    assert r["site_health"]["score"] == 100
+    assert r["issues"]["warnings"]["checks"] >= 2 and r["issues"]["opportunities"]["checks"] >= 1
+    assert result(r, "Meta Description: Missing")["failing_count"] == 20  # still listed, with its reach
+
+
+def test_an_error_on_every_url_scores_zero_no_floor():
+    r = compute_scores(site(12, {i: {"Page_Titles": {"Missing": True}} for i in range(12)}))
+    assert r["site_health"]["score"] == 0 and r["site_health"]["band"] == "Weak"
+
+
+def test_explanation_splits_the_lost_points_exactly():
+    pages = site(20, {0: {"Page_Titles": {"Missing": True}, "H1": {"Missing": True}},
+                        1: {"H1": {"Missing": True}}, 2: {"Security": {"HTTP URLs": True}}})
+    r = compute_scores(pages)
+    assert r["site_health"]["score"] == 85
+    assert sum(i["impact"] for i in r["score_explanation"]) == -15
+    labels = [i["label"] for i in r["score_explanation"]]
+    assert labels[0] == "H1: Missing"  # 1.5 URLs' worth: the biggest share
+
+
+def test_single_page_audit_gets_a_page_check_not_a_score():
+    r = compute_scores([page(1, H1={"Missing": True}, Meta_Description={"Missing": True})], mode="page")
+    assert r["site_health"]["score"] is None and "Single-page" in r["site_health"]["reason"]
+    assert r["page_check"]["errors"] == 1 and r["page_check"]["opportunities"] == 1
+    assert r["page_check"]["error_checks"] == ["H1: Missing"] and r["page_check"]["passed"] is False
+    dup = result(r, "Page Titles: Duplicate")
+    assert dup["status"] == "not_evaluated" and dup["reason"] == "site_only"
+
+
+def test_small_crawls_have_no_score_and_under_30_urls_are_provisional():
+    assert compute_scores(site(9))["site_health"]["score"] is None
+    small = compute_scores(site(12))["site_health"]
+    assert small["score"] == 100 and small["provisional"] is True
+    assert compute_scores(site(30))["site_health"]["provisional"] is False
+
+
+def test_site_wide_error_caps_the_score_at_70():
+    robots = {"id": "robots_invalid", "label": "robots.txt has invalid lines", "type": "Issue", "priority": "High",
+              "detail": "Line 2: 'User-agent: User-agent: *'."}
+    r = compute_scores(site(20), site_facts={"site_issues": [robots]})
+    sh = r["site_health"]
+    assert sh["score"] == 70 and sh["base_score"] == 100 and sh["capped"] is True
+    assert r["score_explanation"][0]["label"].startswith("Site-wide error") and r["score_explanation"][0]["impact"] == -30
+    warn = {**robots, "type": "Warning"}
+    assert compute_scores(site(20), site_facts={"site_issues": [warn]})["site_health"]["score"] == 100
+
+
+def test_failing_core_web_vitals_on_real_users_is_an_error_on_that_page():
+    field = {"available": True, "lcp_p75_ms": 2600, "inp_p75_ms": 589, "cls_p75": 0.01}
+    pages = site(20)
+    pages[0]["audit_data"]["PageSpeed"] = {"mobile": {"performance_score": 63, "field_data": field}}
+    r = compute_scores(pages)
+    assert r["site_health"]["score"] == 95
+    assert result(r, "PageSpeed: Core Web Vitals Failing (Real Users)")["is_error"] is True
+    lab_only = site(20)
+    lab_only[0]["audit_data"]["PageSpeed"] = {"mobile": {"performance_score": 30, "field_data": {"available": False}}}
+    assert compute_scores(lab_only)["site_health"]["score"] == 100  # lab scores are diagnostics, not an error
+
+
 def test_missing_data_is_not_evaluated_not_passed():
     p = page(1)
-    assert evaluate_rule(rule("Meta Description: Missing"), p) is None   # key absent
-    p["audit_data"]["Meta_Description"] = {"Missing": None}
-    assert evaluate_rule(rule("Meta Description: Missing"), p) is None   # explicit null
+    assert evaluate_rule(rule("Meta Description: Missing"), p) is None
     r = compute_scores([p])
-    meta = next(x for x in r["rules"] if x["id"] == "Meta Description: Missing")
+    meta = result(r, "Meta Description: Missing")
     assert meta["status"] == "not_evaluated" and meta["evaluated_count"] == 0
-
-
-def test_clean_site_scores_100_and_broken_site_can_reach_zero():
-    assert compute_scores([page(1), page(2)])["site_health"]["score"] == 100
-    broken = [page(i, Page_Titles={"Missing": True}, Security={"HTTP URLs": True}) for i in range(3)]
-    sh = compute_scores(broken)["site_health"]
-    assert sh["url_pass_rate"] == 0  # every URL has a critical error: no artificial floor
-    assert sh["score"] == round((sh["url_pass_rate"] + sh["weighted_pass_rate"]) / 2)
-
-
-def test_url_pass_rate_counts_urls_with_critical_errors():
-    pages = [page(1), page(2), page(3), page(4, status=404)]
-    sh = compute_scores(pages)["site_health"]
-    assert sh["urls_with_critical_errors"] == 1
-    assert sh["url_pass_rate"] == 75
 
 
 def test_on_page_rules_do_not_apply_to_error_pages():
@@ -50,29 +124,19 @@ def test_blocked_or_failed_pages_are_not_200():
     assert evaluate_rule(rule("Page Titles: Missing"), p) is None
 
 
-def test_single_page_mode_excludes_site_checks():
-    p = page(1, Page_Titles={"Missing": False, "Duplicate": True})
-    site = compute_scores([p], mode="site")
-    single = compute_scores([p], mode="page")
-    dup_site = next(x for x in site["rules"] if x["id"] == "Page Titles: Duplicate")
-    dup_page = next(x for x in single["rules"] if x["id"] == "Page Titles: Duplicate")
-    assert dup_site["status"] == "fail"
-    assert dup_page["status"] == "not_evaluated" and dup_page["reason"] == "site_only"
-    assert single["page_score"] == 100
-
-
 def test_duplicates_ignore_canonicalised_pages():
     p = page(1, Page_Titles={"Missing": False, "Duplicate": True}, Canonicals={"Canonicalised": True})
     assert evaluate_rule(rule("Page Titles: Duplicate"), p) is None
 
 
-def test_integration_findings_never_move_site_health():
-    clean = compute_scores([page(1)])["site_health"]["score"]
-    p = page(1, Search_Console={"Is_Live_GSC": True, "Google_Index_Status": "FAIL", "Index_Coverage_State": "Excluded"})
-    r = compute_scores([p])
-    gsc = next(x for x in r["rules"] if x["id"] == "Search Console: Excluded from Google Index")
+def test_search_console_findings_never_move_site_health():
+    pages = site(12)
+    pages[0]["audit_data"]["Search_Console"] = {"Is_Live_GSC": True, "Google_Index_Status": "FAIL",
+                                                "Index_Coverage_State": "Excluded"}
+    r = compute_scores(pages)
+    gsc = result(r, "Search Console: Excluded from Google Index")
     assert gsc["status"] == "fail" and gsc["integration"] is True
-    assert r["site_health"]["score"] == clean
+    assert r["site_health"]["score"] == 100
 
 
 def test_integration_scores_require_minimum_data():
@@ -90,7 +154,6 @@ def test_core_web_vitals_use_field_thresholds_including_inp():
     r = compute_scores([page(1, PageSpeed=ps)])
     cwv = r["integrations"]["pagespeed"]["core_web_vitals"]
     assert cwv["inp_good"] is False and cwv["passed"] is False
-    assert next(x for x in r["rules"] if x["category"] == "PageSpeed")["status"] == "fail"
 
 
 def test_summary_endpoint_is_owned_and_cached(client):
@@ -106,16 +169,15 @@ def test_summary_endpoint_is_owned_and_cached(client):
             c = Crawl(project_id=pid, seed_url="https://e.com/", status="completed")
             db.add(c)
             await db.flush()
-            db.add(Page(crawl_id=c.id, url="https://e.com/", status_code=200, content_type="text/html",
-                        audit_data={"Page_Titles": {"Missing": True}}))
+            db.add_all([Page(crawl_id=c.id, url=f"https://e.com/{i}", status_code=200, content_type="text/html",
+                             audit_data={"Page_Titles": {"Missing": i < 3}}) for i in range(12)])
             await db.commit()
             return c.id
 
     cid = asyncio.run(seed())
     assert client.get(f"/api/crawls/{cid}/summary", headers=auth("someone-else")).status_code == 404
     body = client.get(f"/api/crawls/{cid}/summary", headers=auth("score-owner")).json()
-    sh = body["site_health"]
-    assert sh["url_pass_rate"] == 0 and sh["score"] == round(sh["weighted_pass_rate"] / 2)
+    assert body["site_health"]["score"] == 75 and body["site_health"]["urls_with_errors"] == 3
     assert body["crawl"]["mode"] == "site"
     again = client.get(f"/api/crawls/{cid}/summary", headers=auth("score-owner")).json()
     assert again["site_health"] == body["site_health"]
@@ -156,12 +218,12 @@ def test_scores_real_extractor_output():
             "<meta name='description' content='" + "d" * 100 + "'></head>"
             "<body><h1>Heading</h1><p>" + "word " * 300 + "</p></body></html>")
     metrics, _l, _i = extract_page(html, "https://e.com/x", {"Strict-Transport-Security": "max-age=1"})
-    page = {"id": 1, "url": "https://e.com/x", "status_code": 200, "content_type": "text/html",
-            "indexability": metrics.get("indexability"), "indexability_status": metrics.get("indexability_status"),
-            "audit_data": metrics["audit_data"]}
-    r = compute_scores([page])
+    page_ = {"id": 1, "url": "https://e.com/x", "status_code": 200, "content_type": "text/html",
+             "indexability": metrics.get("indexability"), "indexability_status": metrics.get("indexability_status"),
+             "audit_data": metrics["audit_data"]}
+    r = compute_scores([page_], mode="page")
     assert r["urls_evaluated"] == 1
-    assert r["site_health"]["score"] is not None and r["site_health"]["checks_evaluated"] > 20
+    assert r["page_check"]["errors"] == 0 and r["site_health"]["checks_evaluated"] > 20
 
 
 def test_integration_panels_from_synced_data():

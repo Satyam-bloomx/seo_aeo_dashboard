@@ -1,25 +1,40 @@
 """
 Single source of truth for audit scores.
 
-Method (see docs/DASHBOARD_IMPROVEMENT_PLAN.md, approved 27 Oct 2026):
-  * Every check on every URL is pass / fail / not_evaluated. not_evaluated never counts as a pass
-    and is excluded from both numerator and denominator.
-  * Severity weights: critical 5, warning 3, notice 1 (our calibration; persisted as SCORING_VERSION).
-  * Site Health = 50% URL pass rate (share of evaluated URLs with no failed critical check, the Ahrefs
-    Health Score method) + 50% severity-weighted check pass rate (the Lighthouse category method).
-  * Category scores and per-URL page scores use the weighted pass rate.
-  * Single-page audits ("page" mode) exclude site-scope checks (duplicates, link graph, sitemaps).
-  * Integration data never feeds Site Health; each integration gets its own score with minimum-data rules.
+Method (scoring version 2026.12): one published methodology, followed as written.
+  * Issue classification follows Screaming Frog SEO Spider's Issues tab: every check is an Issue, a Warning or an
+    Opportunity, with a High / Medium / Low priority (https://www.screamingfrog.co.uk/seo-spider/issues/).
+    Checks Screaming Frog does not have use the closest equivalent and are marked as our classification.
+  * An *error* is an Issue of High or Medium priority. Warnings, Opportunities and Low-priority Issues are listed
+    with the share of URLs affected but never move the score.
+  * Site Health is the Ahrefs Health Score: the share of crawled internal URLs with zero errors, rounded, with the
+    Ahrefs bands (Weak 0-30, Fair 31-70, Good 71-90, Excellent 91-100)
+    (https://help.ahrefs.com/en/articles/1424673-what-is-health-score-and-how-is-it-calculated-in-ahrefs-site-audit).
+    It is linear: 10% of URLs with an error means 90.
+  * Our extensions, stated in the explanation whenever they apply:
+      - Site-wide errors that belong to no single URL (an invalid robots.txt, for example) cap the score at 70.
+      - Failing Core Web Vitals on real users is an error on the measured page (Google uses Core Web Vitals in
+        ranking; Screaming Frog has no Core Web Vitals issue).
+      - A single-page audit has no site score (one URL can only score 0 or 100): it gets a page check instead.
+        A whole-site crawl needs 10 URLs for a score, which is labelled provisional below 30.
+  * not_evaluated never counts as a pass. Pages whose fetch failed for reasons that are not the site's fault are
+    left out of every count.
+  * AEO (an AI provider's review) and GEO readiness are separate scores, both scaled by AI access (robots.txt blocks
+    on the AI search bots, noindex / nosnippet, content that needs JavaScript).
+  * Integration data (Search Console, GA4) never feeds Site Health; each integration has its own panel.
 """
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 from app.services.fetch_outcome import is_uncounted
 
-SCORING_VERSION = "2026.10-5"
-WEIGHTS = {"critical": 5, "warning": 3, "notice": 1}
+SCORING_VERSION = "2026.12-1"
 BANDS = [(91, "Excellent"), (71, "Good"), (31, "Fair"), (0, "Weak")]  # Ahrefs Health Score bands
-MIN_URLS_FOR_CONFIDENCE = 5
+MIN_URLS_FOR_SCORE = 10        # fewer crawled URLs: no site score (our threshold; no vendor publishes one)
+PROVISIONAL_BELOW = 30         # 10-29 URLs: the score is shown as provisional
+SITE_ERROR_CAP = 70            # an open site-wide error caps Site Health at 70 (our extension)
+MIN_URLS_FOR_CONFIDENCE = PROVISIONAL_BELOW
 FAILING_ID_CAP = 2000
+WEIGHTS = {"critical": 5, "warning": 3, "notice": 1}  # display order of the Issues list only
 
 CATEGORY_GROUPS = {
     "Indexability": ("Response_Codes", "Canonicals", "Directives", "Sitemaps", "Pagination"),
@@ -28,26 +43,40 @@ CATEGORY_GROUPS = {
     "Links": ("Links",),
     "Security": ("Security",),
     "Structured data": ("Structured_Data",),
-    "Technical": ("Validation", "JavaScript"),
+    "Technical": ("Validation", "JavaScript", "PageSpeed"),
 }
 INTEGRATION_CATEGORIES = {"Search_Console", "PageSpeed", "Google_Analytics"}
+CWV_RULE = "PageSpeed: Core Web Vitals Failing (Real Users)"
 
 
 @dataclass(frozen=True)
 class Rule:
     category: str
     name: str
-    severity: str
-    scope: str  # "page" (local to one URL) or "site" (needs the whole crawl)
-    applies: str  # "html200" | "internal" | "dedupe" | "integration"
+    type: str       # Screaming Frog type: "Issue" | "Warning" | "Opportunity"
+    priority: str   # "High" | "Medium" | "Low"
+    scope: str      # "page" (local to one URL) or "site" (needs the whole crawl)
+    applies: str    # "html200" | "internal" | "dedupe" | "integration"
     evaluate: Optional[Callable[[dict, dict], Optional[bool]]] = None  # (page, audit_data) -> fail?
-    # Name of a site-level condition (see _site_conditions) that raises this rule to `escalated_severity`.
+    # Name of a site-level condition (see _site_conditions) that raises this rule to `escalated_to`.
     escalate_when: Optional[str] = None
-    escalated_severity: Optional[str] = None
+    escalated_to: Optional[tuple] = None  # (type, priority)
+    ours: bool = False  # classification is ours: Screaming Frog has no equivalent check
 
     @property
     def id(self) -> str:
         return f"{self.category.replace('_', ' ')}: {self.name}"
+
+
+def is_error(type_: str, priority: str) -> bool:
+    return type_ == "Issue" and priority in ("High", "Medium")
+
+
+def severity_of(type_: str, priority: str) -> str:
+    """Display severity for the Issues list: errors are critical, other Issues and Warnings are warnings."""
+    if is_error(type_, priority):
+        return "critical"
+    return "notice" if type_ == "Opportunity" else "warning"
 
 
 def _flag(category: str, key: str):
@@ -104,18 +133,12 @@ def cwv_verdict(field: dict) -> dict:
 
 
 def _cwv_failing(_page, ad) -> Optional[bool]:
-    ps = ad.get("PageSpeed") or {}
-    mobile = ps.get("mobile") or {}
-    field = mobile.get("field_data") or {}
-    if field.get("available"):
-        verdict = cwv_verdict(field)["passed"]
-        if verdict is not None:
-            return not verdict
-    metrics = mobile.get("metrics") or {}
-    lcp_s, cls = _num(metrics.get("lcp")), _num(metrics.get("cls"))
-    if lcp_s is None and cls is None:
+    """Real-user (field) Core Web Vitals only: lab scores are diagnostics, not what Google ranks on."""
+    field = (((ad.get("PageSpeed") or {}).get("mobile") or {}).get("field_data") or {})
+    if not field.get("available"):
         return None
-    return bool((lcp_s or 0) > 2.5 or (cls or 0) > 0.1)
+    verdict = cwv_verdict(field)["passed"]
+    return None if verdict is None else not verdict
 
 
 def _page_type(ad: dict) -> str:
@@ -131,97 +154,133 @@ def _product_schema_missing(_page, ad) -> Optional[bool]:
 
 
 def _title_dup_not_pagination(_page, ad) -> Optional[bool]:
-    """Duplicate title, except where pagination explains it (that has its own, lower-severity rule)."""
+    """Duplicate title, except where pagination explains it (that has its own rule)."""
     value = (ad.get("Page_Titles") or {}).get("Duplicate")
     if not isinstance(value, bool):
         return None
     return value and not (ad.get("Pagination") or {}).get("Duplicate Title From Pagination")
 
 
-def _page_flags(category, severity, names, applies="html200", scope="page"):
-    return [Rule(category, n, severity, scope, applies, _flag(category, n)) for n in names]
+def _r(category: str, name: str, type_: str, priority: str, *, scope: str = "page", applies: str = "html200",
+       ev=None, key: Optional[str] = None, **kw) -> Rule:
+    return Rule(category, name, type_, priority, scope, applies, ev or _flag(category, key or name), **kw)
 
 
+I, W, O = "Issue", "Warning", "Opportunity"
+H, M, L = "High", "Medium", "Low"
+SECURITY_HEADERS = ("Missing HSTS Header", "Missing Content-Security-Policy Header", "Missing X-Content-Type-Options Header",
+                    "Missing X-Frame-Options Header", "Missing Secure Referrer-Policy Header")
+
+# Type and priority as listed in Screaming Frog's Issues tab; `ours=True` where Screaming Frog has no such check.
 RULES: List[Rule] = [
-    # Response codes (every internal URL)
-    Rule("Response_Codes", "Client Error (4xx)", "critical", "page", "internal", _status_range(400, 500)),
-    Rule("Response_Codes", "Server Error (5xx)", "critical", "page", "internal", _status_range(500, 600)),
-    Rule("Response_Codes", "Blocked or Failed (No Response)", "warning", "page", "internal",
-         lambda p, _ad: (p.get("status_code") or 0) == 0),
-    Rule("Response_Codes", "Redirection (3xx)", "notice", "page", "internal", _status_range(300, 400)),
-    *_page_flags("Response_Codes", "warning", ["Redirect Chain (2+ Hops)"], applies="internal"),
-    *_page_flags("Response_Codes", "notice", ["Temporary Redirect (302/307)"], applies="internal"),
-    # Meta refresh / HTTP Refresh redirects answer 200, so they are judged on HTML pages.
-    *_page_flags("Response_Codes", "warning", ["Redirection (Meta Refresh)"]),
-    # On-page (200 HTML pages)
-    *_page_flags("Page_Titles", "critical", ["Missing"]),
-    *_page_flags("Page_Titles", "warning", ["Multiple", "Outside <head>"]),
-    *_page_flags("Page_Titles", "notice", ["Over 60 Characters", "Below 30 Characters", "Same as H1"]),
-    *_page_flags("Meta_Description", "warning", ["Missing", "Multiple", "Outside <head>"]),
-    *_page_flags("Meta_Description", "notice", ["Over 155 Characters", "Below 70 Characters"]),
-    *_page_flags("H1", "warning", ["Missing"]),
-    *_page_flags("H1", "notice", ["Over 70 Characters", "Multiple", "Non-Sequential", "Alt Text in H1"]),
-    *_page_flags("H2", "notice", ["Missing", "Over 70 Characters"]),
-    # No alt attribute at all is an accessibility failure; alt="" is correct for decorative images, so it is a notice.
-    *_page_flags("Images", "warning", ["Missing Alt Attribute"]),
-    *_page_flags("Images", "notice", ["Missing Alt Text", "Alt Text Over 100 Characters", "Missing Size Attributes"]),
-    *_page_flags("Content", "critical", ["Soft 404 Pages"]),
-    *_page_flags("Content", "warning", ["Low Content Pages", "Lorem Ipsum Placeholder"]),
-    *_page_flags("Content", "notice", ["Readability Difficult", "Readability Very Difficult"]),
-    *_page_flags("Canonicals", "critical", ["Multiple Conflicting"]),
-    *_page_flags("Canonicals", "warning", ["Multiple", "Outside <head>"]),
+    # ---- Response codes (every internal URL)
+    _r("Response_Codes", "Client Error (4xx)", I, H, applies="internal", ev=_status_range(400, 500)),
+    _r("Response_Codes", "Server Error (5xx)", I, H, applies="internal", ev=_status_range(500, 600)),
+    _r("Response_Codes", "Blocked or Failed (No Response)", I, H, applies="internal",
+       ev=lambda p, _ad: (p.get("status_code") or 0) == 0),
+    _r("Response_Codes", "Redirection (3xx)", W, L, applies="internal", ev=_status_range(300, 400)),
+    _r("Response_Codes", "Redirect Chain (2+ Hops)", W, M, applies="internal"),
+    _r("Response_Codes", "Temporary Redirect (302/307)", W, L, applies="internal"),
+    _r("Response_Codes", "Redirection (Meta Refresh)", W, M),
+    # ---- Page titles, meta descriptions, headings, images
+    _r("Page_Titles", "Missing", I, H),
+    _r("Page_Titles", "Multiple", I, H),
+    _r("Page_Titles", "Outside <head>", I, H),
+    _r("Page_Titles", "Over 60 Characters", O, M),
+    _r("Page_Titles", "Below 30 Characters", O, M),
+    _r("Page_Titles", "Same as H1", O, L),
+    _r("Meta_Description", "Missing", O, L),
+    _r("Meta_Description", "Multiple", I, M),
+    _r("Meta_Description", "Outside <head>", I, M),
+    _r("Meta_Description", "Over 155 Characters", O, L),
+    _r("Meta_Description", "Below 70 Characters", O, L),
+    _r("Meta_Description", "Placeholder or Copy of Title", O, L, ours=True),
+    _r("H1", "Missing", I, M),
+    _r("H1", "Multiple", W, M),
+    _r("H1", "Over 70 Characters", O, L),
+    _r("H1", "Non-Sequential", W, L),
+    _r("H1", "Alt Text in H1", O, L),
+    _r("H2", "Missing", W, L),
+    _r("H2", "Over 70 Characters", O, L),
+    _r("Images", "Missing Alt Attribute", I, L),
+    _r("Images", "Missing Alt Text", I, L),
+    _r("Images", "Alt Text Over 100 Characters", O, L),
+    _r("Images", "Missing Size Attributes", O, L),
+    # ---- Content
+    _r("Content", "Soft 404 Pages", W, H),
+    _r("Content", "Low Content Pages", O, M),
+    # Nothing but a heading inside the menu and footer (judged on the content area).
+    _r("Content", "Empty Main Content", W, H, ours=True),
+    _r("Content", "Lorem Ipsum Placeholder", W, H),
+    _r("Content", "Readability Difficult", O, L),
+    _r("Content", "Readability Very Difficult", O, L),
+    # ---- Canonicals, directives, pagination
+    _r("Canonicals", "Multiple Conflicting", I, H),
+    _r("Canonicals", "Multiple", W, M),
+    _r("Canonicals", "Outside <head>", I, H),
     # Missing canonicals matter more once the crawl shows duplicate titles or content (see _site_conditions).
-    Rule("Canonicals", "Missing", "notice", "page", "html200", _flag("Canonicals", "Missing"),
-         escalate_when="has_duplicates", escalated_severity="warning"),
-    *_page_flags("Canonicals", "notice", ["Canonical Is Relative", "Unlinked"]),
-    *_page_flags("Directives", "warning", ["Outside <head>"]),
-    # Informational: noindex is often intentional, but it should be visible in the Issues list.
-    Rule("Directives", "Noindex", "notice", "page", "html200", _flag("Directives", "NoIndex")),
-    # Pagination (Page_Type / Pagination blocks are set by the extractor and post-processor)
-    Rule("Pagination", "Paginated Page Canonicalised To First Page", "warning", "page", "html200",
-         _flag("Pagination", "Canonicalised To First Page")),
-    *_page_flags("Pagination", "notice", ["Duplicate Title From Pagination"]),
-    Rule("Structured_Data", "Product Pages Missing Product Schema", "warning", "page", "html200", _product_schema_missing),
-    *_page_flags("Validation", "warning", ["Missing <head> Tag", "Multiple <head> Tags", "Missing <body> Tag",
-                                            "Multiple <body> Tags", "HTML Document Over 2MB"]),
-    *_page_flags("JavaScript", "notice", ["Uses Old AJAX Crawling Scheme URLs"]),
-    *_page_flags("Security", "critical", ["HTTP URLs"]),
-    *_page_flags("Security", "warning", ["Mixed Content", "Unsafe Cross-Origin Links"]),
-    *_page_flags("Security", "notice", ["Missing HSTS Header", "Missing Content-Security-Policy Header",
-                                         "Missing X-Content-Type-Options Header", "Missing X-Frame-Options Header",
-                                         "Missing Secure Referrer-Policy Header", "Protocol-Relative Resource Links"]),
-    *_page_flags("Structured_Data", "warning", ["Invalid JSON-LD"]),
-    *_page_flags("Structured_Data", "notice", ["Missing Structured Data"]),
-    # Site-scope checks (need the whole crawl)
-    Rule("Page_Titles", "Duplicate", "warning", "site", "dedupe", _title_dup_not_pagination),
-    *_page_flags("Meta_Description", "warning", ["Duplicate"], applies="dedupe", scope="site"),
-    *_page_flags("H1", "notice", ["Duplicate"], applies="dedupe", scope="site"),
-    *_page_flags("Content", "warning", ["Exact Duplicates"], applies="dedupe", scope="site"),
-    *_page_flags("Content", "notice", ["Near Duplicates"], applies="dedupe", scope="site"),
-    *_page_flags("Canonicals", "warning", ["Non-Indexable Canonical"], scope="site"),
-    *_page_flags("Links", "critical", ["Internal Links To Broken Pages"], scope="site"),
-    *_page_flags("Links", "warning", ["Non-Indexable Page Inlinks Only"], scope="site"),
-    *_page_flags("Links", "notice", ["Internal Links To Redirects", "Pages With High Crawl Depth",
-                                      "Pages With High Internal Outlinks"], scope="site"),
-    *_page_flags("Sitemaps", "warning", ["Non-Indexable URLs in Sitemap"], scope="site"),
-    *_page_flags("Sitemaps", "notice", ["URLs Not In Sitemap"], scope="site"),
-    # Integration findings: listed as issues, never part of Site Health
-    Rule("Search_Console", "Excluded from Google Index", "critical", "page", "integration",
-         _gsc_rule(lambda g: gsc_index_state(g) == "not_indexed" if gsc_index_state(g) != "unknown" else None)),
-    Rule("Search_Console", "Canonical Mismatch (Google Chose Different Canonical)", "warning", "page", "integration",
-         _gsc_rule(lambda g: g.get("Canonical_Mismatch") if g.get("Google_Selected_Canonical") else None)),
-    Rule("Search_Console", "High Impressions with Low CTR (< 1.5%)", "notice", "page", "integration",
-         _gsc_rule(lambda g: (g.get("CTR_Num") or 0) < 1.5 if (g.get("Impressions_Num") or 0) >= 100 else None)),
-    Rule("Search_Console", "Striking Distance Opportunity (Position 11–20)", "notice", "page", "integration",
-         _gsc_rule(lambda g: 10.5 <= g["Position_Num"] <= 20.4 if isinstance(g.get("Position_Num"), (int, float)) else None)),
-    Rule("PageSpeed", "Core Web Vitals Failing (LCP > 2.5s or CLS > 0.1)", "warning", "page", "integration", _cwv_failing),
-    Rule("Google_Analytics", "Critical Revenue Risk (Broken High-Traffic Page)", "critical", "page", "integration",
-         lambda p, ad: bool(str((ad.get("Google_Analytics") or {}).get("Revenue_At_Risk") or "").startswith("High"))
-         if (ad.get("Google_Analytics") or {}).get("Sessions_Num") is not None else None),
+    _r("Canonicals", "Missing", W, L, escalate_when="has_duplicates", escalated_to=(W, M)),
+    _r("Canonicals", "Canonical Is Relative", O, L),
+    _r("Canonicals", "Unlinked", W, L),
+    _r("Directives", "Outside <head>", W, M),
+    # Noindex is often intentional: a Warning to check, never an error.
+    _r("Directives", "Noindex", W, H, key="NoIndex"),
+    _r("Pagination", "Paginated Page Canonicalised To First Page", W, M, key="Canonicalised To First Page"),
+    _r("Pagination", "Duplicate Title From Pagination", O, L),
+    # ---- Structured data, validation, JavaScript
+    _r("Structured_Data", "Product Pages Missing Product Schema", W, M, ev=_product_schema_missing, ours=True),
+    _r("Structured_Data", "Invalid JSON-LD", I, M),
+    _r("Structured_Data", "Missing Structured Data", O, L),
+    *[_r("Validation", n, I, M) for n in ("Missing <head> Tag", "Multiple <head> Tags", "Missing <body> Tag",
+                                           "Multiple <body> Tags")],
+    _r("Validation", "HTML Document Over 2MB", I, H),
+    _r("Validation", "HTML Over 500KB", O, M, ours=True),            # SF PageSpeed: enormous payloads, Medium
+    _r("Validation", "DOM Over 1,400 Elements", O, L, ours=True),     # SF PageSpeed: optimise DOM size, Low
+    _r("JavaScript", "Uses Old AJAX Crawling Scheme URLs", W, L),
+    # ---- Security
+    _r("Security", "HTTP URLs", I, H),
+    _r("Security", "Mixed Content", I, H),
+    _r("Security", "Unsafe Cross-Origin Links", W, L),
+    *[_r("Security", n, W, L) for n in SECURITY_HEADERS],
+    _r("Security", "Protocol-Relative Resource Links", W, L),
+    # ---- Site-scope checks (need the whole crawl)
+    _r("Page_Titles", "Duplicate", O, M, scope="site", applies="dedupe", ev=_title_dup_not_pagination),
+    _r("Meta_Description", "Duplicate", O, L, scope="site", applies="dedupe"),
+    _r("H1", "Duplicate", O, L, scope="site", applies="dedupe"),
+    _r("Content", "Exact Duplicates", I, H, scope="site", applies="dedupe"),
+    _r("Content", "Near Duplicates", W, M, scope="site", applies="dedupe"),
+    # Classified duplicates (app/services/duplicates.py): templated pages with little of their own text, and variants
+    # of one product (different weights or sizes) that are fine as separate pages.
+    _r("Content", "Thin Templated Pages", W, M, scope="site", applies="dedupe", ours=True),
+    _r("Content", "Product Variants", O, L, scope="site", applies="dedupe", ours=True),
+    _r("Canonicals", "Non-Indexable Canonical", I, H, scope="site"),
+    _r("Links", "Internal Links To Broken Pages", I, H, scope="site"),
+    _r("Links", "Non-Indexable Page Inlinks Only", W, H, scope="site"),
+    _r("Links", "Internal Links To Redirects", W, L, scope="site"),
+    _r("Links", "Pages With High Crawl Depth", O, M, scope="site"),
+    _r("Links", "Pages With High Internal Outlinks", W, L, scope="site"),
+    _r("Sitemaps", "Non-Indexable URLs in Sitemap", I, M, scope="site"),
+    _r("Sitemaps", "URLs Not In Sitemap", I, M, scope="site"),
+    # ---- Core Web Vitals on real users: an error on the measured page (our classification)
+    _r("PageSpeed", "Core Web Vitals Failing (Real Users)", I, H, applies="integration", ev=_cwv_failing, ours=True),
+    # ---- Search Console / GA4 findings: listed, never part of Site Health
+    _r("Search_Console", "Excluded from Google Index", I, H, applies="integration",
+       ev=_gsc_rule(lambda g: gsc_index_state(g) == "not_indexed" if gsc_index_state(g) != "unknown" else None)),
+    _r("Search_Console", "Canonical Mismatch (Google Chose Different Canonical)", W, M, applies="integration",
+       ev=_gsc_rule(lambda g: g.get("Canonical_Mismatch") if g.get("Google_Selected_Canonical") else None)),
+    _r("Search_Console", "High Impressions with Low CTR (< 1.5%)", O, L, applies="integration",
+       ev=_gsc_rule(lambda g: (g.get("CTR_Num") or 0) < 1.5 if (g.get("Impressions_Num") or 0) >= 100 else None)),
+    _r("Search_Console", "Striking Distance Opportunity (Position 11–20)", O, L, applies="integration",
+       ev=_gsc_rule(lambda g: 10.5 <= g["Position_Num"] <= 20.4 if isinstance(g.get("Position_Num"), (int, float)) else None)),
+    _r("Google_Analytics", "Critical Revenue Risk (Broken High-Traffic Page)", I, H, applies="integration",
+       ev=lambda p, ad: bool(str((ad.get("Google_Analytics") or {}).get("Revenue_At_Risk") or "").startswith("High"))
+       if (ad.get("Google_Analytics") or {}).get("Sessions_Num") is not None else None),
 ]
 
-PRIORITY = {"critical": "High", "warning": "Medium", "notice": "Low"}
-TYPE = {"critical": "Issue", "warning": "Warning", "notice": "Opportunity"}
+
+def counts_toward_health(rule: Rule) -> bool:
+    """Crawl checks and real-user Core Web Vitals count; Search Console and GA4 findings are listed only."""
+    return rule.category not in INTEGRATION_CATEGORIES or rule.id == CWV_RULE
 
 
 def uncounted_kind(audit_data: Optional[dict]) -> Optional[str]:
@@ -265,7 +324,7 @@ def _is_dedupe_eligible(page: dict, ad: dict) -> bool:
 
 
 def _site_conditions(internal: List[dict], site_mode: bool) -> Dict[str, bool]:
-    """Whole-crawl facts that can raise a rule's severity."""
+    """Whole-crawl facts that can raise a rule's classification."""
     def dup(p):
         ad = p.get("audit_data") or {}
         return bool(_is_dedupe_eligible(p, ad) and (
@@ -274,8 +333,10 @@ def _site_conditions(internal: List[dict], site_mode: bool) -> Dict[str, bool]:
     return {"has_duplicates": site_mode and any(dup(p) for p in internal)}
 
 
-def effective_severity(rule: Rule, conditions: Dict[str, bool]) -> str:
-    return rule.escalated_severity if rule.escalate_when and conditions.get(rule.escalate_when) else rule.severity
+def effective_class(rule: Rule, conditions: Dict[str, bool]) -> tuple:
+    if rule.escalate_when and conditions.get(rule.escalate_when) and rule.escalated_to:
+        return rule.escalated_to
+    return rule.type, rule.priority
 
 
 def evaluate_rule(rule: Rule, page: dict) -> Optional[bool]:
@@ -294,26 +355,6 @@ def _band(score: Optional[int]) -> Optional[str]:
     return next(label for floor, label in BANDS if score >= floor)
 
 
-def _weighted(cells: List[tuple]) -> Optional[int]:
-    """cells: [(severity, failed_bool)] -> weighted pass rate 0-100 or None."""
-    total = sum(WEIGHTS[s] for s, _ in cells)
-    if not total:
-        return None
-    return round(100 * sum(WEIGHTS[s] for s, failed in cells if not failed) / total)
-
-
-# Headline score penalties beyond the check pass rates. Capped so one signal cannot erase the score,
-# and always whole points so the explanation adds up exactly.
-ERROR_PTS_PER_PERCENT, ERROR_PENALTY_CAP = 2, 20   # 2 points per 1% of internal URLs that fail to load
-CWV_PENALTY_BASE, CWV_PENALTY_PER_METRIC, CWV_PENALTY_CAP = 4, 2, 10
-LAB_GOOD_SCORE, LAB_POINTS_DIVISOR = 90, 6
-# A warning/critical check failing on nearly every page is a site-level problem (a template issue), which the
-# per-check averages understate: e.g. no H1 or no Product schema on any product page.
-SITEWIDE_SHARE, SITEWIDE_MIN_PAGES = 0.8, 5
-SITEWIDE_POINTS = {"critical": 6, "warning": 3}
-SITEWIDE_PENALTY_CAP = 15
-
-
 def _apportion(total: int, weights: List[float]) -> List[int]:
     """Split an integer into whole parts proportional to weights (largest remainder), summing exactly to total."""
     s = sum(weights)
@@ -326,86 +367,49 @@ def _apportion(total: int, weights: List[float]) -> List[int]:
     return parts
 
 
-def headline_score(base: Optional[int], url_pass: Optional[int], weighted: Optional[int], all_cells: List[tuple],
-                   internal: List[dict], integrations: Dict[str, Any], site_mode: bool, critical_urls: tuple,
-                   sitewide: Optional[List[tuple]] = None):
-    """Headline Site Health: the check-based score minus capped penalties for failed Core Web Vitals / poor lab
-    speed and for internal URLs that return errors. Returns (score, explanation) where explanation is an ordered
-    list of {"label", "impact", "detail"}; impacts (negative = lowered the score) sum to score - 100."""
-    if base is None:
-        return None, []
-    items: List[Dict[str, Any]] = []
-    gap = 100 - base
-    has_both = url_pass is not None and weighted is not None
-    share = 0.5 if has_both else 1.0
-    failed_w = {s: sum(WEIGHTS[s] for sv, f in all_cells if f and sv == s) for s in WEIGHTS}
-    parts_spec = []
-    if url_pass is not None:
-        n_fail, n_eval = critical_urls
-        parts_spec.append(("URLs with critical errors", share * (100 - url_pass),
-                           f"{n_fail} of {n_eval} URLs have at least one critical issue (half of the check-based score)."))
-    if weighted is not None:
-        tot = sum(failed_w.values()) or 1
-        names = {"critical": "Critical checks failing", "warning": "Warning checks failing", "notice": "Notice checks failing"}
-        for sev in ("critical", "warning", "notice"):
-            if failed_w[sev]:
-                parts_spec.append((names[sev], share * (100 - weighted) * failed_w[sev] / tot,
-                                   f"{sev.capitalize()} checks carry weight {WEIGHTS[sev]}; their failures make up the other half "
-                                   f"of the check-based score ({weighted}% of weighted checks pass)."))
-    for (label, _w, detail), pts in zip(parts_spec, _apportion(gap, [w for _l, w, _d in parts_spec])):
-        if pts:
-            items.append({"label": label, "impact": -pts, "detail": detail})
-
-    penalties: List[Dict[str, Any]] = []
-    if site_mode and internal:
-        errors = sum(1 for p in internal if (p.get("status_code") or 0) == 0 or (p.get("status_code") or 0) >= 400)
-        if errors:
-            pct = 100 * errors / len(internal)
-            pts = min(ERROR_PENALTY_CAP, max(1, round(pct * ERROR_PTS_PER_PERCENT)))
-            penalties.append({"label": "Pages returning errors", "impact": -pts,
-                              "detail": f"{errors} of {len(internal)} internal URLs ({pct:.1f}%) returned 4xx/5xx or no response: "
-                                        f"{ERROR_PTS_PER_PERCENT} points per 1%, capped at {ERROR_PENALTY_CAP}."})
-    if site_mode and sitewide:
-        pts = min(SITEWIDE_PENALTY_CAP, sum(SITEWIDE_POINTS[sev] for _name, sev, _f, _e in sitewide))
-        names = ", ".join(f"{name} ({f} of {e} pages)" for name, _sev, f, e in sitewide[:4])
-        more = f" and {len(sitewide) - 4} more" if len(sitewide) > 4 else ""
-        penalties.append({"label": "Problems on almost every page", "impact": -pts,
-                          "detail": f"{names}{more}: a check failing on {int(SITEWIDE_SHARE * 100)}%+ of pages is a template "
-                                    f"problem; {SITEWIDE_POINTS['warning']} points per warning, {SITEWIDE_POINTS['critical']} per "
-                                    f"critical, capped at {SITEWIDE_PENALTY_CAP}."})
-    ps = integrations.get("pagespeed") or {}
-    if ps.get("status") == "ok":
-        cwv, lab = ps.get("core_web_vitals"), ps.get("lab_score_mobile")
-        if cwv and cwv.get("passed") is not None:
-            bad = [n for n, k in (("LCP", "lcp_good"), ("INP", "inp_good"), ("CLS", "cls_good")) if cwv.get(k) is False]
-            if cwv["passed"]:
-                penalties.append({"label": "Core Web Vitals", "impact": 0, "detail": "Passed on real-user (field) data; no penalty."})
-            else:
-                pts = min(CWV_PENALTY_CAP, CWV_PENALTY_BASE + CWV_PENALTY_PER_METRIC * len(bad))
-                penalties.append({"label": "Core Web Vitals failed", "impact": -pts,
-                                  "detail": f"Real-user (field) data fails on {', '.join(bad)}: {CWV_PENALTY_BASE} points plus "
-                                            f"{CWV_PENALTY_PER_METRIC} per failing metric, capped at {CWV_PENALTY_CAP}."})
-        elif isinstance(lab, int):
-            pts = 0 if lab >= LAB_GOOD_SCORE else min(CWV_PENALTY_CAP, max(1, round((LAB_GOOD_SCORE - lab) / LAB_POINTS_DIVISOR)))
-            penalties.append({"label": "Page speed (lab test)" if pts else "Page speed", "impact": -pts,
-                              "detail": (f"No real-user data; the lab performance score is {lab}/100 (below {LAB_GOOD_SCORE} costs 1 point per "
-                                         f"{LAB_POINTS_DIVISOR}, capped at {CWV_PENALTY_CAP})." if pts else
-                                         f"No real-user data; lab performance score is {lab}/100, no penalty.")})
-    remaining = base
-    for pen in penalties:  # never push the score below 0
-        pen["impact"] = -min(-pen["impact"], remaining)
-        remaining += pen["impact"]
-    items.extend(penalties)
-    items.sort(key=lambda i: i["impact"])  # biggest deductions first; zero-impact notes last (stable)
-    return base + sum(p["impact"] for p in penalties), items
+def _apply_ai_access_to_aeo(integrations: Dict[str, Any], geo: Dict[str, Any]) -> None:
+    """The AEO score is an AI provider's review of how quotable the content is. Content that answer engines are not
+    allowed to fetch or quote cannot be used, so the review is scaled by the same access gates as GEO readiness."""
+    ar = integrations.get("answer_readiness") or {}
+    if ar.get("status") != "ok" or geo.get("status") != "ok":
+        return
+    multiplier = geo.get("access_multiplier", 1.0)
+    failing = [g for g in geo.get("components") or [] if g.get("kind") == "gate" and g.get("multiplier", 1) < 1]
+    ar["ai_review_score"] = ar["score"]
+    ar["access_multiplier"] = multiplier
+    ar["score"] = round(ar["score"] * multiplier)
+    ar["access_note"] = " ".join(g["detail"] for g in failing) or None
 
 
-def compute_scores(pages: List[dict], mode: str = "site", integration_data: Optional[dict] = None) -> Dict[str, Any]:
-    """pages: dicts with id, url, status_code, content_type, indexability, indexability_status, audit_data."""
+def _explain(score_before_cap: int, url_errors: Dict[Any, List[str]], n_urls: int, by_id: Dict[str, Rule]) -> List[Dict[str, Any]]:
+    """Why Site Health is below 100: the points lost (100 - score) split across error checks by the URLs they fail.
+    A URL failing two checks shares its weight between them, so the rows sum exactly to the score - 100."""
+    weight: Dict[str, float] = {}
+    urls: Dict[str, int] = {}
+    for rule_ids in url_errors.values():
+        for rid in rule_ids:
+            weight[rid] = weight.get(rid, 0.0) + 1 / len(rule_ids)
+            urls[rid] = urls.get(rid, 0) + 1
+    ids = sorted(weight, key=lambda r: -weight[r])
+    rows = []
+    for rid, pts in zip(ids, _apportion(100 - score_before_cap, [weight[r] for r in ids])):
+        rule = by_id[rid]
+        rows.append({"label": rid, "impact": -pts,
+                     "detail": f"{urls[rid]} of {n_urls} URLs ({urls[rid] / n_urls:.0%}). "
+                               f"{rule.type}, {rule.priority.lower()} priority{' (our classification)' if rule.ours else ''}: "
+                               "each URL with an error counts against the score."})
+    return [r for r in rows if r["impact"]] + [r for r in rows if not r["impact"]]
+
+
+def compute_scores(pages: List[dict], mode: str = "site", integration_data: Optional[dict] = None,
+                   site_facts: Optional[dict] = None) -> Dict[str, Any]:
+    """pages: dicts with id, url, status_code, content_type, indexability, indexability_status, audit_data.
+    site_facts: crawl-level facts: {"ai_crawlers": ..., "site_issues": [{"id", "label", "type", "priority",
+    "detail"}]} (issues that belong to the whole site rather than one URL, e.g. an invalid robots.txt)."""
+    from app.services.geo_readiness import compute_geo_readiness
     site_mode = mode != "page"
+    site_facts = site_facts or {}
     internal_all = [p for p in pages if not _is_external(p, p.get("audit_data") or {})]
-    # Pages whose fetch failed for a reason that is not the site's fault (our side, bot protection, unreachable on
-    # every attempt) stay out of every rule and denominator, so they are never reported as broken pages.
     not_counted = {"ours": 0, "unknown": 0, "blocked": 0}
     internal = []
     for p in internal_all:
@@ -415,117 +419,159 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
         else:
             internal.append(p)
     active_rules = [r for r in RULES if site_mode or r.scope == "page"]
+    by_id = {r.id: r for r in RULES}
     conditions = _site_conditions(internal, site_mode)
-    sev_of = {r.id: effective_severity(r, conditions) for r in RULES}
+    cls_of = {r.id: effective_class(r, conditions) for r in RULES}
+    err_of = {rid: is_error(*c) and counts_toward_health(by_id[rid]) for rid, c in cls_of.items()}
 
     per_rule = {r.id: {"failing": [], "evaluated": 0} for r in active_rules}
-    page_cells: Dict[Any, List[tuple]] = {}
-    category_cells: Dict[str, List[tuple]] = {g: [] for g in CATEGORY_GROUPS}
-    cat_to_group = {c: g for g, cats in CATEGORY_GROUPS.items() for c in cats}
-    all_cells: List[tuple] = []
-    urls_with_critical_eval, urls_with_critical_fail = set(), set()
-    severity_urls = {"critical": set(), "warning": set(), "notice": set()}
-
+    url_errors: Dict[Any, List[str]] = {}
+    page_checks: Dict[str, Dict[str, int]] = {}
     for page in internal:
         pid = page.get("id")
-        cells = page_cells.setdefault(pid, [])
+        url_errors[pid] = []
+        tally = {"errors": 0, "warnings": 0, "opportunities": 0}
         for rule in active_rules:
             result = evaluate_rule(rule, page)
             if result is None:
                 continue
             per_rule[rule.id]["evaluated"] += 1
-            if result:
-                per_rule[rule.id]["failing"].append(pid)
-                severity_urls[sev_of[rule.id]].add(pid)
-            if rule.category in INTEGRATION_CATEGORIES:
+            if not result:
                 continue
-            cell = (sev_of[rule.id], bool(result))
-            cells.append(cell)
-            all_cells.append(cell)
-            category_cells[cat_to_group[rule.category]].append(cell)
-            if sev_of[rule.id] == "critical":
-                urls_with_critical_eval.add(pid)
-                if result:
-                    urls_with_critical_fail.add(pid)
+            per_rule[rule.id]["failing"].append(pid)
+            t, pr = cls_of[rule.id]
+            if err_of[rule.id]:
+                url_errors[pid].append(rule.id)
+                tally["errors"] += 1
+            elif t == "Opportunity":
+                tally["opportunities"] += 1
+            else:
+                tally["warnings"] += 1
+        page_checks[str(pid)] = tally
 
-    url_pass_rate = (
-        round(100 * (1 - len(urls_with_critical_fail) / len(urls_with_critical_eval)))
-        if urls_with_critical_eval else None
-    )
-    weighted = _weighted(all_cells)
-    parts = [v for v in (url_pass_rate, weighted) if v is not None]
-    base_health = round(sum(parts) / len(parts)) if parts else None
-    integrations_out = integration_scores(internal, integration_data or {})
-    sitewide = sorted(
-        ((r.name, sev_of[r.id], len(per_rule[r.id]["failing"]), per_rule[r.id]["evaluated"]) for r in active_rules
-         if r.category not in INTEGRATION_CATEGORIES and sev_of[r.id] in SITEWIDE_POINTS
-         and per_rule[r.id]["evaluated"] >= SITEWIDE_MIN_PAGES
-         and len(per_rule[r.id]["failing"]) >= SITEWIDE_SHARE * per_rule[r.id]["evaluated"]),
-        key=lambda t: (-SITEWIDE_POINTS[t[1]], -t[2]))
-    health, score_explanation = headline_score(
-        base_health, url_pass_rate, weighted, all_cells, internal, integrations_out, site_mode,
-        (len(urls_with_critical_fail), len(urls_with_critical_eval)), sitewide)
+    n_urls = len(internal)
+    failing_urls = {pid: ids for pid, ids in url_errors.items() if ids}
+    site_issues = [i for i in site_facts.get("site_issues") or [] if isinstance(i, dict)]
+    site_errors = [i for i in site_issues if is_error(i.get("type", ""), i.get("priority", ""))]
 
-    evaluated_rules = [r for r in active_rules if per_rule[r.id]["evaluated"] > 0 and r.category not in INTEGRATION_CATEGORIES]
+    # ---- Site Health (whole-site crawls with enough URLs)
+    score = base = None
+    reason = None
+    explanation: List[Dict[str, Any]] = []
+    if not site_mode:
+        reason = "Single-page audit: one URL can only score 0 or 100, so it gets a page check instead. Run a whole-site audit for Site Health."
+    elif n_urls < MIN_URLS_FOR_SCORE:
+        reason = f"Only {n_urls} URL{'s' if n_urls != 1 else ''} could be checked; Site Health needs at least {MIN_URLS_FOR_SCORE}."
+    else:
+        base = round(100 * (n_urls - len(failing_urls)) / n_urls)
+        score = base
+        explanation = _explain(base, failing_urls, n_urls, by_id)
+        if site_errors and score > SITE_ERROR_CAP:
+            explanation.insert(0, {"label": "Site-wide error: score capped at 70", "impact": SITE_ERROR_CAP - score,
+                                   "detail": "; ".join(f"{i.get('label')}: {i.get('detail')}" for i in site_errors)
+                                             + f" This affects the whole site, so Site Health is capped at {SITE_ERROR_CAP} until fixed."})
+            score = SITE_ERROR_CAP
+    if any(not_counted.values()):
+        explanation.append({"label": "Pages not counted", "impact": 0, "detail": not_counted_detail(not_counted)})
+
+    # ---- Per-check results
     rules_out = []
     for rule in RULES:
+        t, pr = cls_of[rule.id]
+        common = {"id": rule.id, "category": rule.category, "rule": rule.name, "scope": rule.scope,
+                  "type": t, "priority": pr, "severity": severity_of(t, pr), "is_error": err_of[rule.id],
+                  "escalated": (t, pr) != (rule.type, rule.priority), "ours": rule.ours,
+                  "integration": not counts_toward_health(rule)}
         if rule.id not in per_rule:
-            rules_out.append({"id": rule.id, "category": rule.category, "rule": rule.name, "severity": rule.severity,
-                              "priority": PRIORITY[rule.severity], "type": TYPE[rule.severity], "scope": rule.scope,
-                              "integration": rule.category in INTEGRATION_CATEGORIES,
-                              "status": "not_evaluated", "reason": "site_only", "failing_count": 0,
+            rules_out.append({**common, "status": "not_evaluated", "reason": "site_only", "failing_count": 0,
                               "evaluated_count": 0, "failing_page_ids": []})
             continue
         stats = per_rule[rule.id]
-        sev = sev_of[rule.id]
         status = "not_evaluated" if stats["evaluated"] == 0 else ("fail" if stats["failing"] else "pass")
-        rules_out.append({
-            "id": rule.id, "category": rule.category, "rule": rule.name, "severity": sev,
-            "priority": PRIORITY[sev], "type": TYPE[sev], "scope": rule.scope,
-            "escalated": sev != rule.severity,
-            "integration": rule.category in INTEGRATION_CATEGORIES,
-            "status": status, "reason": None if stats["evaluated"] else "no_data",
-            "failing_count": len(stats["failing"]), "evaluated_count": stats["evaluated"],
-            "failing_page_ids": stats["failing"][:FAILING_ID_CAP],
-        })
+        rules_out.append({**common, "status": status, "reason": None if stats["evaluated"] else "no_data",
+                          "failing_count": len(stats["failing"]), "evaluated_count": stats["evaluated"],
+                          "failing_page_ids": stats["failing"][:FAILING_ID_CAP]})
 
-    if any(not_counted.values()):
-        score_explanation = [*score_explanation, {
-            "label": "Pages not counted", "impact": 0, "detail": not_counted_detail(not_counted)}]
+    def failing_of(kind: str) -> List[dict]:
+        out = []
+        for r in rules_out:
+            if r["status"] != "fail" or r["integration"]:
+                continue
+            k = "errors" if r["is_error"] else ("opportunities" if r["type"] == "Opportunity" else "warnings")
+            if k == kind:
+                out.append(r)
+        return out
 
-    result = {
+    def site_kind(i: dict) -> str:
+        if is_error(i.get("type", ""), i.get("priority", "")):
+            return "errors"
+        return "opportunities" if i.get("type") == "Opportunity" else "warnings"
+
+    issues = {k: {"checks": len(failing_of(k)) + sum(1 for i in site_issues if site_kind(i) == k),
+                  "urls": len({pid for r in failing_of(k) for pid in r["failing_page_ids"]})}
+              for k in ("errors", "warnings", "opportunities")}
+    issues["site"] = site_issues
+
+    def category_score(cats) -> Dict[str, Any]:
+        """Diagnostic breakdown: share of the URLs these checks evaluated that have no error from them."""
+        rules = [r for r in active_rules if r.category in cats and per_rule[r.id]["evaluated"]]
+        evaluated_urls, error_urls = set(), set()
+        for page in internal:
+            pid = page.get("id")
+            if any(evaluate_rule(r, page) is not None for r in rules if err_of[r.id]):
+                evaluated_urls.add(pid)
+        for r in rules:
+            if err_of[r.id]:
+                error_urls.update(per_rule[r.id]["failing"])
+        cat_score = round(100 * (1 - len(error_urls) / len(evaluated_urls))) if evaluated_urls else None
+        return {"score": cat_score, "band": _band(cat_score), "urls_evaluated": len(evaluated_urls),
+                "urls_with_errors": len(error_urls),
+                "checks_failed": sum(1 for r in rules if per_rule[r.id]["failing"]), "checks_evaluated": len(rules)}
+
+    geo = compute_geo_readiness(internal, site_mode, site_facts.get("ai_crawlers"))
+    integrations_out = integration_scores(internal, integration_data or {})
+    _apply_ai_access_to_aeo(integrations_out, geo)
+    page_check = None
+    if not site_mode and internal:
+        only = page_checks.get(str(internal[0].get("id"))) or {}
+        page_check = {**only, "error_checks": url_errors.get(internal[0].get("id")) or [],
+                      "passed": not url_errors.get(internal[0].get("id")) and not site_errors,
+                      "site_issues": site_issues}  # robots.txt and similar apply to this page too
+
+    return {
         "scoring_version": SCORING_VERSION,
+        "method": "Ahrefs Health Score (share of URLs with zero errors) with Screaming Frog issue classification",
         "not_counted": not_counted,
         "mode": "site" if site_mode else "page",
-        "weights": WEIGHTS,
-        "urls_evaluated": len(internal),
+        "urls_evaluated": n_urls,
         "site_health": {
-            "score": health,  # the headline: check-based score minus the capped penalties in score_explanation
-            "base_score": base_health,
-            "band": _band(health),
-            "url_pass_rate": url_pass_rate,
-            "weighted_pass_rate": weighted,
-            "urls_with_critical_errors": len(urls_with_critical_fail),
-            "urls_evaluated_for_critical": len(urls_with_critical_eval),
-            "urls_with": {k: len(v) for k, v in severity_urls.items()},
-            "checks_evaluated": len(evaluated_rules),
-            "checks_total": len([r for r in active_rules if r.category not in INTEGRATION_CATEGORIES]),
-            "low_confidence": len(urls_with_critical_eval) < MIN_URLS_FOR_CONFIDENCE and site_mode,
+            "score": score,
+            "base_score": base,  # before the site-wide error cap
+            "band": _band(score),
+            "reason": reason,  # why there is no score, when there is none
+            "provisional": score is not None and n_urls < PROVISIONAL_BELOW,
+            "url_pass_rate": base,
+            "urls_total": n_urls,
+            "urls_with_errors": len(failing_urls),
+            "urls_with_critical_errors": len(failing_urls),
+            "urls_evaluated_for_critical": n_urls,
+            "urls_with": {"critical": issues["errors"]["urls"], "warning": issues["warnings"]["urls"],
+                          "notice": issues["opportunities"]["urls"]},
+            "site_errors": site_errors,
+            "capped": bool(score is not None and base is not None and score < base),
+            "checks_evaluated": sum(1 for r in active_rules if per_rule[r.id]["evaluated"] and counts_toward_health(r)),
+            "checks_total": sum(1 for r in active_rules if counts_toward_health(r)),
+            "low_confidence": site_mode and n_urls < PROVISIONAL_BELOW,
         },
-        "categories": {
-            group: {"score": _weighted(cells), "band": _band(_weighted(cells)),
-                    "checks_failed": sum(1 for _, f in cells if f), "checks_evaluated": len(cells)}
-            for group, cells in category_cells.items()
-        },
-        "page_scores": {str(pid): _weighted(cells) for pid, cells in page_cells.items()},
+        "page_check": page_check,
+        "issues": issues,
+        "categories": {group: category_score(cats) for group, cats in CATEGORY_GROUPS.items()},
+        "page_checks": page_checks,
         "rules": rules_out,
         "integrations": integrations_out,
-        "score_explanation": score_explanation,
+        "score_explanation": explanation,
+        "geo_readiness": geo,
     }
-    if not site_mode:
-        only = internal[0] if internal else None
-        result["page_score"] = result["page_scores"].get(str(only.get("id"))) if only else None
-    return result
 
 
 # ---------------------------------------------------------------- integration scores

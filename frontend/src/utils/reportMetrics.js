@@ -166,7 +166,11 @@ export function buildReportData({ pages, crawlSummary, issuesReport, techResult,
 
   const speedWord = { good: 'loads well', warn: 'loads acceptably', poor: 'loads slowly and needs work', unknown: '' }[speed.status];
   const fallbackSummary = [
-    `${host} scored ${score ?? 'n/a'} out of 100 for overall search health.`,
+    score != null
+      ? `${host} scored ${score} out of 100 for site health: ${score}% of the pages we checked have no errors.`
+      : techResult?.pageCheck
+        ? `We checked one page of ${host} and found ${techResult.pageCheck.errors} error${techResult.pageCheck.errors === 1 ? '' : 's'}.`
+        : `${host} has no site health score yet.`,
     `We checked ${total} page${total === 1 ? '' : 's'} and found ${items.length} thing${items.length === 1 ? '' : 's'} to improve, ${high} of them high priority.`,
     speedWord ? `The site ${speedWord}.` : '',
     items.length ? 'The three priorities below are the best place to start.' : '',
