@@ -27,6 +27,7 @@ class KeywordItem(BaseModel):
     intent: Optional[str] = None
     branded: bool = False
     local: bool = False
+    source: Optional[str] = None  # "auto" (generated for the visibility check) or "user"
 
 
 class KeywordListUpdate(BaseModel):

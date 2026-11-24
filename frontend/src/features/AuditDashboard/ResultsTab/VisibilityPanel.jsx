@@ -1,0 +1,197 @@
+'use client';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { CheckCircle2, ChevronDown, Loader2, MinusCircle, RefreshCw, Search, Sparkles, XCircle } from 'lucide-react';
+import { checkVisibility, getVisibility } from '@/api/client';
+
+const POLL_MS = 5000;
+
+/** The site's measured visibility (GET /visibility), polled while a measurement runs. */
+export function useVisibility(enabled) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [starting, setStarting] = useState(false);
+  const timer = useRef(null);
+
+  const load = useCallback(async () => {
+    try {
+      setData(await getVisibility());
+      setError(null);
+    } catch (err) {
+      // 404 = no completed audit yet: nothing to measure
+      setError(err?.response?.status === 404 ? null : (err?.response?.data?.detail || 'Could not load visibility.'));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let cancelled = false;
+    getVisibility()
+      .then(d => { if (!cancelled) { setData(d); setError(null); } })
+      .catch(err => {
+        if (!cancelled) setError(err?.response?.status === 404 ? null : (err?.response?.data?.detail || 'Could not load visibility.'));
+      });
+    return () => { cancelled = true; };
+  }, [enabled]);
+
+  useEffect(() => {
+    clearTimeout(timer.current);
+    if (data?.running) timer.current = setTimeout(load, POLL_MS);
+    return () => clearTimeout(timer.current);
+  }, [data, load]);
+
+  const measure = useCallback(async () => {
+    setStarting(true);
+    try {
+      setData(await checkVisibility(true));
+      setError(null);
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Could not start the measurement.');
+    } finally {
+      setStarting(false);
+    }
+  }, []);
+
+  return { data, error, measure, starting, reload: load };
+}
+
+/** Card props for one measured score (geo / aeo / seo): a score only when it was really measured. */
+export function measuredCard(vis, key) {
+  const s = vis?.data?.last?.scores?.[key];
+  if (vis?.data?.running && !s) return { score: null, isDisconnected: true, statusText: 'Measuring…' };
+  if (!vis?.data) return { score: null, isDisconnected: true, statusText: 'Not measured yet' };
+  if (!s) return { score: null, isDisconnected: true, statusText: vis.data.last_error || 'Not measured yet' };
+  if (s.status !== 'ok') return { score: null, isDisconnected: true, statusText: `Not measured: ${s.reason}` };
+  const range = s.interval ? ` · likely ${s.interval[0]}–${s.interval[1]}` : '';
+  return { score: s.score, isDisconnected: false, statusText: `${s.label}${range}` };
+}
+
+function Yes({ on, children }) {
+  return (
+    <span className={`inline-flex items-center gap-1 ${on ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+      {on ? <CheckCircle2 size={12} /> : <MinusCircle size={12} />}{children}
+    </span>
+  );
+}
+
+function QuestionRow({ q, engines }) {
+  const [open, setOpen] = useState(false);
+  const g = q.google;
+  const aio = g?.ai_overview || {};
+  return (
+    <li className="rounded-xl border border-slate-200 dark:border-slate-800 px-3 py-2.5">
+      <button type="button" onClick={() => setOpen(o => !o)} className="flex w-full items-start justify-between gap-3 text-left">
+        <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+          {q.text}
+          <span className="ml-2 rounded px-1.5 py-0.5 text-[10px] font-mono font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+            {q.source === 'auto' ? 'generated' : 'yours'}
+          </span>
+        </span>
+        <ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+        {g ? (
+          <>
+            <span className="text-slate-600 dark:text-slate-300">Google: {g.rank ? <strong>#{g.rank}</strong> : 'not on page 1'}</span>
+            <Yes on={aio.cited}>{aio.shown ? (aio.cited ? 'cited in AI Overview' : 'AI Overview, not cited') : 'no AI Overview'}</Yes>
+            {g.featured_snippet ? <Yes on={g.featured_snippet_cited}>featured snippet</Yes> : null}
+            {g.paa?.length ? <Yes on={g.paa_cited}>People Also Ask</Yes> : null}
+          </>
+        ) : <span className="text-slate-500">{q.google_error || 'Google not checked'}</span>}
+        {Object.entries(q.ai || {}).map(([name, r]) => (
+          <span key={name} className="text-slate-600 dark:text-slate-300">
+            {engines?.[name]?.label || name}: {r.error ? r.error : <><strong>{(r.answers || []).filter(a => a.mentioned || a.cited).length} of {r.runs}</strong> answers mention or cite you</>}
+          </span>
+        ))}
+      </div>
+      {open && (
+        <div className="mt-2 space-y-2 border-t border-slate-200 dark:border-slate-800 pt-2 text-[11px] text-slate-600 dark:text-slate-300">
+          {g?.competitors?.length ? <p><strong>Google top results:</strong> {g.competitors.join(', ')}</p> : null}
+          {aio.sources?.length ? <p><strong>AI Overview sources:</strong> {aio.sources.join(', ')}</p> : null}
+          {Object.entries(q.ai || {}).map(([name, r]) => (r.answers || []).map((a, i) => (
+            <div key={`${name}-${i}`} className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-2">
+              <div className="mb-1 flex flex-wrap items-center gap-3 font-semibold">
+                <span>{engines?.[name]?.label || name} · answer {i + 1}</span>
+                <Yes on={a.mentioned}>mentions you</Yes><Yes on={a.cited}>cites your site</Yes>
+              </div>
+              {a.sources?.length ? <p className="mb-1"><strong>Cited instead:</strong> {a.sources.join(', ')}</p> : null}
+              <p className="text-slate-500 dark:text-slate-400">{a.excerpt || '(no text)'}</p>
+            </div>
+          )))}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** The 5 questions actually asked, every engine's answers, and what Google showed. */
+export default function VisibilityPanel({ vis, onEditQuestions, onConnect }) {
+  const { data, error, measure, starting } = vis;
+  if (!data && !error) return null;
+  const last = data?.last;
+  const running = data?.running;
+  const engines = data?.engines || {};
+  const connected = Object.entries(engines).filter(([, e]) => e.connected);
+  return (
+    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+            <Sparkles size={16} className="text-purple-500" /> AI &amp; search visibility (measured)
+          </h3>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {data?.questions?.length || 0} questions, each asked {data?.runs_per_engine || 2}× on every connected AI engine with live web search, and searched on Google.
+            {last?.checked_at ? ` Last measured ${new Date(last.checked_at).toLocaleString()}.` : ' Not measured yet.'}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-mono font-bold">
+            {Object.entries(engines).map(([name, e]) => (
+              <span key={name} title={e.how} className={`rounded-full border px-2 py-0.5 ${e.connected ? 'border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300' : 'border-slate-200 text-slate-400 dark:border-slate-700'}`}>
+                {e.label}{e.connected ? '' : ' · not connected'}
+              </span>
+            ))}
+            <span className={`rounded-full border px-2 py-0.5 ${data?.serp_connected ? 'border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300' : 'border-slate-200 text-slate-400 dark:border-slate-700'}`}>
+              <Search size={10} className="mr-1 inline" />Google (SerpAPI){data?.serp_connected ? '' : ' · not connected'}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={onEditQuestions} className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800">
+            Edit questions
+          </button>
+          <button type="button" onClick={measure} disabled={running || starting || (!connected.length && !data?.serp_connected)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50">
+            {running || starting ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            {running ? 'Measuring…' : 'Measure now'}
+          </button>
+        </div>
+      </div>
+
+      {(error || data?.last_error) && (
+        <p className="mt-3 flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400"><XCircle size={13} />{error || data.last_error}</p>
+      )}
+      {!connected.length && !data?.serp_connected && (
+        <p className="mt-3 text-xs text-slate-500">
+          Nothing to measure with yet. <button type="button" onClick={onConnect} className="font-semibold text-indigo-600 underline">Connect Gemini, ChatGPT, Claude or SerpAPI</button>.
+        </p>
+      )}
+      {last?.engines && Object.entries(last.engines).some(([, e]) => e.status === 'error' || (e.status === 'ok' && e.reason)) && (
+        <ul className="mt-3 space-y-0.5 text-xs text-amber-700 dark:text-amber-400">
+          {Object.entries(last.engines).filter(([, e]) => e.reason && e.status !== 'not_connected').map(([name, e]) => (
+            <li key={name}>{engines[name]?.label || name}: {e.reason}</li>
+          ))}
+        </ul>
+      )}
+
+      {last?.questions?.length ? (
+        <ul className="mt-4 space-y-2">
+          {last.questions.map(q => <QuestionRow key={q.id} q={q} engines={engines} />)}
+        </ul>
+      ) : data?.questions?.length ? (
+        <ul className="mt-4 space-y-1 text-sm text-slate-700 dark:text-slate-200">
+          {data.questions.map(q => <li key={q.id}>• {q.text}</li>)}
+        </ul>
+      ) : (
+        <p className="mt-4 text-xs text-slate-500">The questions are generated from the audited site on the first measurement; you can edit them in Keywords &amp; AI answers.</p>
+      )}
+    </section>
+  );
+}

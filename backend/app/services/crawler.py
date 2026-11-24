@@ -122,6 +122,9 @@ class QueueItem:
     last_failure_at: float = 0.0
 
 
+_BACKGROUND_TASKS: Set[asyncio.Task] = set()  # follow-up work started after an audit completes
+
+
 @dataclass
 class Fetched:
     """A response ready to be stored, from either fetcher (plain HTTP or the JS-rendering browser)."""
@@ -359,6 +362,15 @@ class CrawlerService:
         async with self.db_lock:
             await mark_crawl_status(self.db, self.crawl_id, "completed")
         self.send_alert()
+        # Measured visibility (real AI answers and Google results) runs on its own after the audit, so the audit
+        # never waits for it; a measurement less than a day old for the same questions is reused.
+        try:
+            from app.api.visibility import run_after_audit
+            task = asyncio.create_task(run_after_audit(self.crawl_id))
+            _BACKGROUND_TASKS.add(task)  # keep a reference so the task is not garbage-collected mid-run
+            task.add_done_callback(_BACKGROUND_TASKS.discard)
+        except Exception as e:  # noqa: BLE001
+            print(f"Visibility measurement not started for crawl {self.crawl_id}: {type(e).__name__}")
 
     # ------------------------------------------------------------------ crawl loop, retries, circuit breaker
 

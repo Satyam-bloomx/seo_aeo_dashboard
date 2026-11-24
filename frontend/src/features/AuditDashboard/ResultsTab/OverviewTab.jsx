@@ -46,6 +46,37 @@ import { gscIndexState } from '@/utils/gscStatus';
 import { useCrawlSummary } from '@/context/CrawlSummaryContext';
 import TopFixesCard from './TopFixesCard';
 import IntegrationScoresPanel from './IntegrationScoresPanel';
+import VisibilityPanel, { measuredCard, useVisibility } from './VisibilityPanel';
+
+// Explanation rows for the measured scores: what was counted, from which engines, and what was not measured.
+function visibilitySections(scores) {
+  if (!scores) return [];
+  const row = (label, detail) => ({ label, detail, value: '' });
+  const out = [];
+  const geo = scores.geo;
+  if (geo?.status === 'ok') {
+    out.push({ title: 'GEO Score', note: `${geo.label}; likely between ${geo.interval[0]} and ${geo.interval[1]}`, score: geo.score,
+      rows: [
+        ...Object.entries(geo.per_engine || {}).map(([name, e]) => row(name === 'openai' ? 'ChatGPT' : name === 'claude' ? 'Claude' : 'Gemini',
+          `${e.visible} of ${e.answers} answers mention or cite the site (${e.cited} cite it with a link).`)),
+        ...(geo.reason ? [row('Not included', geo.reason)] : []),
+      ] });
+  }
+  const aeo = scores.aeo;
+  if (aeo?.status === 'ok') {
+    out.push({ title: 'AEO Score', note: aeo.label, score: aeo.score, rows: [
+      row('AI Overview', `Shown for ${aeo.ai_overview_shown} questions; the site is cited in ${aeo.ai_overview_cited}.`),
+      row('Featured snippet / People Also Ask', `The site appears in ${aeo.featured_snippet_cited} featured snippets and ${aeo.paa_cited} People Also Ask boxes.`),
+    ] });
+  }
+  const seo = scores.seo;
+  if (seo?.status === 'ok') {
+    out.push({ title: 'Search Visibility', note: seo.label, score: seo.score, rows: [
+      row('Rankings', `Top 3 for ${seo.top3}, page 1 for ${seo.page1} of ${seo.questions} questions${seo.average_position ? `; average position ${seo.average_position}` : ''}. Top 3 counts 100, positions 4-10 count 60, beyond page 1 counts 0.`),
+    ] });
+  }
+  return out;
+}
 
 
 const CORE_AUDIT_CATEGORIES = [
@@ -580,9 +611,8 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
   }, [pages, issuesReport, crawlSummary]);
 
   const healthScore = pages?.length > 0 ? technicalSeoResult.siteHealthScore : null;
-  const geo = pages?.length > 0 ? crawlSummary?.geo_readiness : null;
-  // GEO = content score x access multiplier; the backend splits the points lost into whole numbers per part.
-  const geoRows = geo?.status === 'ok' && Array.isArray(geo.explanation) ? geo.explanation : [];
+  // Measured GEO / AEO / Search visibility: real AI answers and Google results for the site's 5 questions.
+  const vis = useVisibility(Boolean(crawlSummary));
   const isPageMode = crawlSummary?.mode === 'page';
   const sh = crawlSummary?.site_health;
   const pageCheck = crawlSummary?.page_check;
@@ -590,12 +620,6 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
   const techSeo = crawlSummary?.technical_seo;
   const issueTotal = issueCounts ?issueCounts.errors.checks + issueCounts.warnings.checks + issueCounts.opportunities.checks : 0;
   const plural = (n, word) => `${n} ${n === 1 ? word : word.endsWith('y') ? `${word.slice(0, -1)}ies` : `${word}s`}`;
-  const answerReadiness = crawlSummary?.integrations?.answer_readiness;
-  // Share of HTML pages with valid structured data: a site with no schema at all must not read 100.
-  const htmlPages = (pages || []).filter(p => p.status_code === 200 && String(p.content_type || 'text/html').toLowerCase().includes('html'));
-  const pagesWithSchema = htmlPages.filter(p => (p.audit_data?.Structured_Data?.Schema_Types || []).length > 0
-    && !p.audit_data?.Structured_Data?.['Invalid JSON-LD']).length;
-  const structuredScore = crawlSummary && htmlPages.length ? Math.round(100 * pagesWithSchema / htmlPages.length) : null;
 
   // 3. AEO (Answer Engine Optimization) - checks crawled pages & active AI integration
   const aeoData = useMemo(() => computeAeoData(pages, integrationsStatus), [pages, integrationsStatus]);
@@ -906,49 +930,36 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
           onMouseMoveCard={handleMouseMoveSpotlight}
         />
 
-        {/* AEO: an AI provider (Gemini / OpenAI) reads the pages and judges whether an answer engine can quote them */}
+        {/* AEO: measured. Where the site appears in Google's answer features (AI Overview, featured snippet, PAA) */}
         <SpringTiltBentoCard
           title="AEO Score"
-          subtitle="Answer engines: AI review of how quotable your pages are"
-          score={answerReadiness?.status === 'ok' ? answerReadiness.score : null}
-          isDisconnected={answerReadiness?.status !== 'ok'}
-          statusText={answerReadiness?.status === 'ok'
-            ? (answerReadiness.access_multiplier != null && answerReadiness.access_multiplier < 1
-                ? `AI review ${answerReadiness.ai_review_score}, cut by blocked AI access`
-                : `${answerReadiness.pages_assessed} page${answerReadiness.pages_assessed === 1 ? '' : 's'} reviewed by AI`)
-            : 'Needs an AI provider'}
-          actionText={answerReadiness?.status !== 'ok' ? "Connect AI provider →" : undefined}
-          onAction={() => onNavigateToTab?.('integrations')}
+          subtitle="Google answer features: AI Overview, snippet, PAA"
+          {...measuredCard(vis, 'aeo')}
+          actionText={vis.data && !vis.data.last && !vis.data.running ? 'Measure →' : undefined}
+          onAction={vis.measure}
           icon={Bot}
           colorTheme="indigo"
           onMouseMoveCard={handleMouseMoveSpotlight}
         />
 
-        {/* GEO readiness: can AI search engines reach, read and quote the site (crawl-based, no API keys) */}
+        {/* GEO: measured. Share of real AI answers (live web search) that mention or cite the site */}
         <SpringTiltBentoCard
-          title="GEO Readiness"
-          subtitle="Can ChatGPT, Perplexity and Google AI find and cite you?"
-          score={geo?.status === 'ok' ? geo.score : null}
-          isDisconnected={geo?.status !== 'ok'}
-          statusText={!crawlSummary ? (pages?.length > 0 ? 'Calculating scores…' : 'Awaiting Audit URL')
-            : geo?.status === 'ok'
-              ? `${geo.pages_measured} page${geo.pages_measured === 1 ? '' : 's'} checked${geo.ai_overview ? ` · ${geo.ai_overview}` : ''}`
-              : (geo?.reason || 'Not measured')}
+          title="GEO Score"
+          subtitle="Real ChatGPT, Gemini and Claude answers"
+          {...measuredCard(vis, 'geo')}
+          actionText={vis.data && !vis.data.last && !vis.data.running ? 'Measure →' : undefined}
+          onAction={vis.measure}
           icon={Sparkles}
           colorTheme="purple"
           onMouseMoveCard={handleMouseMoveSpotlight}
         />
 
-        {/* Structured data category score (crawl-based) */}
+        {/* Search visibility: measured. Google page-1 rankings for the same questions */}
         <SpringTiltBentoCard
-          title="Structured Data"
-          subtitle="Schema presence & validity"
-          score={structuredScore}
-          isDisconnected={false}
-          statusText={crawlSummary ? `${pagesWithSchema} of ${htmlPages.length} pages have valid schema` : (pages?.length > 0 ? 'Calculating scores…' : 'Awaiting Audit URL')}
-          actionText={crawlSummary ? 'View pages →' : undefined}
-          onAction={() => onNavigateToExplorer?.('Structured_Data')}
-          icon={ShieldCheck}
+          title="Search Visibility"
+          subtitle="Real Google rankings for your questions"
+          {...measuredCard(vis, 'seo')}
+          icon={Search}
           colorTheme="rose"
           onMouseMoveCard={handleMouseMoveSpotlight}
         />
@@ -968,19 +979,10 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
               }) }
           : { title: 'Site Health', note: sh?.provisional ? 'provisional: fewer than 30 URLs crawled' : null,
               score: healthScore, rows: crawlSummary?.crawl?.score_explanation || crawlSummary?.score_explanation },
-        { title: 'AEO Score', note: 'AI provider review of how quotable the pages are',
-          score: answerReadiness?.status === 'ok' ? answerReadiness.score : null,
-          rows: answerReadiness?.status === 'ok' && answerReadiness.access_multiplier < 1
-            ? [{ label: `AI access (score x ${Number(answerReadiness.access_multiplier).toFixed(2)})`,
-                 impact: answerReadiness.score - answerReadiness.ai_review_score,
-                 detail: `The AI review gave ${answerReadiness.ai_review_score}/100. ${answerReadiness.access_note || ''}` }]
-            : [] },
-        { title: 'GEO Readiness',
-          note: [geo?.info?.llms_txt ? 'llms.txt found' : 'no llms.txt',
-                 geo?.info?.training_bots_blocked?.length ? `AI training blocked for ${geo.info.training_bots_blocked.join(', ')}` : null,
-                 'neither is scored; readiness, not predicted citations'].filter(Boolean).join(' · '),
-          score: geo?.status === 'ok' ? geo.score : null, rows: geoRows },
+        ...visibilitySections(vis.data?.last?.scores),
       ]} />
+
+      <VisibilityPanel vis={vis} onEditQuestions={() => onNavigateToTab?.('keywords')} onConnect={() => onNavigateToTab?.('integrations')} />
 
       <IntegrationScoresPanel onConnect={() => onNavigateToTab?.('integrations')} onOpenTab={(tab) => onNavigateToTab?.(tab)} />
 

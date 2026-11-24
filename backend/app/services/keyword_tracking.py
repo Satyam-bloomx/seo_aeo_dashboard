@@ -104,6 +104,8 @@ def clean_items(raw: List[Dict[str, Any]], domain: str, business_name: str = "")
             "intent": "brand" if branded else intent,
             "branded": branded,
             "local": bool(r.get("local")) or intent == "local",
+            # "auto": generated for the visibility check; anything the user adds or edits is theirs
+            "source": r.get("source") if r.get("source") in ("auto", "user") else "user",
         })
         if len(out) >= MAX_ITEMS:
             break
@@ -329,9 +331,10 @@ def parse_google(data: Dict[str, Any], domain: str, business_name: str = "", off
 
 
 async def check_item(client: httpx.AsyncClient, key: str, item: Dict[str, Any], domain: str, location: str,
-                     business_name: str = "") -> Tuple[Dict[str, Any], int]:
+                     business_name: str = "", depth: int = DEPTH_PAGES,
+                     gl: str = "in", hl: str = "en") -> Tuple[Dict[str, Any], int]:
     """One item: page 1 (+ AI Overview follow-up, + pages 2-3 if needed). Returns (result, searches used)."""
-    base = {"engine": "google", "q": item["text"], "gl": "in", "hl": "en", "device": "desktop", "api_key": key,
+    base = {"engine": "google", "q": item["text"], "gl": gl, "hl": hl, "device": "desktop", "api_key": key,
             # A fresh page: an AI Overview page_token from a cached page has expired (tokens last about a minute).
             "no_cache": "true"}
     if location:
@@ -354,7 +357,7 @@ async def check_item(client: httpx.AsyncClient, key: str, item: Dict[str, Any], 
             aio = {}
     ai_overview = parse_ai_overview(aio, domain) if aio else {"shown": False, "cited": False, "sources": []}
 
-    for p in range(1, DEPTH_PAGES):
+    for p in range(1, depth):
         if page["rank"] is not None:
             break
         more = await _serp_get(client, {**base, "start": p * 10})
@@ -574,7 +577,8 @@ def parse_grounding(data: Dict[str, Any], domain: str, business_name: str = "") 
     mentioned = is_branded(text, domain, business_name) or domain in text.lower()
     own = [h for h in hosts if _grounding_host_is_site(h, domain)]
     return {"mentioned": mentioned, "cited": bool(own),
-            "sources": [h for h in hosts if h not in own], "grounded": bool(hosts)}
+            "sources": [h for h in hosts if h not in own], "grounded": bool(hosts),
+            "excerpt": " ".join(text.split())[:600]}
 
 
 # Platforms where the parent domain belongs to someone else (a blog on blogspot.com is not blogspot.com).
@@ -595,7 +599,7 @@ async def gemini_check(client: httpx.AsyncClient, gemini: Any, text: str, domain
     """Ask Gemini the question with Google Search turned on, `runs` times (answers vary between runs)."""
     from app.core.config import chosen_ai_model
 
-    out = {"runs": 0, "mentioned": 0, "cited": 0, "sources": [], "model": None}
+    out = {"runs": 0, "mentioned": 0, "cited": 0, "sources": [], "model": None, "answers": []}
     sources: Dict[str, int] = {}
     for _ in range(runs):
         res = None
@@ -624,6 +628,8 @@ async def gemini_check(client: httpx.AsyncClient, gemini: Any, text: str, domain
         if res.status_code != 200:
             continue
         one = parse_grounding(res.json(), domain, business_name)
+        out["answers"].append({"mentioned": one["mentioned"], "cited": one["cited"], "sources": one["sources"][:8],
+                               "excerpt": one["excerpt"]})
         out["runs"] += 1
         out["mentioned"] += int(one["mentioned"])
         out["cited"] += int(one["cited"])

@@ -49,3 +49,4 @@ soupsieve>=2.9.0
 # Removed: spacy, en-core-web-sm, extruct (only used by the deleted legacy pipeline), curl-cffi (TLS fingerprint impersonation), playwright-stealth (bot-detection evasion),
 # nltk (unused; critical CVEs), celery (unused), rdflib/mf2py/pyrdfa3/html5lib (pulled in by extruct),
 # jinja2/numpy (not imported directly).
+anthropic==1.17.0

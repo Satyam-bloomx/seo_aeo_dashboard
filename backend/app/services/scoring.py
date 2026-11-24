@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 from app.services.fetch_outcome import is_uncounted
 
-SCORING_VERSION = "2026.12-1"
+SCORING_VERSION = "2026.12-2"
 BANDS = [(91, "Excellent"), (71, "Good"), (31, "Fair"), (0, "Weak")]  # Ahrefs Health Score bands
 MIN_URLS_FOR_SCORE = 10        # fewer crawled URLs: no site score (our threshold; no vendor publishes one)
 PROVISIONAL_BELOW = 30         # 10-29 URLs: the score is shown as provisional

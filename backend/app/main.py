@@ -21,6 +21,7 @@ from app.api.endpoints import router as api_router
 from app.api.integrations import router as integrations_router
 from app.api.helper import router as helper_router
 from app.api.keywords import router as keywords_router
+from app.api.visibility import router as visibility_router
 from app.core.redis import init_redis, close_redis
 from app.core.database import engine, Base
 from app.core.config import IS_PRODUCTION, cors_origins
@@ -167,6 +168,7 @@ app.include_router(api_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api/integrations")
 app.include_router(helper_router, prefix="/api")  # AuditPro Helper relay (browser extension)
 app.include_router(keywords_router, prefix="/api")  # Keywords & AI answers (SerpAPI checks)
+app.include_router(visibility_router, prefix="/api")  # measured GEO / AEO / Search visibility
 # The legacy synchronous /api/audits pipeline was removed: it was
 # unauthenticated, unthrottled and fetched arbitrary URLs.
 

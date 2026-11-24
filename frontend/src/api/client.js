@@ -107,3 +107,7 @@ export const suggestKeywords = async (body) => (await api.post('/keywords/sugges
 export const checkKeywords = async (opts) => (await api.post('/keywords/check', opts)).data;
 export const searchKeywordLocations = async (q) => (await api.get('/keywords/locations', { params: { q } })).data;
 export const getKeywordIdeas = async (body) => (await api.post('/keywords/ideas', body)).data;
+
+// Measured visibility: GEO / AEO / Search visibility from real AI answers and Google results
+export const getVisibility = async () => (await api.get('/visibility')).data;
+export const checkVisibility = async (force = true) => (await api.post('/visibility/check', { force })).data;

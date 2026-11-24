@@ -447,7 +447,20 @@ async def _with_keyword_cards(db: AsyncSession, crawl: Crawl, scores: Dict[str, 
     ai_card = kt.ai_visibility_card(state)
     if ai_card:
         integrations["ai_visibility"] = ai_card
-    return {**scores, "integrations": integrations}
+    # Measured GEO / AEO / Search visibility (real AI answers and Google results), see app/services/visibility.py.
+    from app.services import visibility as vis
+    last = state.get("visibility") or {}
+    visibility = {
+        "measured": bool(last),
+        "running": vis.is_running(state),
+        "checked_at": last.get("checked_at"),
+        "scores": last.get("scores"),
+        "engines": last.get("engines"),
+        "google": last.get("google"),
+        "questions": [{"text": q.get("text"), "source": q.get("source")} for q in (last.get("questions") or [])],
+        "error": state.get("visibility_error"),
+    }
+    return {**scores, "integrations": integrations, "visibility": visibility}
 
 
 def _crawl_facts(crawl: Crawl, scores: Optional[dict] = None) -> dict:

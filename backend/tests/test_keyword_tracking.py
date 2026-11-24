@@ -370,7 +370,8 @@ def _gemini_response(text, titles):
 def test_parse_grounding_reads_sites_from_titles_not_redirects():
     out = kt.parse_grounding(_gemini_response("Try BloomX or Rival.", ["bloomx.in", "rival.com", "Some Title"]),
                              DOMAIN, "BloomX")
-    assert out == {"mentioned": True, "cited": True, "sources": ["rival.com"], "grounded": True}
+    assert out == {"mentioned": True, "cited": True, "sources": ["rival.com"], "grounded": True,
+                   "excerpt": "Try BloomX or Rival."}  # the answer text is kept so users can read it
     out = kt.parse_grounding(_gemini_response("Use Rival.", ["rival.com"]), DOMAIN, "BloomX")
     assert not out["mentioned"] and not out["cited"]
 
