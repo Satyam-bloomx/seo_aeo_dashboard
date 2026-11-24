@@ -486,6 +486,10 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
     } catch (_) {}
     setUrl(normalizedUrl);
 
+    // Forget the audit on screen before the new one has an id: otherwise the status poller starts on the
+    // previous (finished) audit, reports it "completed", and the new audit is never followed.
+    const previous = { crawlId, status };
+    setCrawlId(null);
     setIsAuditing(true);
     setStatus('running');
     setProgress(0);
@@ -543,8 +547,15 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
       setLatestByMode(prev => ({ ...prev, [auditMode]: { id: data.id, seed_url: normalizedUrl, status: 'running', mode: auditMode } }));
     } catch (error) {
       console.error('Failed to start audit:', error);
-      setStatus('failed');
       setIsAuditing(false);
+      if (previous.crawlId) {
+        // The server keeps the previous audit when a new one cannot start: show it again.
+        setCrawlId(previous.crawlId);
+        setStatus(previous.status || 'completed');
+        fetchPagesSince(previous.crawlId).then(setPages).catch(() => {});
+      } else {
+        setStatus('failed');
+      }
       toast.error('Failed to start audit crawl', {
         description: error.message || 'Please check backend server connection.',
       });
@@ -594,10 +605,10 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
   const lastPageIdRef = useRef(0);
   useEffect(() => { lastPageIdRef.current = 0; }, [crawlId]);
 
-  const fetchNewPages = useCallback(async () => {
+  const fetchNewPages = useCallback(async (isStale = () => false) => {
     if (!crawlId) return;
     const fresh = await fetchPagesSince(crawlId, lastPageIdRef.current);
-    if (fresh.length === 0) return;
+    if (isStale() || fresh.length === 0) return; // a newer audit took over: these pages belong to the old one
     const isFirstBatch = lastPageIdRef.current === 0;
     lastPageIdRef.current = fresh[fresh.length - 1].id;
     setPages(prev => (isFirstBatch ? fresh : [...prev, ...fresh]));
@@ -624,7 +635,8 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
         const fetched = Math.min(80, Math.floor(((data.pages_crawled || 0) / limit) * 80));
         const phaseFloor = { queued: 0, crawling: 0, helper: 80, analysing: 85, enriching: 92 }[data.phase] ?? 0;
         setProgress(Math.min(98, Math.max(fetched, phaseFloor)));
-        if (data.pages_crawled > 0) await fetchNewPages();
+        if (data.pages_crawled > 0) await fetchNewPages(() => cancelled);
+        if (cancelled) return; // another audit took over while waiting: this answer is about the old one
         delay = 2500;
 
         if (data.status === 'completed') {
@@ -634,11 +646,13 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
             // Post-processing and enrichment rewrite every page at the end: reload the full set once.
             try {
               const finalPages = await fetchPagesSince(crawlId);
+              if (cancelled) return;
               lastPageIdRef.current = finalPages.length ? finalPages[finalPages.length - 1].id : 0;
               setPages(finalPages);
             } catch (e) {
               console.error('Failed to fetch final pages:', e);
             }
+            if (cancelled) return;
             setIsAuditing(false);
             setShowCompletionBanner(true);
             fireCelebrationCannons();
