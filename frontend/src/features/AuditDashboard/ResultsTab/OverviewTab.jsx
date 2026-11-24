@@ -885,34 +885,23 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
       {/* 4 Score Bento Cards with React Spring 3D Tilt & Aceternity Spotlight */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-3.5 sm:gap-4">
 
-        {/* Site Health = share of URLs with zero errors (Ahrefs method). One URL gets a page check instead. */}
-        {isPageMode ? (
-          <SpringTiltBentoCard
-            title="Page Check"
-            subtitle="Errors on this page (single-page audit)"
-            headline={pageCheck ? pageCheck.errors : undefined}
-            headlineSuffix={pageCheck?.errors === 1 ? 'error' : 'errors'}
-            isDisconnected={!pageCheck}
-            statusText={!crawlSummary ? (pages?.length > 0 ? 'Calculating…' : 'Awaiting Audit URL')
-              : pageCheck ? `${plural(pageCheck.warnings, 'warning')} · run Whole site for Site Health` : 'Not checked'}
-            icon={Activity}
-            colorTheme={pageCheck?.errors ? 'rose' : 'emerald'}
-            onMouseMoveCard={handleMouseMoveSpotlight}
-          />
-        ) : (
-          <SpringTiltBentoCard
-            title="Site Health"
-            subtitle={sh?.provisional ? 'URLs with zero errors (provisional: small crawl)' : 'Share of URLs with zero errors'}
-            score={healthScore}
-            isDisconnected={Boolean(crawlSummary) && healthScore == null}
-            statusText={!crawlSummary ? (pages?.length > 0 ? 'Calculating scores…' : 'Awaiting Audit URL')
-              : healthScore == null ? (sh?.reason || 'Not scored')
+        {/* Site Health: share of URLs with zero errors (Ahrefs method). Page Health on a single-page audit:
+            each error on the page removes a share of the score (high 40%, medium 25%). Errors only. */}
+        <SpringTiltBentoCard
+          title={isPageMode ? 'Page Health' : 'Site Health'}
+          subtitle={isPageMode ? 'Errors on this page (warnings never count)'
+            : (sh?.provisional ? 'URLs with zero errors (provisional: small crawl)' : 'Share of URLs with zero errors')}
+          score={healthScore}
+          isDisconnected={Boolean(crawlSummary) && healthScore == null}
+          statusText={!crawlSummary ? (pages?.length > 0 ? 'Calculating scores…' : 'Awaiting Audit URL')
+            : healthScore == null ? (sh?.reason || 'Not scored')
+            : isPageMode
+              ? (pageCheck?.errors ? `${plural(pageCheck.errors, 'error')} on this page` : 'No errors on this page')
               : `${plural(sh.urls_with_errors, 'URL')} of ${sh.urls_total} with errors${sh.capped ? ' · capped by a site-wide error' : ''}`}
-            icon={Activity}
-            colorTheme="emerald"
-            onMouseMoveCard={handleMouseMoveSpotlight}
-          />
-        )}
+          icon={Activity}
+          colorTheme="emerald"
+          onMouseMoveCard={handleMouseMoveSpotlight}
+        />
 
         {/* Technical SEO: average of the category scores; the breakdown shows each category and its checks */}
         <SpringTiltBentoCard
@@ -968,15 +957,8 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
 
       <ScoreExplanation sections={[
         isPageMode
-          ? { title: 'Page Check', note: 'single-page audit: errors on this page; Site Health needs a whole-site crawl',
-              score: pageCheck ? 0 : null, scoreText: pageCheck ? plural(pageCheck.errors, 'error') : null,
-              rows: (pageCheck?.error_checks || []).map(id => {
-                const rule = (crawlSummary?.rules || []).find(r => r.id === id);
-                return { label: id, value: 'error',
-                  detail: rule?.detail || (rule?.ours
-                    ? 'Our classification (Screaming Frog has no equivalent check).'
-                    : 'Screaming Frog: Issue of high or medium priority.') };
-              }) }
+          ? { title: 'Page Health', note: 'single-page audit: each error removes a share of the score (high priority 40%, medium 25%); warnings never count',
+              score: healthScore, rows: crawlSummary?.crawl?.score_explanation || crawlSummary?.score_explanation }
           : { title: 'Site Health', note: sh?.provisional ? 'provisional: fewer than 30 URLs crawled' : null,
               score: healthScore, rows: crawlSummary?.crawl?.score_explanation || crawlSummary?.score_explanation },
         ...visibilitySections(vis.data?.last?.scores),

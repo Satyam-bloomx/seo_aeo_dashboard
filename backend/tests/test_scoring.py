@@ -65,9 +65,11 @@ def test_explanation_splits_the_lost_points_exactly():
     assert labels[0] == "H1: Missing"  # 1.5 URLs' worth: the biggest share
 
 
-def test_single_page_audit_gets_a_page_check_not_a_score():
+def test_single_page_audit_gets_page_health_from_its_errors():
     r = compute_scores([page(1, H1={"Missing": True}, Meta_Description={"Missing": True})], mode="page")
-    assert r["site_health"]["score"] is None and "Single-page" in r["site_health"]["reason"]
+    sh = r["site_health"]
+    assert sh["kind"] == "page" and sh["score"] == 75 and sh["provisional"] is False  # one medium error: -25%
+    assert [i["impact"] for i in r["score_explanation"]] == [-25]
     assert r["page_check"]["errors"] == 1 and r["page_check"]["opportunities"] == 1
     assert r["page_check"]["error_checks"] == ["H1: Missing"] and r["page_check"]["passed"] is False
     dup = result(r, "Page Titles: Duplicate")
@@ -269,3 +271,16 @@ def test_category_scores_average_over_urls():
         p["audit_data"].setdefault("H1", {"Missing": False})
     r = compute_scores(pages)
     assert r["categories"]["On-page"]["score"] == 95  # 2 of 10 URLs lose 25 points: (8 x 100 + 2 x 75) / 10
+
+
+def test_page_health_compounds_errors_and_counts_site_wide_ones():
+    """Two high-priority errors (Core Web Vitals on the page, invalid robots.txt site-wide): 100 -> 60 -> 36."""
+    p = page(1)
+    p["audit_data"]["PageSpeed"] = {"mobile": {"field_data": {"available": True, "lcp_p75_ms": 2585, "inp_p75_ms": 564, "cls_p75": 0.01}}}
+    robots = {"id": "robots_malformed_user_agent", "label": "robots.txt has malformed User-agent lines",
+              "type": "Issue", "priority": "High", "source": "robots.txt", "detail": "x"}
+    r = compute_scores([p], mode="page", site_facts={"site_issues": [robots]})
+    assert r["site_health"]["score"] == 36 and r["site_health"]["band"] == "Fair"
+    assert sum(i["impact"] for i in r["score_explanation"]) == -64
+    warnings_only = page(2, H1={"Multiple": True}, Meta_Description={"Missing": True})
+    assert compute_scores([warnings_only], mode="page")["site_health"]["score"] == 100  # warnings never cut health

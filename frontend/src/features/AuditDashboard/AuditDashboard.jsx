@@ -1934,7 +1934,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
                       Audit complete
                     </h4>
                     <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                      Site Health (or a page check for single pages), issues, AEO and GEO Readiness are below. Speed and AI answer checks appear when their integrations are connected.
+                      Site Health (Page Health for single pages), Technical SEO, and measured AEO, GEO and Search Visibility are below. Visibility is measured with your connected AI engines and SerpAPI.
                     </p>
                   </div>
                 </div>

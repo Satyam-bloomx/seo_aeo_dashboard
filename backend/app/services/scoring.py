@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 from app.services.fetch_outcome import is_uncounted
 
-SCORING_VERSION = "2026.12-2"
+SCORING_VERSION = "2026.12-3"
 BANDS = [(91, "Excellent"), (71, "Good"), (31, "Fair"), (0, "Weak")]  # Ahrefs Health Score bands
 MIN_URLS_FOR_SCORE = 10        # fewer crawled URLs: no site score (our threshold; no vendor publishes one)
 PROVISIONAL_BELOW = 30         # 10-29 URLs: the score is shown as provisional
@@ -409,6 +409,34 @@ def _explain(score_before_cap: int, url_errors: Dict[Any, List[str]], n_urls: in
     return [r for r in rows if r["impact"]] + [r for r in rows if not r["impact"]]
 
 
+# Page Health (single-page audits): health counts errors only, as Site Health does. One URL has no share of URLs,
+# so each error removes a share of what is left: high priority 40%, medium 25% (two high errors: 100 -> 60 -> 36).
+PAGE_ERROR_SHARE = {"High": 0.40, "Medium": 0.25}
+
+
+def _page_health(page_errors: List[str], site_errors: List[dict], cls_of: Dict[str, tuple],
+                 by_id: Dict[str, Rule]) -> tuple:
+    """(score, explanation rows) for one page: errors on the page plus site-wide errors, which apply to it too."""
+    found = [(rid, cls_of[rid][1], "page") for rid in page_errors] + \
+            [(f"Site: {i.get('label')}", i.get("priority", "High"), "site") for i in site_errors]
+    found.sort(key=lambda f: -PAGE_ERROR_SHARE.get(f[1], 0))
+    value, rows = 100.0, []
+    for label, priority, where in found:
+        share = PAGE_ERROR_SHARE.get(priority, 0)
+        lost = value * share
+        value -= lost
+        rule = by_id.get(label)
+        rows.append({"label": label, "impact": lost,
+                     "detail": (f"{priority} priority error{' (site-wide: applies to every page)' if where == 'site' else ''}"
+                                f"{' (our classification)' if rule is not None and rule.ours else ''}: removes "
+                                f"{int(share * 100)}% of the remaining score.")})
+    score = round(value)
+    # whole points that sum exactly to score - 100
+    for row, pts in zip(rows, _apportion(100 - score, [r["impact"] for r in rows])):
+        row["impact"] = -pts
+    return score, rows
+
+
 def compute_scores(pages: List[dict], mode: str = "site", integration_data: Optional[dict] = None,
                    site_facts: Optional[dict] = None) -> Dict[str, Any]:
     """pages: dicts with id, url, status_code, content_type, indexability, indexability_status, audit_data.
@@ -467,7 +495,11 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
     reason = None
     explanation: List[Dict[str, Any]] = []
     if not site_mode:
-        reason = "Single-page audit: one URL can only score 0 or 100, so it gets a page check instead. Run a whole-site audit for Site Health."
+        if internal:
+            score, explanation = _page_health(url_errors.get(internal[0].get("id")) or [], site_errors, cls_of, by_id)
+            base = score
+        else:
+            reason = "The page could not be checked."
     elif n_urls < MIN_URLS_FOR_SCORE:
         reason = f"Only {n_urls} URL{'s' if n_urls != 1 else ''} could be checked; Site Health needs at least {MIN_URLS_FOR_SCORE}."
     else:
@@ -590,7 +622,8 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
             "base_score": base,  # before the site-wide error cap
             "band": _band(score),
             "reason": reason,  # why there is no score, when there is none
-            "provisional": score is not None and n_urls < PROVISIONAL_BELOW,
+            "kind": "page" if not site_mode else "site",  # Page Health on single-page audits
+            "provisional": site_mode and score is not None and n_urls < PROVISIONAL_BELOW,
             "url_pass_rate": base,
             "urls_total": n_urls,
             "urls_with_errors": len(failing_urls),
