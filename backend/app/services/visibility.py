@@ -1,12 +1,13 @@
 """Measured visibility: GEO, AEO and Search visibility from real answers and real Google results, never from
 on-page heuristics or a model's opinion.
 
-* Five non-branded questions per site (from the Keywords list; missing ones are generated from the crawled site and
+* Three non-branded questions per site (from the Keywords list; missing ones are generated from the crawled site and
   marked "auto"). Every question actually asked is shown to the user with every answer.
 * GEO: each question is asked RUNS_PER_ENGINE times on every connected AI engine *with live web search*
   (Gemini with Google Search grounding, ChatGPT with web search, Claude with web search). A plain model call answers
   from training data and would measure what the model remembers, not current AI search, so it is never used.
-  Score = share of answers that mention or cite the site, with a 95% interval, labelled with the engines used.
+  Score = share of answers that mention or cite the site, with a 95% interval (wide with only a few answers, and
+  shown as such), labelled with the engines used. Only keys the user connected are used, never the server's.
 * AEO: each question searched on Google through SerpAPI (one page + the AI Overview). Score = share of the
   questions where Google showed an answer feature (AI Overview, featured snippet, People Also Ask) in which the
   site appears.
@@ -25,8 +26,8 @@ import httpx
 
 from app.services import keyword_tracking as kt
 
-VISIBILITY_QUESTIONS = 5
-RUNS_PER_ENGINE = 2
+VISIBILITY_QUESTIONS = 3   # questions per site
+RUNS_PER_ENGINE = 1        # each question asked once per engine (keeps the cost low)
 ENGINES = ("gemini", "openai", "claude")
 ENGINE_LABEL = {"gemini": "Gemini", "openai": "ChatGPT", "claude": "Claude"}
 ENGINE_HOW = {"gemini": "Gemini with Google Search grounding", "openai": "ChatGPT (OpenAI) with web search",
@@ -45,7 +46,7 @@ class EngineLimit(Exception):
 # ---------------------------------------------------------------- questions
 
 def visibility_questions(state: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """The questions the check asks: the first five non-branded questions of the site's list."""
+    """The questions the check asks: the first VISIBILITY_QUESTIONS non-branded questions of the site's list."""
     return [i for i in (state.get("items") or []) if i.get("kind") == "question" and not i.get("branded")][:VISIBILITY_QUESTIONS]
 
 
@@ -82,7 +83,7 @@ async def generate_questions(integrations: Dict[str, Any], pages: List[Any], dom
 
 async def ensure_questions(state: Dict[str, Any], integrations: Dict[str, Any], pages: List[Any], domain: str,
                            location: str) -> Tuple[List[Dict[str, Any]], int]:
-    """Top the list up to five non-branded questions with ones generated from the crawled site (marked "auto").
+    """Top the list up to VISIBILITY_QUESTIONS non-branded questions, generated from the crawled site ("auto").
     Returns (questions, how many were generated)."""
     have = visibility_questions(state)
     if len(have) >= VISIBILITY_QUESTIONS:

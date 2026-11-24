@@ -438,10 +438,8 @@ class PromptEngine:
         except Exception as e:
             print(f"Notice resolving integrations in PromptEngine: {e}")
 
-        for provider, env_name in (("gemini", "GEMINI_API_KEY"), ("openai", "OPENAI_API_KEY"), ("claude", "ANTHROPIC_API_KEY")):
-            if provider not in integrations and os.getenv(env_name):
-                integrations[provider] = type("EnvInt", (), {"api_key": os.getenv(env_name), "connected": True,
-                                                             "config_json": {}, "from_env": True})()
+        # Only keys the workspace connected itself: the server's own AI keys are never used for a user's audit,
+        # so nobody spends the operator's quota (or money) without knowing.
         return integrations
 
     @classmethod

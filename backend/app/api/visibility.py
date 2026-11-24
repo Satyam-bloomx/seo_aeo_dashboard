@@ -1,6 +1,6 @@
 """Measured visibility (GEO, AEO, Search visibility) for the workspace's audited site.
 
-GET  /visibility        the 5 questions, the last measurement, which engines are connected
+GET  /visibility        the questions, the last measurement, which engines are connected
 POST /visibility/check  measure now (in the background; poll GET)
 
 A measurement also starts by itself when an audit completes (run_after_audit), reusing one less than a day old
@@ -74,7 +74,7 @@ async def get_visibility(db: AsyncSession = Depends(get_db), user: UserSession =
 
 
 async def run_measurement(project_id: int, crawl_id: int, user_id: Optional[str], force: bool) -> None:
-    """Top the questions up to five, measure, save. Never raises: failures are saved as the reason."""
+    """Top the questions up, measure, save. Never raises: failures are saved as the reason."""
     domain = ""
     try:
         async with AsyncSessionLocal() as db:

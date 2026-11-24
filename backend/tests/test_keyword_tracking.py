@@ -327,7 +327,13 @@ def test_api_list_check_and_dashboard_card(client, monkeypatch):
     # No SerpAPI key: refused before any search.
     assert client.post("/api/keywords/check", headers=headers).status_code == 400
 
-    monkeypatch.setenv("SERPAPI_API_KEY", "test-key")
+    # The server's environment key must never be used; only the workspace's own connected key.
+    monkeypatch.setenv("SERPAPI_API_KEY", "server-key")
+    assert client.post("/api/keywords/check", headers=headers).status_code == 400
+
+    async def workspace_key(_db, _project_id):
+        return "test-key"
+    monkeypatch.setattr(kt, "resolve_serpapi_key", workspace_key)
     seen = {}
 
     async def fake_run_check(items, domain, location, business_name="", serp_key=None, gemini=None, gsc=None,

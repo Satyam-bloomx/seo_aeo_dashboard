@@ -137,12 +137,12 @@ async def save_site_state(db: AsyncSession, project_id: int, user_id: Optional[s
 
 
 async def resolve_serpapi_key(db: AsyncSession, project_id: int) -> Optional[str]:
-    """The workspace's own SerpAPI key, else the operator's environment key."""
+    """The workspace's own SerpAPI key; the server's environment key is never used for a user's searches."""
     row = (await db.execute(select(Integration).where(
         Integration.project_id == project_id, Integration.integration_type == "serpapi",
         Integration.connected == True))).scalars().first()  # noqa: E712
     key = (getattr(row, "api_key", None) or "").strip() if row else ""
-    return key or (os.getenv("SERPAPI_API_KEY") or "").strip() or None
+    return key or None
 
 
 def credit_estimate(items: List[Dict[str, Any]]) -> Dict[str, int]:

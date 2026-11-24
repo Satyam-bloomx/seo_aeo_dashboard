@@ -118,14 +118,7 @@ class EnrichmentService:
             # Check environment variables as well
             if "pagespeed" not in integrations and os.getenv("PAGESPEED_API_KEY"):
                 integrations["pagespeed"] = type("EnvIntegration", (), {"api_key": os.getenv("PAGESPEED_API_KEY"), "connected": True})()
-            if "gemini" not in integrations and os.getenv("GEMINI_API_KEY"):
-                integrations["gemini"] = type("EnvIntegration", (), {"api_key": os.getenv("GEMINI_API_KEY"), "connected": True})()
-            if "openai" not in integrations and os.getenv("OPENAI_API_KEY"):
-                integrations["openai"] = type("EnvIntegration", (), {"api_key": os.getenv("OPENAI_API_KEY"), "connected": True})()
-            if "perplexity" not in integrations and os.getenv("PERPLEXITY_API_KEY"):
-                integrations["perplexity"] = type("EnvIntegration", (), {"api_key": os.getenv("PERPLEXITY_API_KEY"), "connected": True})()
-            if "serpapi" not in integrations and os.getenv("SERPAPI_API_KEY"):
-                integrations["serpapi"] = type("EnvIntegration", (), {"api_key": os.getenv("SERPAPI_API_KEY"), "connected": True})()
+            # AI and SerpAPI keys come only from the workspace's own integrations (never the server's environment).
 
             # 3. Fetch Crawled Pages
             res_pages = await self.db.execute(

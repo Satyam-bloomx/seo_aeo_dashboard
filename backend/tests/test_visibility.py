@@ -140,9 +140,31 @@ def test_reuse_only_for_the_same_questions_within_a_day():
     assert not vis.is_fresh(fresh, QUESTIONS[:4] + [{"text": "a different question?"}])
 
 
-def test_only_non_branded_questions_are_asked_and_at_most_five():
+def test_only_non_branded_questions_are_asked_and_at_most_three():
     items = QUESTIONS + [{"id": "b", "text": "is acme gems legit?", "kind": "question", "branded": True},
                          {"id": "k", "text": "ruby price", "kind": "keyword", "branded": False},
                          {"id": "q9", "text": "sixth question?", "kind": "question", "branded": False}]
     picked = vis.visibility_questions({"items": items})
-    assert [q["id"] for q in picked] == ["q0", "q1", "q2", "q3", "q4"]
+    assert [q["id"] for q in picked] == ["q0", "q1", "q2"]  # 3 questions, each asked once per engine
+    assert vis.VISIBILITY_QUESTIONS == 3 and vis.RUNS_PER_ENGINE == 1
+
+
+def test_only_the_workspace_keys_are_used_never_the_servers(monkeypatch):
+    """The server's environment keys must not be spent on users' audits."""
+    import asyncio as _a
+    from app.services.prompt_engine import PromptEngine
+    from app.services import keyword_tracking as kt
+    monkeypatch.setenv("GEMINI_API_KEY", "server-gemini")
+    monkeypatch.setenv("OPENAI_API_KEY", "server-openai")
+    monkeypatch.setenv("SERPAPI_API_KEY", "server-serp")
+
+    class _Res:
+        def scalars(self): return self
+        def all(self): return []
+        def first(self): return None
+
+    class _DB:
+        async def execute(self, *_a, **_k): return _Res()
+    integrations = _a.run(PromptEngine.resolve_integrations(_DB(), 1))
+    assert integrations == {} and vis.connected_engines(integrations) == {}
+    assert _a.run(kt.resolve_serpapi_key(_DB(), 1)) is None

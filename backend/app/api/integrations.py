@@ -122,8 +122,8 @@ class LinkGoogleAccountRequest(BaseModel):
 
 # Environment fallbacks the enrichment step uses when a workspace has no key of its own
 # (app/services/enrichment_service.py). Shown in the UI so "Disconnected" never hides a key that is in use.
-SERVER_KEY_ENV = {"pagespeed": "PAGESPEED_API_KEY", "gemini": "GEMINI_API_KEY", "openai": "OPENAI_API_KEY",
-                  "perplexity": "PERPLEXITY_API_KEY", "serpapi": "SERPAPI_API_KEY"}
+# Only PageSpeed (a free Google API) still falls back to the server's key; AI and SerpAPI keys must be the user's.
+SERVER_KEY_ENV = {"pagespeed": "PAGESPEED_API_KEY"}
 
 SUPPORTED_SERVICES = [
     "pagespeed",
@@ -823,13 +823,6 @@ async def get_provider_models(
         if item.config_json and isinstance(item.config_json, dict):
             selected_model = item.config_json.get("selected_model")
 
-    if not key_to_use:
-        if service == "gemini":
-            key_to_use = os.getenv("GEMINI_API_KEY")
-        elif service == "openai":
-            key_to_use = os.getenv("OPENAI_API_KEY")
-        elif service == "claude":
-            key_to_use = os.getenv("ANTHROPIC_API_KEY")
 
     # If already cached in DB and not explicitly refreshing, return cached models
     if not refresh and item and item.config_json and isinstance(item.config_json, dict) and item.config_json.get("available_models"):

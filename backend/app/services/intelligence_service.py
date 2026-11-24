@@ -1298,9 +1298,9 @@ class IntelligenceService:
             ]
         }
 
-        # Check for Gemini API key
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
+        # The workspace's own Gemini key only (never the server's environment key)
+        api_key = None
+        if True:
             int_res = await db.execute(
                 select(Integration).where(
                     Integration.project_id == project_id,
