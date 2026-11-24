@@ -37,7 +37,15 @@ def _pattern(url: str) -> str:
     return parts[0].lower() if parts else ""
 
 
+def _is_product(p: dict) -> bool:
+    s = p["structured"]
+    return p.get("page_type") == "Product" or bool(s.get("Product_SKU") or s.get("Product_Price") or s.get("Product_Group_ID"))
+
+
 def _is_variant(a: dict, b: dict) -> bool:
+    """Only products have variants: two blog posts titled "Top 5 tips" and "Top 10 tips" are not variants."""
+    if not (_is_product(a) and _is_product(b)):
+        return False
     ga, gb = a["structured"].get("Product_Group_ID"), b["structured"].get("Product_Group_ID")
     if ga and ga == gb:
         return True

@@ -589,8 +589,11 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
   const issueCounts = crawlSummary?.issues;
   const plural = (n, word) => `${n} ${n === 1 ? word : word.endsWith('y') ? `${word.slice(0, -1)}ies` : `${word}s`}`;
   const answerReadiness = crawlSummary?.integrations?.answer_readiness;
-  const structuredScore = crawlSummary?.categories?.['Structured data']?.score ?? null;
-  const pagesWithSchema = (pages || []).filter(p => (p.audit_data?.Structured_Data?.Schema_Types || []).length > 0).length;
+  // Share of HTML pages with valid structured data: a site with no schema at all must not read 100.
+  const htmlPages = (pages || []).filter(p => p.status_code === 200 && String(p.content_type || 'text/html').toLowerCase().includes('html'));
+  const pagesWithSchema = htmlPages.filter(p => (p.audit_data?.Structured_Data?.Schema_Types || []).length > 0
+    && !p.audit_data?.Structured_Data?.['Invalid JSON-LD']).length;
+  const structuredScore = crawlSummary && htmlPages.length ? Math.round(100 * pagesWithSchema / htmlPages.length) : null;
 
   // 3. AEO (Answer Engine Optimization) - checks crawled pages & active AI integration
   const aeoData = useMemo(() => computeAeoData(pages, integrationsStatus), [pages, integrationsStatus]);
@@ -941,7 +944,7 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
           subtitle="Schema presence & validity"
           score={structuredScore}
           isDisconnected={false}
-          statusText={crawlSummary ? `${pagesWithSchema} of ${pages?.length || 0} URLs have schema` : (pages?.length > 0 ? 'Calculating scores…' : 'Awaiting Audit URL')}
+          statusText={crawlSummary ? `${pagesWithSchema} of ${htmlPages.length} pages have valid schema` : (pages?.length > 0 ? 'Calculating scores…' : 'Awaiting Audit URL')}
           actionText={crawlSummary ? 'View pages →' : undefined}
           onAction={() => onNavigateToExplorer?.('Structured_Data')}
           icon={ShieldCheck}

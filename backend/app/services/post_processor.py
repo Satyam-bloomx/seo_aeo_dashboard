@@ -317,7 +317,8 @@ class PostProcessor:
             indexable_pages = [p for p in pages if self.is_page_indexable(p) and p.audit_data and "Content" in p.audit_data]
             verdicts = classify_duplicates([
                 {"id": p.id, "url": p.url, "content_hash": getattr(p, "content_hash", None),
-                 "content": p.audit_data.get("Content") or {}, "structured": p.audit_data.get("Structured_Data") or {}}
+                 "content": p.audit_data.get("Content") or {}, "structured": p.audit_data.get("Structured_Data") or {},
+                 "page_type": (p.audit_data.get("Page_Type") or {}).get("Type")}
                 for p in indexable_pages
             ])
             for p in indexable_pages:
@@ -429,7 +430,8 @@ class PostProcessor:
                 print(f"[PostProcessor] robots.txt validation failed: {type(e).__name__}")
                 site_issues = []
             coverage = ((crawl_row.summary or {}).get("coverage") or {}) if crawl_row else {}
-            crawl_was_cut_short = bool(coverage.get("not_crawled_page_limit") or coverage.get("not_crawled_depth_limit"))
+            crawl_was_cut_short = bool(coverage.get("not_crawled_page_limit") or coverage.get("not_crawled_depth_limit")
+                                       or coverage.get("excluded_by_rules"))
             if self.mode != "page" and sitemap_only and not crawl_was_cut_short:
                 # Only meaningful when the crawl followed every link: otherwise the limit, not the site, left them out.
                 site_issues.append({

@@ -31,12 +31,21 @@ def _issue(id_: str, label: str, type_: str, priority: str, detail: str) -> Dict
 
 def validate_robots_txt(text: Optional[str], status: Optional[int] = 200, size_bytes: Optional[int] = None) -> List[Dict[str, Any]]:
     """Findings for one robots.txt body. status None means the file could not be fetched at all."""
-    if status is None or (status >= 500):
-        return [_issue("robots_unreachable", "robots.txt could not be fetched", "Issue", "High",
-                       f"The server answered {'nothing' if status is None else f'HTTP {status}'}. Google treats an "
-                       "unreachable robots.txt as a full disallow and may stop crawling the site.")]
+    if status is None:
+        # Our request failed (DNS, timeout, TLS): it may be our network, so it is reported but never caps the score.
+        return [_issue("robots_unverified", "robots.txt could not be checked", "Warning", "High",
+                       "The request for robots.txt failed before the server answered, so it could not be validated.")]
+    if status >= 500:
+        return [_issue("robots_unreachable", "robots.txt returns a server error", "Issue", "High",
+                       f"The server answered HTTP {status}. Google treats an unreachable robots.txt as a full disallow "
+                       "and may stop crawling the site.")]
     if status >= 400 or not text:
         return []  # no robots.txt: everything may be crawled (RFC 9309), which is a valid choice
+    text = text.lstrip("\ufeff")  # a byte-order mark must not turn the first line into an unknown field
+    if text.lstrip()[:1] == "<":
+        return [_issue("robots_is_html", "robots.txt returns an HTML page", "Warning", "Medium",
+                       "The URL answers with a web page instead of a robots.txt file, so crawlers find no rules and "
+                       "crawl everything. Serve a plain-text file, or return 404 if there are no rules.")]
 
     issues: List[Dict[str, Any]] = []
     bad_agents, orphan_rules, unparseable, unknown, bad_sitemaps = [], [], [], [], []

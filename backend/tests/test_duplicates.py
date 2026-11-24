@@ -82,3 +82,11 @@ def test_large_template_clusters_stay_fast():
     start = time.time()
     classify_duplicates(pages)
     assert time.time() - start < 20
+
+
+def test_blog_posts_with_numbered_titles_are_not_product_variants():
+    """'Top 5 tips' vs 'Top 10 tips' share a name key, but only products have variants."""
+    a = _page(1, "https://blog.test/top-5-tips", "Top 5 tips. " + TEMPLATE, "Top 5 tips for better sleep")
+    b = _page(2, "https://blog.test/top-10-tips", "Top 10 tips. " + TEMPLATE, "Top 10 tips for better sleep")
+    v = classify_duplicates([a, b])
+    assert not v[1]["Product Variants"] and v[1]["Near Duplicates"]

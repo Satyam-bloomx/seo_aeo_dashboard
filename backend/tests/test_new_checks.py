@@ -98,3 +98,38 @@ def test_heavy_html_and_large_dom_are_flagged():
     assert heavy["Validation"]["DOM Over 1,400 Elements"] is True and heavy["Validation"]["DOM Elements"] > 1400
     light = _ad(("", "<main><p>small page</p></main>"))
     assert light["Validation"]["HTML Over 500KB"] is False and light["Validation"]["DOM Over 1,400 Elements"] is False
+
+
+# ---------------------------------------------------------------- general websites, not one Shopify store
+
+def test_wrapper_class_with_sidebar_does_not_hide_the_content():
+    """A theme wrapper such as <div class="layout-sidebar"> around the whole page is content, not navigation."""
+    body = ("<div class='site layout-sidebar-left'><div class='nav-menu'>Home About Blog Contact</div>"
+            "<h1>Guide</h1><p>" + "Real article text about the topic. " * 40 + "</p></div>")
+    ad = _ad(("", body))
+    assert ad["Content"]["Main Content Words"] >= 200 and ad["Content"]["Empty Main Content"] is False
+
+
+def test_robots_with_byte_order_mark_html_page_and_network_failure():
+    assert validate_robots_txt("\ufeffUser-agent: *\nDisallow: /private\n") == []
+    html = validate_robots_txt("<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width'>")
+    assert [i["id"] for i in html] == ["robots_is_html"] and html[0]["type"] == "Warning"
+    ours = validate_robots_txt(None, None)  # our request failed: reported, never an error
+    assert ours[0]["type"] == "Warning"
+
+
+def test_promotions_are_not_statistics():
+    from app.services.extractor import count_statistics
+    assert count_statistics("Save 20% today. Flat 30% on beads. Up to 50% off. Get 10% cashback.") == 0
+    assert count_statistics("Trusted by 50,000+ clients; studies show 30% fewer cases.") == 2
+
+
+def test_urls_missing_from_a_partial_sitemap_are_a_warning_not_an_error():
+    from app.services.scoring import RULES
+    rule = next(r for r in RULES if r.id == "Sitemaps: URLs Not In Sitemap")
+    assert rule.type == "Warning" and rule.ours is True
+
+
+def test_short_identical_pages_are_not_exact_duplicates():
+    a = _ad(("", "<main><h1>Login</h1><p>Sign in to your account</p></main>"), url="https://e.com/account/login")
+    assert a["Content"]["Main_Text_Hash"] is None  # under 30 words: not compared as content

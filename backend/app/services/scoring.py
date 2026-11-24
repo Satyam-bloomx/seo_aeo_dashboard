@@ -210,7 +210,7 @@ RULES: List[Rule] = [
     _r("Content", "Soft 404 Pages", W, H),
     _r("Content", "Low Content Pages", O, M),
     # Nothing but a heading inside the menu and footer (judged on the content area).
-    _r("Content", "Empty Main Content", W, H, ours=True),
+    _r("Content", "Empty Main Content", W, M, ours=True),
     _r("Content", "Lorem Ipsum Placeholder", W, H),
     _r("Content", "Readability Difficult", O, L),
     _r("Content", "Readability Very Difficult", O, L),
@@ -260,7 +260,9 @@ RULES: List[Rule] = [
     _r("Links", "Pages With High Crawl Depth", O, M, scope="site"),
     _r("Links", "Pages With High Internal Outlinks", W, L, scope="site"),
     _r("Sitemaps", "Non-Indexable URLs in Sitemap", I, M, scope="site"),
-    _r("Sitemaps", "URLs Not In Sitemap", I, M, scope="site"),
+    # Screaming Frog lists this as an Issue, but a page missing from a partial sitemap is still found through links
+    # (Ahrefs treats it as a notice); as an error it would fail pagination and archive pages on most sites.
+    _r("Sitemaps", "URLs Not In Sitemap", W, M, scope="site", ours=True),
     # ---- Core Web Vitals on real users: an error on the measured page (our classification)
     _r("PageSpeed", "Core Web Vitals Failing (Real Users)", I, H, applies="integration", ev=_cwv_failing, ours=True),
     # ---- Search Console / GA4 findings: listed, never part of Site Health

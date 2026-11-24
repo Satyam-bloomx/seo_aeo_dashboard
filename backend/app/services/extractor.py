@@ -373,6 +373,14 @@ def classify_page_type(url: str, soup, schema_types, pagination: Dict[str, Any])
 STAT_RE = re.compile(
     r"(?<![\w.$€£₹])\d[\d,]*(?:\.\d+)?\s?(?:%|percent\b|per cent\b|million\b|billion\b|thousand\b|times\b|x\b|\+)"
     r"(?!\s*(?:off|discount|cashback)\b)", re.I)
+PROMO_BEFORE = re.compile(r"(?:save|flat|upto|up to|extra|get|off|discount|sale)\W{0,3}(?:\w+\W{1,3}){0,1}$", re.I)
+
+
+def count_statistics(text: str) -> int:
+    """Quotable figures, minus promotions: "Save 20%", "Flat 30%" and "Up to 50%" are offers, not evidence."""
+    return sum(1 for m in STAT_RE.finditer(text) if not PROMO_BEFORE.search(text[max(0, m.start() - 20):m.start()]))
+
+
 # Links that are not citations of a source: app stores, shop platforms, payment and maps.
 NON_SOURCE_HOSTS = ("apps.apple.com", "itunes.apple.com", "play.google.com", "apps.shopify.com", "shopify.com",
                     "maps.google.com", "goo.gl", "razorpay.com", "paypal.com", "stripe.com", "paytm.com")
@@ -457,7 +465,7 @@ def geo_facts(soup, base_domain: str, structured: Dict[str, Any], script_count: 
 
     return {
         "Words": words,
-        "Statistics": len(STAT_RE.findall(text)),
+        "Statistics": count_statistics(text),
         "Quotations": len(region.find_all(["blockquote", "q"])) + len(QUOTE_RE.findall(text)),
         "Cited_Domains": len(cited),
         "Question_Headings": sum(1 for h in headings if h.endswith("?") or QUESTION_START.match(h)),
@@ -482,6 +490,10 @@ BOILERPLATE_ATTR = re.compile(
 
 
 def _is_boilerplate(tag) -> bool:
+    # A wrapper that holds the page's heading or main/article is the content, whatever its class says
+    # (e.g. <div class="layout-sidebar"> around a whole WordPress page).
+    if tag.find(["h1", "main", "article"]) is not None:
+        return False
     if tag.name in BOILERPLATE_TAGS or tag.get("role") in ("navigation", "banner", "contentinfo"):
         return True
     marker = " ".join(tag.get("class") or []) + " " + (tag.get("id") or "")
@@ -722,7 +734,8 @@ def extract_seo_metrics(html_content: str, url: str, headers: Dict[str, str] = N
         "Empty Main Content": main_words < 50,
         "Main Content Words": main_words,
         # Duplicate fingerprints of the content area (menus and footers excluded), read by the post-processor.
-        "Main_Text_Hash": hashlib.md5(main_text.lower().encode("utf-8")).hexdigest() if main_words else None,
+        # Only substantial text is compared: two pages that just say "Login" are not duplicate content.
+        "Main_Text_Hash": hashlib.md5(main_text.lower().encode("utf-8")).hexdigest() if main_words >= 30 else None,
         "MinHash": minhash_signature(main_text) if main_words >= 30 else None,
         "Name_Key": product_name_key(h1_text or title_text),
         "Soft 404 Pages": "not found" in title_text.lower() or "404" in title_text,
