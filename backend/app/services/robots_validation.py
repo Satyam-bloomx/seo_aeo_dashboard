@@ -126,4 +126,9 @@ async def check_robots_txt(seed_url: str) -> List[Dict[str, Any]]:
             resp = await get_limited(client, url, max_bytes=MAX_BYTES + 1024)
     except (UnsafeURLError, httpx.HTTPError):
         return validate_robots_txt(None, None)
-    return validate_robots_txt(resp.text, resp.status_code, len(resp.content))
+    # get_limited returns decoded text only (no raw bytes); a truncated body means it exceeded the read limit.
+    size = MAX_BYTES + 1 if resp.truncated else len((resp.text or "").encode("utf-8"))
+    text = resp.text
+    if "html" in (resp.headers.get("content-type") or "").lower() and not (text or "").lstrip().startswith("<"):
+        text = "<" + (text or "")  # served as an HTML page: report it as such
+    return validate_robots_txt(text, resp.status_code, size)

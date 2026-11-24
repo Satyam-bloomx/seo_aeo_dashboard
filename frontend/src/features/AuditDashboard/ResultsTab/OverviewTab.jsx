@@ -587,6 +587,7 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
   const sh = crawlSummary?.site_health;
   const pageCheck = crawlSummary?.page_check;
   const issueCounts = crawlSummary?.issues;
+  const issueTotal = issueCounts ? issueCounts.errors.checks + issueCounts.warnings.checks + issueCounts.opportunities.checks : 0;
   const plural = (n, word) => `${n} ${n === 1 ? word : word.endsWith('y') ? `${word.slice(0, -1)}ies` : `${word}s`}`;
   const answerReadiness = crawlSummary?.integrations?.answer_readiness;
   // Share of HTML pages with valid structured data: a site with no schema at all must not read 100.
@@ -888,15 +889,15 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
           />
         )}
 
-        {/* Issues found, by Screaming Frog type: only errors set Site Health */}
+        {/* Every issue found, by Screaming Frog type: only errors set Site Health */}
         <SpringTiltBentoCard
-          title="Issues"
-          subtitle="Errors · warnings · opportunities"
-          headline={issueCounts ? issueCounts.errors.checks : undefined}
-          headlineSuffix={issueCounts?.errors.checks === 1 ? 'error type' : 'error types'}
+          title="Issues Found"
+          subtitle="Errors, warnings and opportunities"
+          headline={issueCounts ? issueTotal : undefined}
+          headlineSuffix={issueTotal === 1 ? 'issue' : 'issues'}
           isDisconnected={!issueCounts}
           statusText={issueCounts
-            ? `${plural(issueCounts.warnings.checks, 'warning')} · ${plural(issueCounts.opportunities.checks, 'opportunity')}`
+            ? `${plural(issueCounts.errors.checks, 'error')} · ${plural(issueCounts.warnings.checks, 'warning')} · ${plural(issueCounts.opportunities.checks, 'opportunity')}`
             : (pages?.length > 0 ? 'Calculating…' : 'Awaiting Audit URL')}
           actionText={crawlSummary ? "See all →" : undefined}
           onAction={() => setShowTechScoreModal(true)}
@@ -958,10 +959,13 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
         isPageMode
           ? { title: 'Page Check', note: 'single-page audit: errors on this page; Site Health needs a whole-site crawl',
               score: pageCheck ? 0 : null, scoreText: pageCheck ? plural(pageCheck.errors, 'error') : null,
-              rows: (pageCheck?.error_checks || []).map(id => ({ label: id, value: 'error',
-                detail: (crawlSummary?.rules || []).find(r => r.id === id)?.ours
-                  ? 'Our classification (Screaming Frog has no equivalent check).'
-                  : 'Screaming Frog: Issue of high or medium priority.' })) }
+              rows: (pageCheck?.error_checks || []).map(id => {
+                const rule = (crawlSummary?.rules || []).find(r => r.id === id);
+                return { label: id, value: 'error',
+                  detail: rule?.detail || (rule?.ours
+                    ? 'Our classification (Screaming Frog has no equivalent check).'
+                    : 'Screaming Frog: Issue of high or medium priority.') };
+              }) }
           : { title: 'Site Health', note: sh?.provisional ? 'provisional: fewer than 30 URLs crawled' : null,
               score: healthScore, rows: crawlSummary?.crawl?.score_explanation || crawlSummary?.score_explanation },
         { title: 'AEO Score', note: 'AI provider review of how quotable the pages are',

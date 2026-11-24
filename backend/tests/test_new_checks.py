@@ -133,3 +133,30 @@ def test_urls_missing_from_a_partial_sitemap_are_a_warning_not_an_error():
 def test_short_identical_pages_are_not_exact_duplicates():
     a = _ad(("", "<main><h1>Login</h1><p>Sign in to your account</p></main>"), url="https://e.com/account/login")
     assert a["Content"]["Main_Text_Hash"] is None  # under 30 words: not compared as content
+
+
+def test_robots_check_works_through_the_safe_client_response(monkeypatch):
+    """Regression: get_limited returns a LimitedResponse (text, no .content); reading .content crashed the check,
+    the post-processor swallowed the error and stored no site issues at all."""
+    import asyncio
+    import httpx
+    from app.core.url_safety import LimitedResponse
+    from app.services import robots_validation as rv
+
+    async def fake_get_limited(_client, url, max_bytes=0, **_kw):
+        return LimitedResponse(status_code=200, url=url, headers=httpx.Headers({"content-type": "text/plain"}),
+                               text="User-agent: User-agent: *\nDisallow: /cart\n")
+    monkeypatch.setattr(rv, "get_limited", fake_get_limited)
+    issues = asyncio.run(rv.check_robots_txt("https://shop.test/"))
+    assert [i["id"] for i in issues] == ["robots_malformed_user_agent"]
+
+
+def test_site_issues_count_in_the_page_check_and_appear_in_the_issue_list():
+    issue = validate_robots_txt("User-agent: User-agent: *\nDisallow: /cart\n")[0]
+    page = {"id": 1, "url": "https://e.com/", "status_code": 200, "content_type": "text/html",
+            "audit_data": {"Page_Titles": {"Missing": False}}}
+    r = compute_scores([page], mode="page", site_facts={"site_issues": [issue]})
+    assert r["page_check"]["errors"] == 1 and r["page_check"]["error_checks"] == [f"Site: {issue['label']}"]
+    entry = next(x for x in r["rules"] if x["id"] == f"Site: {issue['label']}")
+    assert entry["status"] == "fail" and entry["is_error"] and entry["site_wide"] and "86" not in entry["detail"]
+    assert r["issues"]["errors"]["checks"] == 1  # counted once, not twice

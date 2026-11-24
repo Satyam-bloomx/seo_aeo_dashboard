@@ -494,6 +494,16 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
                           "failing_count": len(stats["failing"]), "evaluated_count": stats["evaluated"],
                           "failing_page_ids": stats["failing"][:FAILING_ID_CAP]})
 
+    # Site-wide issues (robots.txt, sitemap) join the check list so every view that lists issues shows them.
+    for issue in site_issues:
+        t, pr = issue.get("type", "Warning"), issue.get("priority", "Low")
+        rules_out.append({"id": f"Site: {issue.get('label')}", "category": "Site_Files", "rule": issue.get("label"),
+                          "scope": "site", "type": t, "priority": pr, "severity": severity_of(t, pr),
+                          "is_error": is_error(t, pr), "escalated": False, "ours": False, "integration": False,
+                          "site_wide": True, "detail": issue.get("detail"), "source": issue.get("source"),
+                          "status": "fail", "reason": None, "failing_count": 0, "evaluated_count": 0,
+                          "failing_page_ids": []})
+
     def failing_of(kind: str) -> List[dict]:
         out = []
         for r in rules_out:
@@ -509,7 +519,7 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
             return "errors"
         return "opportunities" if i.get("type") == "Opportunity" else "warnings"
 
-    issues = {k: {"checks": len(failing_of(k)) + sum(1 for i in site_issues if site_kind(i) == k),
+    issues = {k: {"checks": len(failing_of(k)),
                   "urls": len({pid for r in failing_of(k) for pid in r["failing_page_ids"]})}
               for k in ("errors", "warnings", "opportunities")}
     issues["site"] = site_issues
@@ -536,9 +546,12 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
     page_check = None
     if not site_mode and internal:
         only = page_checks.get(str(internal[0].get("id"))) or {}
-        page_check = {**only, "error_checks": url_errors.get(internal[0].get("id")) or [],
-                      "passed": not url_errors.get(internal[0].get("id")) and not site_errors,
-                      "site_issues": site_issues}  # robots.txt and similar apply to this page too
+        site_counts = {k: sum(1 for i in site_issues if site_kind(i) == k) for k in ("errors", "warnings", "opportunities")}
+        page_errors = url_errors.get(internal[0].get("id")) or []
+        # robots.txt and other site-wide findings apply to this page too, so they count in its check
+        page_check = {**{k: only.get(k, 0) + site_counts[k] for k in ("errors", "warnings", "opportunities")},
+                      "error_checks": page_errors + [f"Site: {i.get('label')}" for i in site_errors],
+                      "passed": not page_errors and not site_errors, "site_issues": site_issues}
 
     return {
         "scoring_version": SCORING_VERSION,

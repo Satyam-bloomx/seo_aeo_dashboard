@@ -623,7 +623,9 @@ export function generateAllEvaluatedChecks(pages, summary) {
       integration: Boolean(rule.integration),
       // False when the check has no written guide and the texts below are generic placeholders.
       hasGuide: Boolean(meta.rootCause),
-      rootCause: meta.rootCause || `Condition '${rule.rule}' was detected for ${label}.`,
+      // Site-wide findings (robots.txt, sitemap) carry their own explanation from the backend.
+      rootCause: meta.rootCause || rule.detail || `Condition '${rule.rule}' was detected for ${label}.`,
+      siteWide: Boolean(rule.site_wide),
       impact: meta.impact || 'Affects technical health, crawlability, and indexing performance in search engines.',
       fixGuide: meta.fixGuide || `Review the affected URLs and update page templates to resolve '${rule.rule}'.`,
       exampleBefore: meta.exampleBefore,
