@@ -47,9 +47,10 @@ export default function TechnicalScoreModal({
   const [searchQuery, setSearchQuery] = useState('');
   const [globalFilter, setGlobalFilter] = useState('all'); // 'all' | 'flagged' | 'passed'
 
-  const { score, technicalScore, grade, technicalGrade, pillars = [], checksSummary = {} } = technicalSeoResult || {};
-  const displayScore = technicalScore !== undefined ? technicalScore : score;
-  const displayGrade = technicalGrade || grade;
+  const { pillars = [], checksSummary = {}, technicalSeo, technicalSeoGrade } = technicalSeoResult || {};
+  // The headline here is Technical SEO: the average of the category scores listed below.
+  const displayScore = technicalSeo?.score ?? '—';
+  const displayGrade = technicalSeoGrade || { letter: '—', label: 'Not scored yet', color: 'text-slate-600 bg-slate-50 border-slate-200' };
   // A stable fallback, so the filtered list below is not recomputed on every render.
   const allChecks = useMemo(() => checksSummary.allChecks || [], [checksSummary.allChecks]);
   const totalChecks = checksSummary.totalEvaluated ?? 0;
@@ -149,9 +150,10 @@ export default function TechnicalScoreModal({
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                  <strong className="text-slate-900 dark:text-white">Technical SEO {displayScore}</strong>
                   {technicalSeoResult?.pageCheck
-                    ? <strong className="text-slate-900 dark:text-white">Page check: {technicalSeoResult.pageCheck.errors} errors, {technicalSeoResult.pageCheck.warnings} warnings</strong>
-                    : <strong className="text-slate-900 dark:text-white">Site Health {displayScore ?? '—'}{technicalSeoResult?.provisional ? ' (provisional)' : ''}</strong>}
+                    ? ` · page check: ${technicalSeoResult.pageCheck.errors} errors, ${technicalSeoResult.pageCheck.warnings} warnings`
+                    : ` · Site Health ${technicalSeoResult?.siteHealthScore ?? '—'}${technicalSeoResult?.provisional ? ' (provisional)' : ''}`}
                   {' '}from {totalChecks} checks across {totalPages} crawled URLs.
                 </p>
                 <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
@@ -191,7 +193,7 @@ export default function TechnicalScoreModal({
                 How scoring works: {totalChecks} checks, classified the way Screaming Frog classifies them
               </div>
               <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
-                Every check is an <strong>Issue</strong>, a <strong>Warning</strong> or an <strong>Opportunity</strong>, with a high, medium or low priority, as in Screaming Frog. An <strong>error</strong> is an Issue of high or medium priority (for example a broken page, a missing title or a missing H1). <strong>Site Health</strong> is the share of crawled URLs with zero errors, the Ahrefs Health Score method. Warnings and opportunities are listed with the share of URLs they affect but never change the score. A single-page audit shows a page check instead of a score. Each category below shows the share of URLs with no error from its checks; click one to see them.
+                Every check is an <strong>Issue</strong>, a <strong>Warning</strong> or an <strong>Opportunity</strong>, with a high, medium or low priority, as in Screaming Frog. An <strong>error</strong> is an Issue of high or medium priority (for example a broken page, a missing title or a missing H1). <strong>Site Health</strong> is the share of crawled URLs with zero errors, the Ahrefs Health Score method. Warnings and opportunities are listed with the share of URLs they affect but never change Site Health. <strong>Technical SEO</strong> is the average of the category scores below. In each category a URL starts at 100 and loses points for every failing check by type and priority (Issue high 40, Issue medium 25, Warning high 15, Warning medium 10, low priority 5, opportunities 0), and the category score is the average over the URLs it checked. Site-wide problems such as an invalid robots.txt count against Indexability. These point values are our calibration of Screaming Frog&apos;s priorities. Click a category to see its checks.
               </p>
             </div>
           </div>

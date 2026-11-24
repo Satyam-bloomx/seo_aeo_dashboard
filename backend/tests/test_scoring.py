@@ -239,3 +239,33 @@ def test_integration_panels_from_synced_data():
     assert r["search_console"]["property_totals"]["clicks"] == 40
     small = compute_scores([page(1)], integration_data={"google_analytics": {"is_live_data": True, "summary": {"total_sessions": 40}}})
     assert small["integrations"]["google_analytics"]["status"] == "insufficient"
+
+
+# ---------------------------------------------------------------- Technical SEO (category scores)
+
+def test_technical_seo_is_the_average_of_deduction_based_category_scores():
+    """Regression (lifechangingastro.com): CWV failing (Issue high) and an invalid robots.txt (site-wide Issue
+    high) must pull their categories down; low-priority findings cost little; opportunities cost nothing."""
+    p = page(1, H1={"Missing": False}, Images={"Missing Alt Attribute": True}, Meta_Description={"Missing": True},
+             Security={"HTTP URLs": False, "Missing HSTS Header": True})
+    p["audit_data"]["PageSpeed"] = {"mobile": {"field_data": {"available": True, "lcp_p75_ms": 2585, "inp_p75_ms": 564, "cls_p75": 0.01}}}
+    robots = {"id": "robots_malformed_user_agent", "label": "robots.txt has malformed User-agent lines",
+              "type": "Issue", "priority": "High", "source": "robots.txt", "detail": "x"}
+    r = compute_scores([p], mode="page", site_facts={"site_issues": [robots]})
+    cats = {g: c["score"] for g, c in r["categories"].items()}
+    assert cats["Technical"] == 60      # Core Web Vitals failing: Issue high, 40 points
+    assert cats["Indexability"] == 60   # robots.txt: site-wide Issue high, 40 points
+    assert cats["On-page"] == 95        # missing alt (Issue low, 5); missing description is an opportunity
+    assert cats["Security"] == 95       # one low-priority header warning
+    assert cats["Links"] is None        # site-only checks: not evaluated on a single page
+    scored = [v for v in cats.values() if v is not None]
+    assert r["technical_seo"]["score"] == round(sum(scored) / len(scored))
+    assert r["technical_seo"]["weakest"] in ("Technical", "Indexability")
+
+
+def test_category_scores_average_over_urls():
+    pages = site(10, {0: {"H1": {"Missing": True}}, 1: {"H1": {"Missing": True}}})
+    for p in pages:
+        p["audit_data"].setdefault("H1", {"Missing": False})
+    r = compute_scores(pages)
+    assert r["categories"]["On-page"]["score"] == 95  # 2 of 10 URLs lose 25 points: (8 x 100 + 2 x 75) / 10

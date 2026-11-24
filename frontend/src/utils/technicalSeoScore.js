@@ -89,6 +89,8 @@ export function calculateTechnicalSeoScore(pages = [], _issuesReport = [], summa
     provisional: Boolean(sh.provisional),
     capped: Boolean(sh.capped),
     pageCheck: summary.page_check ?? null,
+    technicalSeo: summary.technical_seo ?? null,  // average of the category scores below
+    technicalSeoGrade: GRADES[summary.technical_seo?.band] || NO_GRADE,
     issues: summary.issues ?? null,
     lowConfidence: sh.low_confidence,
     scoringVersion: summary.scoring_version,

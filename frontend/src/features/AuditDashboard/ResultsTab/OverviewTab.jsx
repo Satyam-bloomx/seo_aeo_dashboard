@@ -587,7 +587,8 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
   const sh = crawlSummary?.site_health;
   const pageCheck = crawlSummary?.page_check;
   const issueCounts = crawlSummary?.issues;
-  const issueTotal = issueCounts ? issueCounts.errors.checks + issueCounts.warnings.checks + issueCounts.opportunities.checks : 0;
+  const techSeo = crawlSummary?.technical_seo;
+  const issueTotal = issueCounts ?issueCounts.errors.checks + issueCounts.warnings.checks + issueCounts.opportunities.checks : 0;
   const plural = (n, word) => `${n} ${n === 1 ? word : word.endsWith('y') ? `${word.slice(0, -1)}ies` : `${word}s`}`;
   const answerReadiness = crawlSummary?.integrations?.answer_readiness;
   // Share of HTML pages with valid structured data: a site with no schema at all must not read 100.
@@ -889,17 +890,16 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
           />
         )}
 
-        {/* Every issue found, by Screaming Frog type: only errors set Site Health */}
+        {/* Technical SEO: average of the category scores; the breakdown shows each category and its checks */}
         <SpringTiltBentoCard
-          title="Issues Found"
-          subtitle="Errors, warnings and opportunities"
-          headline={issueCounts ? issueTotal : undefined}
-          headlineSuffix={issueTotal === 1 ? 'issue' : 'issues'}
-          isDisconnected={!issueCounts}
-          statusText={issueCounts
-            ? `${plural(issueCounts.errors.checks, 'error')} · ${plural(issueCounts.warnings.checks, 'warning')} · ${plural(issueCounts.opportunities.checks, 'opportunity')}`
+          title="Technical SEO"
+          subtitle="Indexability, on-page, content, security, speed"
+          score={pages?.length > 0 ? (techSeo?.score ?? null) : null}
+          isDisconnected={Boolean(crawlSummary) && techSeo?.score == null}
+          statusText={techSeo?.score != null
+            ? `Weakest: ${techSeo.weakest} ${crawlSummary?.categories?.[techSeo.weakest]?.score ?? ''} · ${plural(issueTotal, 'issue')} found`
             : (pages?.length > 0 ? 'Calculating…' : 'Awaiting Audit URL')}
-          actionText={crawlSummary ? "See all →" : undefined}
+          actionText={crawlSummary ? "All scores →" : undefined}
           onAction={() => setShowTechScoreModal(true)}
           icon={Globe}
           colorTheme="indigo"

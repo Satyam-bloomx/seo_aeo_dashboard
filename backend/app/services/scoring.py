@@ -33,6 +33,12 @@ MIN_URLS_FOR_SCORE = 10        # fewer crawled URLs: no site score (our threshol
 PROVISIONAL_BELOW = 30         # 10-29 URLs: the score is shown as provisional
 SITE_ERROR_CAP = 70            # an open site-wide error caps Site Health at 70 (our extension)
 MIN_URLS_FOR_CONFIDENCE = PROVISIONAL_BELOW
+# Technical SEO category scores: a URL starts at 100 in a category and loses these points per failing check, by its
+# Screaming Frog type and priority (our calibration of Screaming Frog's priorities). Opportunities are listed only.
+PRIORITY_PENALTY = {("Issue", "High"): 40, ("Issue", "Medium"): 25, ("Warning", "High"): 15, ("Warning", "Medium"): 10,
+                    ("Issue", "Low"): 5, ("Warning", "Low"): 5}
+# robots.txt and sitemap problems affect how the whole site is crawled and indexed.
+SITE_ISSUE_CATEGORY = {"robots.txt": "Indexability", "sitemap": "Indexability"}
 FAILING_ID_CAP = 2000
 WEIGHTS = {"critical": 5, "warning": 3, "notice": 1}  # display order of the Issues list only
 
@@ -524,21 +530,41 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
               for k in ("errors", "warnings", "opportunities")}
     issues["site"] = site_issues
 
-    def category_score(cats) -> Dict[str, Any]:
-        """Diagnostic breakdown: share of the URLs these checks evaluated that have no error from them."""
-        rules = [r for r in active_rules if r.category in cats and per_rule[r.id]["evaluated"]]
-        evaluated_urls, error_urls = set(), set()
+    def category_score(group: str, cats) -> Dict[str, Any]:
+        """Technical SEO category score: each URL starts at 100 and loses PRIORITY_PENALTY points per failing check
+        in the category (passing checks add nothing); the category score is the average over the URLs it evaluated.
+        Site-wide issues mapped to the category count against every URL."""
+        rules = [r for r in active_rules if r.category in cats and per_rule[r.id]["evaluated"] and counts_toward_health(r)]
+        failing_sets = {r.id: set(per_rule[r.id]["failing"]) for r in rules}
+        site_cost = sum(PRIORITY_PENALTY.get((i.get("type"), i.get("priority")), 0)
+                        for i in site_issues if SITE_ISSUE_CATEGORY.get(i.get("source")) == group)
+        url_scores = []
         for page in internal:
             pid = page.get("id")
-            if any(evaluate_rule(r, page) is not None for r in rules if err_of[r.id]):
-                evaluated_urls.add(pid)
-        for r in rules:
-            if err_of[r.id]:
-                error_urls.update(per_rule[r.id]["failing"])
-        cat_score = round(100 * (1 - len(error_urls) / len(evaluated_urls))) if evaluated_urls else None
-        return {"score": cat_score, "band": _band(cat_score), "urls_evaluated": len(evaluated_urls),
-                "urls_with_errors": len(error_urls),
-                "checks_failed": sum(1 for r in rules if per_rule[r.id]["failing"]), "checks_evaluated": len(rules)}
+            if not any(evaluate_rule(r, page) is not None for r in rules):
+                continue
+            lost = site_cost + sum(PRIORITY_PENALTY.get(cls_of[r.id], 0) for r in rules if pid in failing_sets[r.id])
+            url_scores.append(max(0, 100 - lost))
+        if not url_scores and site_cost and internal:
+            url_scores = [max(0, 100 - site_cost)]  # only the site-wide finding speaks for this category
+        cat_score = round(sum(url_scores) / len(url_scores)) if url_scores else None
+        failed = [r for r in rules if failing_sets[r.id]]
+        return {"score": cat_score, "band": _band(cat_score), "urls_evaluated": len(url_scores),
+                "urls_with_errors": len({pid for r in failed if err_of[r.id] for pid in failing_sets[r.id]}),
+                "checks_failed": len(failed) + sum(1 for i in site_issues if SITE_ISSUE_CATEGORY.get(i.get("source")) == group),
+                "checks_evaluated": len(rules)}
+
+    categories = {group: category_score(group, cats) for group, cats in CATEGORY_GROUPS.items()}
+    scored = {g: c["score"] for g, c in categories.items() if c["score"] is not None}
+    tech_score = round(sum(scored.values()) / len(scored)) if scored else None
+    technical_seo = {
+        "score": tech_score, "band": _band(tech_score),
+        "categories_scored": len(scored),
+        "weakest": min(scored, key=scored.get) if scored else None,
+        "method": "Average of the category scores. In each category a URL starts at 100 and loses points per failing "
+                  "check by Screaming Frog type and priority (Issue high 40, Issue medium 25, Warning high 15, "
+                  "Warning medium 10, low priority 5, opportunities 0); the category score is the average over URLs.",
+    }
 
     geo = compute_geo_readiness(internal, site_mode, site_facts.get("ai_crawlers"))
     integrations_out = integration_scores(internal, integration_data or {})
@@ -580,7 +606,8 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
         },
         "page_check": page_check,
         "issues": issues,
-        "categories": {group: category_score(cats) for group, cats in CATEGORY_GROUPS.items()},
+        "categories": categories,
+        "technical_seo": technical_seo,
         "page_checks": page_checks,
         "rules": rules_out,
         "integrations": integrations_out,
