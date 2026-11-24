@@ -1,5 +1,14 @@
 """Gemini model rotation per API key, with a daily primary model.
 
+The user says whether a key is FREE or PAID when connecting it:
+  * Paid key: the model the user selected is the only model used (paid usage is credit-based). When it reaches a
+    limit the user changes the model in Integrations; nothing rotates.
+  * Free key: Google Search grounding is free only on FREE_GROUNDING_MODELS (Gemini 2.5 Flash and Flash-Lite; Gemini 3
+    and newer have no free grounding). Those two models are kept exclusively for grounded work (the GEO score) and
+    rotate between themselves. Every other task (generating questions, AI audits, summaries) rotates through the
+    key's other models and never touches the two grounding models, so their small free allowance is not spent on
+    work any model could do.
+
 Each Gemini model has its own rate limits. For one key:
   * The model the user selected in Integrations is tried first.
   * When a model hits its *daily* limit (or has no free quota on this key), it is skipped for the rest of the quota
@@ -35,9 +44,12 @@ PACIFIC = ZoneInfo("America/Los_Angeles")
 SKIP = ("tts", "image", "embedding", "aqa", "live", "audio", "robotics", "computer-use", "veo", "imagen", "learnlm",
         "native", "transcribe", "lyria", "nano-banana", "antigravity", "deep-research", "customtools", "omni")
 NO_SEARCH = ("gemma",)  # answer, but cannot use the Google Search tool
+# The only models with free Google Search grounding (Gemini API pricing: Gemini 3+ grounding is "Not available" on the
+# free tier). Google may change this list; update it here.
+FREE_GROUNDING_MODELS = ("gemini-2.5-flash", "gemini-2.5-flash-lite")
 
 _models: Dict[str, Tuple[float, List[str]]] = {}
-_day: Dict[str, Dict[str, Any]] = {}          # key -> {"day", "limited": {model: reason}, "primary"}
+_day: Dict[str, Dict[str, Any]] = {}          # key -> {"day", "limited": {model: reason}, "primary": {purpose: model}}
 _paused: Dict[Tuple[str, str], float] = {}    # (key, model) -> resume time (per-minute limits, overloads)
 
 
@@ -53,8 +65,18 @@ def _today(api_key: str) -> Dict[str, Any]:
     fp, day = _fp(api_key), quota_day()
     state = _day.get(fp)
     if not state or state["day"] != day:  # a new quota day: every model gets its daily allowance back
-        state = _day[fp] = {"day": day, "limited": {}, "primary": None}
+        state = _day[fp] = {"day": day, "limited": {}, "primary": {}}
     return state
+
+
+def tier_of(config: Any) -> str:
+    """"paid" only when the user said so; a key without an answer is treated as free (the cautious choice)."""
+    cfg = config if isinstance(config, dict) else {}
+    return "paid" if cfg.get("tier") == "paid" else "free"
+
+
+def _purpose(grounded: bool) -> str:
+    return "search" if grounded else "general"
 
 
 def rank(name: str) -> tuple:
@@ -92,15 +114,24 @@ async def available_models(api_key: str, client: Optional[httpx.AsyncClient] = N
 
 
 async def order(api_key: str, chosen: str, grounded: bool, client: Optional[httpx.AsyncClient] = None,
-                fallbacks: Tuple[str, ...] = ()) -> List[str]:
-    """Models to try now, best first: today's primary, the selected model, then the rest of the key's models.
-    Models limited today or briefly paused are left out."""
-    state, now = _today(api_key), time.time()
-    live = await available_models(api_key, client)
-    pool = list(dict.fromkeys([m for m in (state["primary"], chosen) if m] + live + list(fallbacks)))
-    # Gemma can't use Google Search (grounded calls) and doesn't take the JSON response schema (the other calls).
-    pool = [m for m in pool if not m.lower().startswith(NO_SEARCH)]
-    return [m for m in pool if m not in state["limited"] and _paused.get((_fp(api_key), m), 0) <= now]
+                fallbacks: Tuple[str, ...] = (), tier: str = "free") -> List[str]:
+    """Models to try now, best first. Models limited today or briefly paused are left out.
+    Paid: the selected model only. Free + grounded: the two free-grounding models, today's primary first.
+    Free + anything else: today's primary, the selected model, then the key's other models, never the
+    free-grounding models (kept for the GEO score)."""
+    state, now, fp = _today(api_key), time.time(), _fp(api_key)
+    if tier == "paid":
+        pool = [chosen] if chosen else []
+    elif grounded:
+        primary = state["primary"].get("search")
+        pool = list(dict.fromkeys([m for m in (primary, chosen, *FREE_GROUNDING_MODELS) if m in FREE_GROUNDING_MODELS]))
+    else:
+        live = await available_models(api_key, client)
+        primary = state["primary"].get("general")
+        pool = list(dict.fromkeys([m for m in (primary, chosen) if m] + live + list(fallbacks)))
+        # Gemma takes no JSON response schema; the free-grounding models are reserved for grounded work.
+        pool = [m for m in pool if m not in FREE_GROUNDING_MODELS and not m.lower().startswith(NO_SEARCH)]
+    return [m for m in pool if m not in state["limited"] and _paused.get((fp, m), 0) <= now]
 
 
 def classify(res: httpx.Response) -> Tuple[str, Optional[float]]:
@@ -131,23 +162,28 @@ def mark_limited(api_key: str, model: str, kind: str, delay: Optional[float] = N
     state = _today(api_key)
     if kind in ("day", "unavailable"):
         state["limited"][model] = kind
-        if state["primary"] == model:
-            state["primary"] = None
+        state["primary"] = {p: m for p, m in state["primary"].items() if m != model}
     else:
         _paused[(_fp(api_key), model)] = time.time() + max(delay or 0, MINUTE_PAUSE_S)
 
 
-def mark_success(api_key: str, model: str) -> None:
-    """The model that answered becomes the key's primary for the rest of the quota day."""
-    _today(api_key)["primary"] = model
+def mark_success(api_key: str, model: str, grounded: bool = False) -> None:
+    """The model that answered becomes the key's primary for that kind of work for the rest of the quota day."""
+    _today(api_key)["primary"][_purpose(grounded)] = model
 
 
 def status(api_key: str) -> Dict[str, Any]:
     state = _today(api_key)
-    return {"day": state["day"], "primary": state["primary"], "limited_today": dict(state["limited"])}
+    return {"day": state["day"], "primary": dict(state["primary"]), "limited_today": dict(state["limited"])}
 
 
-def exhausted_message(api_key: str) -> str:
-    n = len(_today(api_key)["limited"])
-    return (f"All {n} Gemini models available to this key have reached today's limit (or have no free allowance). "
-            "They reset at midnight Pacific time; add billing to the Gemini key for more.")
+def exhausted_message(api_key: str, tier: str = "free", grounded: bool = False, chosen: str = "") -> str:
+    if tier == "paid":
+        return (f"Your selected Gemini model ({chosen or 'the selected model'}) has reached its limit. Paid keys use "
+                "only the model you select: choose another model in Integrations.")
+    if grounded:
+        return ("Both free Google Search models (" + ", ".join(FREE_GROUNDING_MODELS) + ") have reached today's free "
+                "limit. They reset at midnight Pacific time (1:30 pm India); a paid key removes this limit.")
+    n = len([m for m in _today(api_key)["limited"] if m not in FREE_GROUNDING_MODELS])
+    return (f"All {n} free Gemini models used for this kind of work have reached today's limit. They reset at "
+            "midnight Pacific time (1:30 pm India); a paid key removes this limit.")

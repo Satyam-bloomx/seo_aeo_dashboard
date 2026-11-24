@@ -405,8 +405,7 @@ class PromptEngine:
 
     @classmethod
     async def resolve_integrations(cls, db: AsyncSession, project_id: int) -> Dict[str, Any]:
-        """Resolves active integrations strictly for project_id (never another workspace's credentials),
-        then the operator's platform keys from the environment."""
+        """Resolves active integrations strictly for project_id (never another workspace's credentials)."""
         integrations: Dict[str, Any] = {}
         try:
             res = await db.execute(
@@ -448,12 +447,14 @@ class PromptEngine:
     async def _json_gemini(item, system_prompt, user_prompt, max_output_tokens, response_schema):
         from app.services import gemini_rotation as rot
         chosen = chosen_ai_model(item, "gemini")
-        # The selected model first, then today's primary and the key's other models (see gemini_rotation);
-        # models that reached today's limit are skipped until the quota resets.
-        models = await rot.order(item.api_key, chosen, grounded=False,
+        tier = rot.tier_of(getattr(item, "config_json", None))
+        # Paid key: the selected model only. Free key: today's primary, the selected model, then the key's other
+        # models, never the two free-grounding models (kept for the GEO score). See gemini_rotation.
+        models = await rot.order(item.api_key, chosen, grounded=False, tier=tier,
                                  fallbacks=tuple(m for m in (DEFAULT_GEMINI_MODEL, FALLBACK_GEMINI_MODEL) if m))
         if not models:
             _note_failure("rate_limited:3600")
+            print("Gemini: " + rot.exhausted_message(item.api_key, tier, grounded=False, chosen=chosen))
         for m_name in models:
             gen_cfg: Dict[str, Any] = {"responseMimeType": "application/json", "maxOutputTokens": max_output_tokens,
                                        "temperature": 0.3}
@@ -499,7 +500,7 @@ class PromptEngine:
                     continue
                 rot.mark_success(item.api_key, m_name)
                 label = f"Google Gemini ({m_name})"
-                if m_name != chosen:
+                if m_name != chosen and chosen not in rot.FREE_GROUNDING_MODELS:
                     label += f", fallback: {chosen} was unavailable"
                 return label, json.loads(_strip_fences(text_content))
             except json.JSONDecodeError:

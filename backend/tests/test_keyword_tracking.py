@@ -501,7 +501,7 @@ def test_grounding_falls_back_to_a_model_with_search_quota(monkeypatch):
     def handler(request):
         model = request.url.path.split("/models/")[1].split(":")[0]
         seen.append(model)
-        if model != "gemini-2.5-flash":
+        if model != "gemini-2.5-flash-lite":
             return httpx.Response(429, json={"error": {"message": "quota"}})
         return httpx.Response(200, json=_gemini_response("BloomX", ["bloomx.in"]))
 
@@ -511,8 +511,8 @@ def test_grounding_falls_back_to_a_model_with_search_quota(monkeypatch):
             return await kt.gemini_check(client, SimpleNamespace(api_key="G", config_json={}), "q?", DOMAIN)
 
     out = asyncio.run(go())
-    assert out["runs"] == 3 and out["cited"] == 3 and out["model"] == "gemini-2.5-flash"
-    assert seen.count("gemini-2.5-flash") == 3 and len(seen) == 4  # the refused model is skipped after one 429
+    assert out["runs"] == 3 and out["cited"] == 3 and out["model"] == "gemini-2.5-flash-lite"
+    assert seen == ["gemini-2.5-flash"] + ["gemini-2.5-flash-lite"] * 3  # the refused model is skipped after one 429
 
 
 def test_per_minute_gemini_limit_is_waited_out_daily_limit_is_not(monkeypatch):

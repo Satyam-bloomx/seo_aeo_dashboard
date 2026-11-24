@@ -304,6 +304,9 @@ export default function ApiKeyModal({
   const [hasExistingApp, setHasExistingApp] = useState(false);
   const [availableModels, setAvailableModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
+  // Gemini only: free (no billing) or paid key. Google gives no reliable way to tell from the key, so we ask.
+  const [geminiTier, setGeminiTier] = useState('');
+  const isGemini = integration?.id === 'gemini';
 
   // Follow initialTab when the caller changes it (render-time update instead of an effect).
   const [syncedTab, setSyncedTab] = useState(initialTab);
@@ -320,6 +323,7 @@ export default function ApiKeyModal({
             setAvailableModels(res.data.available_models);
             setSelectedModel(res.data.selected_model || res.data.available_models[0]?.id || '');
           }
+          if (res.data?.tier) setGeminiTier(res.data.tier);
         })
         .catch(() => {});
     }
@@ -540,6 +544,10 @@ export default function ApiKeyModal({
       setError('Please enter a valid API Key.');
       return;
     }
+    if (isGemini && !geminiTier) {
+      setError('Choose whether this is a free or a paid Gemini key.');
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
@@ -560,6 +568,10 @@ export default function ApiKeyModal({
             model_id: selectedModel
           });
         } catch {}
+      }
+
+      if (isGemini && geminiTier) {
+        await axios.post(`${API_BASE_URL}/integrations/gemini/tier`, { project_id: projectId, tier: geminiTier });
       }
 
       setIsLoading(false);
@@ -1238,6 +1250,35 @@ export default function ApiKeyModal({
                   Your credentials are encrypted per-project and used exclusively for live crawler enrichments.
                 </p>
               </div>
+
+              {isGemini && (
+                <fieldset className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                  <legend className="sr-only">Gemini key type</legend>
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Is this a free or a paid Gemini key?</p>
+                  {[
+                    { id: 'free', label: 'Free key (no billing)', hint: 'GEO answers use only Gemini 2.5 Flash and Flash-Lite, the models with free Google Search. Other work uses your other models, so the search allowance is kept for the GEO score. Limits reset daily.' },
+                    { id: 'paid', label: 'Paid key (billing enabled)', hint: 'Only the model you select below is used, for everything. If it reaches a limit, change the model here.' },
+                  ].map(opt => (
+                    <label key={opt.id} className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors ${geminiTier === opt.id ? 'border-indigo-400 bg-indigo-50/70 dark:border-indigo-600 dark:bg-indigo-950/40' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}`}>
+                      <input
+                        type="radio"
+                        name="gemini-tier"
+                        value={opt.id}
+                        checked={geminiTier === opt.id}
+                        onChange={() => setGeminiTier(opt.id)}
+                        className="mt-0.5 accent-indigo-600"
+                      />
+                      <span>
+                        <span className="block text-xs font-semibold text-slate-900 dark:text-slate-100">{opt.label}</span>
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">{opt.hint}</span>
+                      </span>
+                    </label>
+                  ))}
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                    Not sure? In <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="underline">Google AI Studio</a>, a key shows &ldquo;Free tier&rdquo; unless billing is set up for its project.
+                  </p>
+                </fieldset>
+              )}
 
               {/* Dynamic Live Model Discovery & Selection for LLM integrations */}
               {integration.category === 'AEO Voice & LLM' && availableModels.length > 0 && (

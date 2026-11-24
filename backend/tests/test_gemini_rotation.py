@@ -1,5 +1,6 @@
 """Gemini model rotation per key: selected model first, a daily primary once a model hits its daily limit, limited
-models never called again until the quota day ends, per-minute limits waited out instead of skipped for the day."""
+models never called again until the quota day ends, per-minute limits waited out instead of skipped for the day.
+Free keys keep the two free-grounding models for grounded work only; paid keys use the selected model only."""
 import asyncio
 from types import SimpleNamespace
 
@@ -56,55 +57,84 @@ def test_classify_daily_minute_unavailable():
     assert rot.classify(httpx.Response(503, json={}))[0] == "minute"
 
 
-def test_selected_model_first_then_a_daily_primary(monkeypatch):
-    _listed(monkeypatch, ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"])
-    order = asyncio.run(rot.order(KEY, "gemini-2.5-flash", grounded=True))
-    assert order[0] == "gemini-2.5-flash" and len(order) == 3  # the user's selection leads
-    rot.mark_limited(KEY, "gemini-2.5-flash", "day")
-    rot.mark_success(KEY, "gemini-2.5-flash-lite")
-    order = asyncio.run(rot.order(KEY, "gemini-2.5-flash", grounded=True))
-    assert order == ["gemini-2.5-flash-lite", "gemini-3.5-flash"]  # today's primary first, limited model gone
+FLASH, LITE = rot.FREE_GROUNDING_MODELS
+
+
+def test_free_grounded_uses_only_the_two_free_grounding_models(monkeypatch):
+    _listed(monkeypatch, ["gemini-3.5-flash", FLASH, LITE, "gemini-3.8-flash"])
+    assert asyncio.run(rot.order(KEY, "gemini-3.5-flash", grounded=True)) == [FLASH, LITE]  # no free grounding on 3.x
+    assert asyncio.run(rot.order(KEY, LITE, grounded=True)) == [LITE, FLASH]  # the user's pick of the two leads
+    rot.mark_limited(KEY, FLASH, "day")
+    rot.mark_success(KEY, LITE, grounded=True)
+    assert asyncio.run(rot.order(KEY, FLASH, grounded=True)) == [LITE]  # today's primary, limited model gone
+
+
+def test_free_general_work_never_touches_the_grounding_models(monkeypatch):
+    _listed(monkeypatch, ["gemini-3.5-flash", FLASH, LITE, "gemini-2.5-pro", "gemma-4-31b-it"])
+    order = asyncio.run(rot.order(KEY, FLASH, grounded=False, fallbacks=(FLASH,)))
+    assert order == ["gemini-3.5-flash", "gemini-2.5-pro"]
+    assert asyncio.run(rot.order(KEY, "gemini-2.5-pro", grounded=False))[0] == "gemini-2.5-pro"  # selection leads
+
+
+def test_primaries_are_kept_per_kind_of_work(monkeypatch):
+    _listed(monkeypatch, ["gemini-3.5-flash", "gemini-3.8-flash", FLASH, LITE])
+    rot.mark_success(KEY, "gemini-3.8-flash", grounded=False)
+    rot.mark_success(KEY, LITE, grounded=True)
+    assert asyncio.run(rot.order(KEY, "gemini-3.5-flash", grounded=False))[0] == "gemini-3.8-flash"
+    assert asyncio.run(rot.order(KEY, FLASH, grounded=True))[0] == LITE
+    assert rot.status(KEY)["primary"] == {"general": "gemini-3.8-flash", "search": LITE}
+
+
+def test_paid_key_uses_the_selected_model_only_and_never_rotates(monkeypatch):
+    _listed(monkeypatch, ["gemini-3.5-flash", FLASH, LITE])
+    for grounded in (True, False):
+        assert asyncio.run(rot.order(KEY, "gemini-3.5-flash", grounded=grounded, tier="paid")) == ["gemini-3.5-flash"]
+    rot.mark_limited(KEY, "gemini-3.5-flash", "day")
+    assert asyncio.run(rot.order(KEY, "gemini-3.5-flash", grounded=True, tier="paid")) == []
+    msg = rot.exhausted_message(KEY, "paid", grounded=True, chosen="gemini-3.5-flash")
+    assert "gemini-3.5-flash" in msg and "Integrations" in msg
+
+
+def test_tier_defaults_to_free_unless_the_user_said_paid():
+    assert rot.tier_of(None) == "free" and rot.tier_of({}) == "free" and rot.tier_of({"tier": "x"}) == "free"
+    assert rot.tier_of({"tier": "paid"}) == "paid"
 
 
 def test_per_minute_limit_pauses_briefly_never_for_the_day(monkeypatch):
     _listed(monkeypatch, ["gemini-a", "gemini-b"])
     rot.mark_limited(KEY, "gemini-a", "minute", 5)
-    assert "gemini-a" not in asyncio.run(rot.order(KEY, "gemini-a", grounded=True))
+    assert "gemini-a" not in asyncio.run(rot.order(KEY, "gemini-a", grounded=False))
     assert rot.status(KEY)["limited_today"] == {}  # not marked as used up for the day
     monkeypatch.setattr(rot.time, "time", lambda: 10 ** 12)  # later
-    assert "gemini-a" in asyncio.run(rot.order(KEY, "gemini-a", grounded=True))
+    assert "gemini-a" in asyncio.run(rot.order(KEY, "gemini-a", grounded=False))
 
 
 def test_a_new_quota_day_restores_every_model(monkeypatch):
     _listed(monkeypatch, ["gemini-a"])
     rot.mark_limited(KEY, "gemini-a", "day")
-    assert asyncio.run(rot.order(KEY, "gemini-a", grounded=True)) == []
+    assert asyncio.run(rot.order(KEY, "gemini-a", grounded=False)) == []
     monkeypatch.setattr(rot, "quota_day", lambda: "2099-01-01")
-    assert asyncio.run(rot.order(KEY, "gemini-a", grounded=True)) == ["gemini-a"]
+    assert asyncio.run(rot.order(KEY, "gemini-a", grounded=False)) == ["gemini-a"]
 
 
-def test_gemma_is_never_used_it_cannot_search(monkeypatch):
-    _listed(monkeypatch, ["gemma-4-31b-it", "gemini-2.5-flash-lite"])
-    assert asyncio.run(rot.order(KEY, "gemma-4-31b-it", grounded=True)) == ["gemini-2.5-flash-lite"]
+def test_gemma_is_never_used(monkeypatch):
+    _listed(monkeypatch, ["gemma-4-31b-it", "gemini-3.5-flash"])
+    assert asyncio.run(rot.order(KEY, "gemma-4-31b-it", grounded=False)) == ["gemini-3.5-flash"]
 
 
-def test_rotation_through_many_models_and_no_wasted_calls(monkeypatch):
-    """Five models: four refuse (daily, no allowance, unavailable, daily), the fifth answers and becomes the primary.
-    A second question goes straight to it."""
-    models = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
-    _listed(monkeypatch, models)
+def test_free_grounded_check_rotates_between_the_two_and_wastes_no_calls(monkeypatch):
+    """Free key: Flash refuses (daily limit), Flash-Lite answers and becomes the search primary; the second question
+    goes straight to it. The user's 3.x selection and the key's other models are never called for grounded work."""
+    _listed(monkeypatch, ["gemini-3.8-flash", "gemini-3.5-flash", FLASH, LITE])
     calls = []
-    refusals = {"gemini-3.8-flash": _quota("GenerateRequestsPerDayPerProjectPerModel-FreeTier"),
-                "gemini-3.5-flash": _quota(),
-                "gemini-2.5-pro": httpx.Response(404, json={"error": {"message": "model not available"}}),
-                "gemini-2.5-flash": _quota("GenerateRequestsPerDayPerProjectPerModel-FreeTier")}
 
     def handler(request):
         model = request.url.path.split("/models/")[1].split(":")[0]
         calls.append(model)
-        return refusals.get(model) or _grounded()
+        return _quota("GenerateRequestsPerDayPerProjectPerModel-FreeTier") if model == FLASH else _grounded()
 
-    cfg = SimpleNamespace(api_key=KEY, config_json={"selected_model": "gemini-3.8-flash", "model_selected_by_user": True})
+    cfg = SimpleNamespace(api_key=KEY, config_json={"selected_model": "gemini-3.8-flash", "model_selected_by_user": True,
+                                                    "tier": "free"})
 
     async def go():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
@@ -112,9 +142,27 @@ def test_rotation_through_many_models_and_no_wasted_calls(monkeypatch):
             second = await kt.gemini_check(c, cfg, "q2?", "acme.com", runs=1)
             return first, second
     first, second = asyncio.run(go())
-    assert first["model"] == "gemini-2.5-flash-lite" and second["model"] == "gemini-2.5-flash-lite"
-    assert calls == models + ["gemini-2.5-flash-lite"]  # the second question skips all four limited models
-    assert rot.status(KEY)["primary"] == "gemini-2.5-flash-lite"
+    assert first["model"] == LITE and second["model"] == LITE
+    assert calls == [FLASH, LITE, LITE]
+    assert rot.status(KEY)["primary"] == {"search": LITE}
+
+
+def test_paid_grounded_check_calls_only_the_selected_model(monkeypatch):
+    _listed(monkeypatch, ["gemini-3.8-flash", FLASH, LITE])
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path.split("/models/")[1].split(":")[0])
+        return _quota("GenerateRequestsPerDayPerProjectPerModel")
+    cfg = SimpleNamespace(api_key=KEY, config_json={"selected_model": "gemini-3.8-flash", "model_selected_by_user": True,
+                                                    "tier": "paid"})
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            return await kt.gemini_check(c, cfg, "q?", "acme.com", runs=1)
+    with pytest.raises(kt.AiLimitError) as e:
+        asyncio.run(go())
+    assert calls == ["gemini-3.8-flash"] and "choose another model in Integrations" in str(e.value)
 
 
 def test_when_every_model_is_limited_the_reason_is_clear(monkeypatch):
@@ -129,4 +177,4 @@ def test_when_every_model_is_limited_the_reason_is_clear(monkeypatch):
             return await kt.gemini_check(c, cfg, "q?", "acme.com", runs=1)
     with pytest.raises(kt.AiLimitError) as e:
         asyncio.run(go())
-    assert "reached today's limit" in str(e.value) and "midnight Pacific" in str(e.value)
+    assert "today's free limit" in str(e.value) and "midnight Pacific" in str(e.value)

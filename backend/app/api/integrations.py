@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm.attributes import flag_modified
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Literal, Optional, Any
 from pydantic import BaseModel, Field
 import datetime
 import os
@@ -85,11 +85,17 @@ class IntegrationStatusResponse(BaseModel):
     available_models: Optional[List[Dict[str, Any]]] = None
     # True when this workspace has not connected its own key but audits still use one from the server's environment.
     server_key: bool = False
+    # Gemini only: "free" or "paid", as the user said when connecting the key (None: not answered yet, treated as free).
+    tier: Optional[str] = None
 
 class SelectModelRequest(BaseModel):
     project_id: int = 1
     service: str
     model_id: str
+
+class GeminiTierRequest(BaseModel):
+    project_id: int = 1
+    tier: Literal["free", "paid"]
 
 class ApiKeyRequest(BaseModel):
     project_id: int = 1
@@ -422,6 +428,7 @@ async def get_integration_status(
             selected_model=selected_model,
             available_models=available_models,
             server_key=bool(not connected and SERVER_KEY_ENV.get(svc) and (os.getenv(SERVER_KEY_ENV[svc]) or "").strip()),
+            tier=(item.config_json or {}).get("tier") if svc == "gemini" and item and isinstance(item.config_json, dict) else None,
         ))
         
     return response
@@ -858,6 +865,7 @@ async def get_provider_models(
         "service": service,
         "available_models": live_models,
         "selected_model": selected_model,
+        "tier": (item.config_json or {}).get("tier") if service == "gemini" and item and isinstance(item.config_json, dict) else None,
         "live_fetched": True
     }
 
@@ -900,6 +908,31 @@ async def select_model(
         "selected_model": req.model_id,
         "message": f"Active {req.service.replace('_', ' ').title()} model set to '{req.model_id}'"
     }
+
+@router.post("/gemini/tier")
+async def set_gemini_tier(
+    req: GeminiTierRequest,
+    db: AsyncSession = Depends(get_db),
+    user: UserSession = Depends(get_current_user)
+):
+    """Free or paid Gemini key, as the user says (Google offers no reliable way to tell from the key alone).
+    Free: the two free-grounding models are kept for the GEO score and other work rotates through the other models.
+    Paid: only the selected model is used (see app/services/gemini_rotation.py)."""
+    target_project_id = req.project_id
+    if user and hasattr(user, "id"):
+        target_project_id = await get_or_create_user_project(db, user.id)
+    item = (await db.execute(select(Integration).where(
+        Integration.project_id == target_project_id, Integration.integration_type == "gemini"
+    ))).scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Connect a Gemini key first.")
+    cfg = dict(item.config_json or {})
+    cfg["tier"] = req.tier
+    cfg["tier_set_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+    item.config_json = cfg
+    flag_modified(item, "config_json")
+    await db.commit()
+    return {"status": "success", "tier": req.tier}
 
 @router.post("/test", dependencies=[Depends(rate_limit("integration_sync"))])
 async def test_connection(

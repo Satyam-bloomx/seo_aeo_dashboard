@@ -500,10 +500,6 @@ class AiLimitError(Exception):
     """The AI provider refused for quota/rate reasons: stop asking, keep what was measured."""
 
 
-# Google Search grounding has per-model quotas; on some keys the default model has none while 2.5 Flash does.
-GROUNDING_FALLBACK_MODELS = ("gemini-2.5-flash",)
-
-
 # Free Gemini keys allow ~10 requests a minute: few calls at once, and per-minute refusals are waited out.
 MINUTE_LIMIT_WAITS = 3
 _GEMINI_SLOTS: Dict[int, asyncio.Semaphore] = {}
@@ -589,18 +585,18 @@ def _grounding_host_is_site(host: str, domain: str) -> bool:
 async def gemini_check(client: httpx.AsyncClient, gemini: Any, text: str, domain: str, business_name: str = "",
                        runs: int = GEMINI_RUNS) -> Dict[str, Any]:
     """Ask Gemini the question with Google Search turned on, `runs` times (answers vary between runs).
-    Models rotate per key (app/services/gemini_rotation.py): the user's selected model first, then today's primary
-    and the key's other models; a model that hits its daily limit is skipped until the quota resets."""
+    Models follow the key's tier (app/services/gemini_rotation.py): a paid key uses only the selected model; a free
+    key rotates between the two models with free Google Search grounding, skipping one that hit its daily limit."""
     from app.core.config import chosen_ai_model
     from app.services import gemini_rotation as rot
 
     out = {"runs": 0, "mentioned": 0, "cited": 0, "sources": [], "model": None, "answers": []}
     sources: Dict[str, int] = {}
     chosen = chosen_ai_model(gemini, "gemini")
+    tier = rot.tier_of(getattr(gemini, "config_json", None))
     for _ in range(runs):
         res, answered = None, False
-        for model in await rot.order(gemini.api_key, chosen, grounded=True, client=client,
-                                     fallbacks=GROUNDING_FALLBACK_MODELS):
+        for model in await rot.order(gemini.api_key, chosen, grounded=True, client=client, tier=tier):
             payload: Dict[str, Any] = {"contents": [{"role": "user", "parts": [{"text": text}]}],
                                        "tools": [{"google_search": {}}]}
             if model.startswith("gemini-3"):
@@ -623,7 +619,7 @@ async def gemini_check(client: httpx.AsyncClient, gemini: Any, text: str, domain
                 rot.mark_limited(gemini.api_key, model, "minute", 30)  # timeout / network: try the next model
                 continue
             if res.status_code == 200:
-                rot.mark_success(gemini.api_key, model)
+                rot.mark_success(gemini.api_key, model, grounded=True)
                 out["model"] = model
                 answered = True
                 break
@@ -634,7 +630,7 @@ async def gemini_check(client: httpx.AsyncClient, gemini: Any, text: str, domain
         if not answered:
             if res is not None and res.status_code in (401, 403):
                 raise AiLimitError(_gemini_limit_message(res))
-            raise AiLimitError(rot.exhausted_message(gemini.api_key))
+            raise AiLimitError(rot.exhausted_message(gemini.api_key, tier, grounded=True, chosen=chosen))
         one = parse_grounding(res.json(), domain, business_name)
         out["answers"].append({"mentioned": one["mentioned"], "cited": one["cited"], "sources": one["sources"][:8],
                                "excerpt": one["excerpt"], "model": out["model"]})
