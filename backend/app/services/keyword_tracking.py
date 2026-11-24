@@ -502,8 +502,6 @@ class AiLimitError(Exception):
 
 # Google Search grounding has per-model quotas; on some keys the default model has none while 2.5 Flash does.
 GROUNDING_FALLBACK_MODELS = ("gemini-2.5-flash",)
-GROUNDING_COOLDOWN_S = 15 * 60
-_GROUNDING_COOLDOWN: Dict[str, float] = {}
 
 
 # Free Gemini keys allow ~10 requests a minute: few calls at once, and per-minute refusals are waited out.
@@ -553,12 +551,6 @@ def _gemini_limit_message(res: Optional[httpx.Response]) -> str:
     return f"Gemini refused the request (HTTP {res.status_code}); check the Gemini key in Integrations."
 
 
-def _grounding_models(chosen: str) -> List[str]:
-    """The chosen model, then the fallback, skipping models whose grounding quota was refused recently."""
-    now = time.time()
-    return [m for m in dict.fromkeys((chosen, *GROUNDING_FALLBACK_MODELS)) if _GROUNDING_COOLDOWN.get(m, 0) <= now]
-
-
 def parse_grounding(data: Dict[str, Any], domain: str, business_name: str = "") -> Dict[str, Any]:
     """From one grounded Gemini answer: did it mention the business, did it cite the site, which sites it cited.
     Grounding links are Google redirect URLs, so the site is read from each source's title (its domain)."""
@@ -596,40 +588,56 @@ def _grounding_host_is_site(host: str, domain: str) -> bool:
 
 async def gemini_check(client: httpx.AsyncClient, gemini: Any, text: str, domain: str, business_name: str = "",
                        runs: int = GEMINI_RUNS) -> Dict[str, Any]:
-    """Ask Gemini the question with Google Search turned on, `runs` times (answers vary between runs)."""
+    """Ask Gemini the question with Google Search turned on, `runs` times (answers vary between runs).
+    Models rotate per key (app/services/gemini_rotation.py): the user's selected model first, then today's primary
+    and the key's other models; a model that hits its daily limit is skipped until the quota resets."""
     from app.core.config import chosen_ai_model
+    from app.services import gemini_rotation as rot
 
     out = {"runs": 0, "mentioned": 0, "cited": 0, "sources": [], "model": None, "answers": []}
     sources: Dict[str, int] = {}
+    chosen = chosen_ai_model(gemini, "gemini")
     for _ in range(runs):
-        res = None
-        for model in _grounding_models(chosen_ai_model(gemini, "gemini")):
+        res, answered = None, False
+        for model in await rot.order(gemini.api_key, chosen, grounded=True, client=client,
+                                     fallbacks=GROUNDING_FALLBACK_MODELS):
             payload: Dict[str, Any] = {"contents": [{"role": "user", "parts": [{"text": text}]}],
                                        "tools": [{"google_search": {}}]}
             if model.startswith("gemini-3"):
                 payload["generationConfig"] = {"thinkingConfig": {"thinkingLevel": "low"}}
             for _wait in range(MINUTE_LIMIT_WAITS + 1):
-                async with _gemini_slots():
-                    res = await client.post(GEMINI_URL.format(model=model), headers={"x-goog-api-key": gemini.api_key},
-                                            json=payload, timeout=60.0)
-                delay = _per_minute_retry_delay(res) if res.status_code == 429 else None
-                if delay is None or _wait == MINUTE_LIMIT_WAITS:
+                try:
+                    async with _gemini_slots():
+                        res = await client.post(GEMINI_URL.format(model=model), json=payload, timeout=60.0,
+                                                headers={"x-goog-api-key": gemini.api_key})
+                except httpx.HTTPError:
+                    res = None
                     break
-                await asyncio.sleep(delay)  # a per-minute limit clears by itself: wait, then ask again
-            if res.status_code == 429:
-                # Search grounding has its own quota per model (e.g. none for some models on free keys):
-                # skip this model for a while and try the next one.
-                _GROUNDING_COOLDOWN[model] = time.time() + GROUNDING_COOLDOWN_S
+                if res.status_code != 429:
+                    break
+                kind, delay = rot.classify(res)
+                if kind != "minute" or _wait == MINUTE_LIMIT_WAITS:
+                    break
+                await asyncio.sleep(delay)  # a per-minute limit clears by itself: wait, then ask the same model again
+            if res is None:
+                rot.mark_limited(gemini.api_key, model, "minute", 30)  # timeout / network: try the next model
                 continue
-            out["model"] = model
-            break
-        if res is None or res.status_code in (401, 403, 429):
-            raise AiLimitError(_gemini_limit_message(res))
-        if res.status_code != 200:
-            continue
+            if res.status_code == 200:
+                rot.mark_success(gemini.api_key, model)
+                out["model"] = model
+                answered = True
+                break
+            if res.status_code in (401, 403):
+                raise AiLimitError(_gemini_limit_message(res))
+            kind, delay = rot.classify(res)
+            rot.mark_limited(gemini.api_key, model, kind, delay)
+        if not answered:
+            if res is not None and res.status_code in (401, 403):
+                raise AiLimitError(_gemini_limit_message(res))
+            raise AiLimitError(rot.exhausted_message(gemini.api_key))
         one = parse_grounding(res.json(), domain, business_name)
         out["answers"].append({"mentioned": one["mentioned"], "cited": one["cited"], "sources": one["sources"][:8],
-                               "excerpt": one["excerpt"]})
+                               "excerpt": one["excerpt"], "model": out["model"]})
         out["runs"] += 1
         out["mentioned"] += int(one["mentioned"])
         out["cited"] += int(one["cited"])

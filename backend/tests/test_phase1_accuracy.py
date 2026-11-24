@@ -139,15 +139,24 @@ def test_coverage_counts_only_urls_never_crawled():
     assert report["not_crawled_depth_limit"] == 1
 
 
-def test_no_gemini_request_while_every_model_is_cooling_down():
-    saved = dict(prompt_engine._MODEL_COOLDOWN)
-    try:
-        until = time.time() + 30
-        for m in ("gemini-x", prompt_engine.DEFAULT_GEMINI_MODEL, prompt_engine.FALLBACK_GEMINI_MODEL):
-            prompt_engine._MODEL_COOLDOWN[m] = until
+def test_no_gemini_request_when_every_model_reached_todays_limit(monkeypatch):
+    """Models known to be limited today are not called again (no request is sent at all)."""
+    import asyncio
+    from types import SimpleNamespace
+    from app.services import gemini_rotation as rot
+    monkeypatch.setattr(rot, "_day", {})
+    monkeypatch.setattr(rot, "_paused", {})
+
+    async def listed(*_a, **_k):
+        return ["gemini-a", "gemini-b"]
+    monkeypatch.setattr(rot, "available_models", listed)
+    for m in ("gemini-a", "gemini-b", "gemini-x", prompt_engine.DEFAULT_GEMINI_MODEL, prompt_engine.FALLBACK_GEMINI_MODEL):
+        rot.mark_limited("K", m, "day")
+    item = SimpleNamespace(api_key="K", config_json={"selected_model": "gemini-x", "model_selected_by_user": True})
+
+    async def go():  # the failure reason is a context variable: read it inside the same task
         prompt_engine._AI_FAILURE.set(None)
-        assert prompt_engine._gemini_models("gemini-x") == []
-        assert prompt_engine._AI_FAILURE.get().startswith("rate_limited:")
-    finally:
-        prompt_engine._MODEL_COOLDOWN.clear()
-        prompt_engine._MODEL_COOLDOWN.update(saved)
+        result = await prompt_engine.PromptEngine._json_gemini(item, "s", "u", 100, None)
+        return result, prompt_engine._AI_FAILURE.get()
+    result, failure = asyncio.run(go())
+    assert result is None and failure.startswith("rate_limited:")

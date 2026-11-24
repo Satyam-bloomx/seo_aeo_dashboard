@@ -349,8 +349,6 @@ JSON_SCHEMAS = {
 }
 
 from app.core.config import DEFAULT_GEMINI_MODEL, FALLBACK_GEMINI_MODEL, chosen_ai_model
-_MODEL_COOLDOWN: Dict[str, float] = {}
-MODEL_COOLDOWN_SECONDS = 60
 # Why the last provider attempt in this request failed: "rate_limited:<seconds>", "unavailable" or "error".
 _AI_FAILURE: contextvars.ContextVar = contextvars.ContextVar("ai_failure", default=None)
 
@@ -362,25 +360,6 @@ def _note_failure(kind: str) -> None:
         _AI_FAILURE.set(kind)
 AI_PROVIDERS = ("gemini", "openai", "claude")
 PROVIDER_LABELS = {"gemini": "Google Gemini", "openai": "OpenAI", "claude": "Anthropic Claude"}
-
-
-def _gemini_models(primary: str) -> List[str]:
-    """The chosen model first, then one fallback for outages. Models cooling down are skipped.
-
-    When every model is cooling down no request is sent (it would be refused and still count against quota);
-    the failure records how long until the first one is available again.
-    """
-    now = time.time()
-    candidates = [m for m in dict.fromkeys((primary, DEFAULT_GEMINI_MODEL, FALLBACK_GEMINI_MODEL)) if m]
-    ordered = [m for m in candidates if _MODEL_COOLDOWN.get(m, 0) <= now]
-    if not ordered:
-        wait = min(_MODEL_COOLDOWN.get(m, now) for m in candidates) - now
-        _note_failure(f"rate_limited:{max(1, int(wait) + 1)}")
-    return ordered
-
-
-def _cooldown(model: str) -> None:
-    _MODEL_COOLDOWN[model] = time.time() + MODEL_COOLDOWN_SECONDS
 
 
 def _strip_fences(text: str) -> str:
@@ -467,13 +446,20 @@ class PromptEngine:
 
     @staticmethod
     async def _json_gemini(item, system_prompt, user_prompt, max_output_tokens, response_schema):
+        from app.services import gemini_rotation as rot
         chosen = chosen_ai_model(item, "gemini")
-        for m_name in _gemini_models(chosen):
+        # The selected model first, then today's primary and the key's other models (see gemini_rotation);
+        # models that reached today's limit are skipped until the quota resets.
+        models = await rot.order(item.api_key, chosen, grounded=False,
+                                 fallbacks=tuple(m for m in (DEFAULT_GEMINI_MODEL, FALLBACK_GEMINI_MODEL) if m))
+        if not models:
+            _note_failure("rate_limited:3600")
+        for m_name in models:
             gen_cfg: Dict[str, Any] = {"responseMimeType": "application/json", "maxOutputTokens": max_output_tokens,
                                        "temperature": 0.3}
             if response_schema:
                 gen_cfg["responseSchema"] = response_schema
-            if m_name.startswith("gemini-2.5"):
+            if m_name.startswith("gemini-2.5") and "pro" not in m_name:  # 2.5 Pro cannot turn thinking off
                 gen_cfg["thinkingConfig"] = {"thinkingBudget": 0}
             elif m_name.startswith("gemini-3"):
                 # Gemini 3.x always thinks and thinking tokens count against maxOutputTokens: keep it
@@ -496,10 +482,11 @@ class PromptEngine:
                         print(f"Gemini {m_name} returned HTTP 503; retrying once")
                         await asyncio.sleep(3)
                         res = await client.post(url, headers=headers, json=payload)
-                if res.status_code in (429, 503):
-                    print(f"Gemini {m_name} unavailable (HTTP {res.status_code}); cooling down")
-                    _cooldown(m_name)
-                    _note_failure(f"rate_limited:{MODEL_COOLDOWN_SECONDS}" if res.status_code == 429 else "unavailable")
+                if res.status_code in (429, 503) or (res.status_code in (400, 404) and "model" in res.text.lower()):
+                    kind, delay = rot.classify(res)
+                    print(f"Gemini {m_name} limited ({kind}, HTTP {res.status_code}); trying the next model")
+                    rot.mark_limited(item.api_key, m_name, kind, delay)
+                    _note_failure(f"rate_limited:{int(delay or 60)}" if res.status_code == 429 else "unavailable")
                     continue
                 if res.status_code != 200:
                     print(f"Gemini {m_name} returned HTTP {res.status_code}")
@@ -510,6 +497,7 @@ class PromptEngine:
                 text_content = "".join(pt.get("text", "") for pt in (parts or []) if not pt.get("thought"))
                 if not text_content:
                     continue
+                rot.mark_success(item.api_key, m_name)
                 label = f"Google Gemini ({m_name})"
                 if m_name != chosen:
                     label += f", fallback: {chosen} was unavailable"
@@ -518,7 +506,7 @@ class PromptEngine:
                 print(f"Gemini {m_name} returned invalid JSON")
             except httpx.HTTPError as e:
                 print(f"Gemini {m_name} request failed: {type(e).__name__}")
-                _cooldown(m_name)
+                rot.mark_limited(item.api_key, m_name, "minute", 30)
         return None
 
     @staticmethod

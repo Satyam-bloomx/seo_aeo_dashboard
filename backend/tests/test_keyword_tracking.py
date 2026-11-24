@@ -484,8 +484,18 @@ def test_grounding_parent_domain_counts_except_shared_platforms():
     assert not out["cited"]
 
 
+def _fresh_rotation(monkeypatch, models=()):
+    from app.services import gemini_rotation as rot
+    monkeypatch.setattr(rot, "_day", {})
+    monkeypatch.setattr(rot, "_paused", {})
+
+    async def listed(*_a, **_k):
+        return list(models)
+    monkeypatch.setattr(rot, "available_models", listed)
+
+
 def test_grounding_falls_back_to_a_model_with_search_quota(monkeypatch):
-    monkeypatch.setattr(kt, "_GROUNDING_COOLDOWN", {})
+    _fresh_rotation(monkeypatch)
     seen = []
 
     def handler(request):
@@ -513,7 +523,7 @@ def test_per_minute_gemini_limit_is_waited_out_daily_limit_is_not(monkeypatch):
     assert kt._per_minute_retry_delay(limited("GenerateRequestsPerMinutePerProjectPerModel-FreeTier", "17s")) == 17.0
     assert kt._per_minute_retry_delay(limited("GenerateRequestsPerDayPerProjectPerModel-FreeTier")) is None
 
-    monkeypatch.setattr(kt, "_GROUNDING_COOLDOWN", {})
+    _fresh_rotation(monkeypatch)
     slept = []
 
     async def no_sleep(s):
