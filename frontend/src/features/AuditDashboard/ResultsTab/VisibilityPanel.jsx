@@ -89,7 +89,7 @@ function QuestionRow({ q, engines }) {
         <ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
-        {g ? (
+        {q.target === 'ai' ? null : g ? (
           <>
             <span className="text-slate-600 dark:text-slate-300">Google: {g.rank ? <strong>#{g.rank}</strong> : 'not on page 1'}</span>
             <Yes on={aio.cited}>{aio.shown ? (aio.cited ? 'cited in AI Overview' : 'AI Overview, not cited') : 'no AI Overview'}</Yes>
@@ -97,6 +97,7 @@ function QuestionRow({ q, engines }) {
             {g.paa?.length ? <Yes on={g.paa_cited}>People Also Ask</Yes> : null}
           </>
         ) : <span className="text-slate-500">{q.google_error || 'Google not checked'}</span>}
+        {q.target === 'ai' && !Object.keys(q.ai || {}).length && <span className="text-slate-500">No AI engine answered</span>}
         {Object.entries(q.ai || {}).map(([name, r]) => (
           <span key={name} className="text-slate-600 dark:text-slate-300">
             {engines?.[name]?.label || name}: {r.error ? r.error : <><strong>{(r.answers || []).filter(a => a.mentioned || a.cited).length} of {r.runs}</strong> answers mention or cite you</>}
@@ -123,7 +124,33 @@ function QuestionRow({ q, engines }) {
   );
 }
 
-/** The 5 questions actually asked, every engine's answers, and what Google showed. */
+const SETS = [
+  { id: 'ai', title: 'Asked to AI engines', score: 'GEO score', hint: 'each asked once on every connected AI engine with live web search' },
+  { id: 'google', title: 'Searched on Google', score: 'AEO score and Search visibility', hint: 'AI Overview, featured snippet, People Also Ask and page-1 ranking' },
+];
+
+function QuestionSets({ items, render }) {
+  // Measurements from before the split have no set: one list, as they were measured.
+  if (!items.some(q => q.target)) return <ul className="mt-4 space-y-2">{items.map(render)}</ul>;
+  return (
+    <div className="mt-4 space-y-4">
+      {SETS.map(set => {
+        const rows = items.filter(q => (q.target || 'ai') === set.id);
+        return (
+          <div key={set.id}>
+            <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {set.title} <span className="font-semibold normal-case tracking-normal">· {set.score} · {set.hint}</span>
+            </p>
+            {rows.length ? <ul className="space-y-2">{rows.map(render)}</ul>
+              : <p className="text-xs text-slate-500">No questions in this set yet.</p>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The questions actually asked (3 to the AI engines, 3 different ones on Google), every answer, and what Google showed. */
 export default function VisibilityPanel({ vis, onEditQuestions, onConnect }) {
   const { data, error, measure, starting } = vis;
   if (!data && !error) return null;
@@ -139,7 +166,7 @@ export default function VisibilityPanel({ vis, onEditQuestions, onConnect }) {
             <Sparkles size={16} className="text-purple-500" /> AI &amp; search visibility (measured)
           </h3>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            {data?.questions?.length || 0} questions, each asked {data?.runs_per_engine || 2}× on every connected AI engine with live web search, and searched on Google.
+            {data?.questions_per_set || 3} questions asked to the AI engines (GEO) and {data?.questions_per_set || 3} different questions searched on Google (AEO and Search visibility).
             {last?.checked_at ? ` Last measured ${new Date(last.checked_at).toLocaleString()}.` : ' Not measured yet.'}
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-mono font-bold">
@@ -182,13 +209,9 @@ export default function VisibilityPanel({ vis, onEditQuestions, onConnect }) {
       )}
 
       {last?.questions?.length ? (
-        <ul className="mt-4 space-y-2">
-          {last.questions.map(q => <QuestionRow key={q.id} q={q} engines={engines} />)}
-        </ul>
+        <QuestionSets items={last.questions} render={q => <QuestionRow key={q.id} q={q} engines={engines} />} />
       ) : data?.questions?.length ? (
-        <ul className="mt-4 space-y-1 text-sm text-slate-700 dark:text-slate-200">
-          {data.questions.map(q => <li key={q.id}>• {q.text}</li>)}
-        </ul>
+        <QuestionSets items={data.questions} render={q => <li key={q.id} className="text-sm text-slate-700 dark:text-slate-200">• {q.text}</li>} />
       ) : (
         <p className="mt-4 text-xs text-slate-500">The questions are generated from the audited site on the first measurement; you can edit them in Keywords &amp; AI answers.</p>
       )}

@@ -140,13 +140,79 @@ def test_reuse_only_for_the_same_questions_within_a_day():
     assert not vis.is_fresh(fresh, QUESTIONS[:4] + [{"text": "a different question?"}])
 
 
-def test_only_non_branded_questions_are_asked_and_at_most_three():
-    items = QUESTIONS + [{"id": "b", "text": "is acme gems legit?", "kind": "question", "branded": True},
-                         {"id": "k", "text": "ruby price", "kind": "keyword", "branded": False},
-                         {"id": "q9", "text": "sixth question?", "kind": "question", "branded": False}]
+def _q(i, target=None, **extra):
+    item = {"id": f"{target or 'x'}{i}", "text": f"{target or 'legacy'} question {i}?", "kind": "question",
+            "branded": False, **extra}
+    if target:
+        item["target"] = target
+    return item
+
+
+def test_two_separate_sets_of_three_and_old_questions_count_as_ai():
+    items = ([_q(i, "google") for i in range(4)] + [_q(i) for i in range(2)] + [_q(i, "ai") for i in range(2)]
+             + [{"id": "b", "text": "is acme gems legit?", "kind": "question", "branded": True},
+                {"id": "k", "text": "ruby price", "kind": "keyword", "branded": False}])
     picked = vis.visibility_questions({"items": items})
-    assert [q["id"] for q in picked] == ["q0", "q1", "q2"]  # 3 questions, each asked once per engine
-    assert vis.VISIBILITY_QUESTIONS == 3 and vis.RUNS_PER_ENGINE == 1
+    assert [(q["id"], q["target"]) for q in picked] == [
+        ("x0", "ai"), ("x1", "ai"), ("ai0", "ai"),                      # saved before the split: AI set
+        ("google0", "google"), ("google1", "google"), ("google2", "google")]
+    assert vis.QUESTIONS_PER_TARGET == 3 and vis.VISIBILITY_QUESTIONS == 6 and vis.RUNS_PER_ENGINE == 1
+
+
+def test_ai_questions_go_only_to_the_ai_engines_and_google_questions_only_to_google(monkeypatch):
+    from app.services import keyword_tracking as kt
+    asked, searched = [], []
+
+    async def fake_gemini(_c, _cfg, text, *_a, **_k):
+        asked.append(text)
+        return vis._aggregate("gemini", "m", [vis._answer("try acme-gems.com", [], DOMAIN, "")])
+
+    async def fake_serp(_c, _key, item, *_a, **_k):
+        searched.append(item["text"])
+        return {"rank": 4, "ai_overview": {"shown": True, "cited": False}, "paa": []}, 1
+    monkeypatch.setattr(vis, "ask_gemini", fake_gemini)
+    monkeypatch.setattr(kt, "check_item", fake_serp)
+    questions = [{**_q(i, "ai")} for i in range(3)] + [{**_q(i, "google")} for i in range(3)]
+    check = asyncio.run(vis.measure(questions, DOMAIN, "", "", "serp-key", {"gemini": object()}))
+    assert asked == [f"ai question {i}?" for i in range(3)]
+    assert searched == [f"google question {i}?" for i in range(3)]
+    s = check["scores"]
+    assert s["geo"]["answers"] == 3 and s["geo"]["score"] == 100       # 3 AI answers, all mention the site
+    assert s["aeo"]["questions"] == 3 and s["seo"]["questions"] == 3     # only the Google set
+    assert s["seo"]["score"] == 60                                       # rank 4 on all three Google questions
+    assert {r["target"] for r in check["questions"]} == {"ai", "google"}
+
+
+def test_generated_questions_fill_each_set_without_repeating_a_question(monkeypatch):
+    async def fake_generate(_integrations, _pages, _domain, _location, n):
+        assert n == {"ai": 4, "google": 5}  # what is missing, plus two spare per set
+        return ([{"text": "legacy question 0?", "target": "ai", "branded": False, "kind": "question"},  # already listed
+                 {"text": "which store sells real rubies?", "target": "ai", "branded": False, "kind": "question"},
+                 {"text": "acme gems review?", "target": "ai", "branded": True, "kind": "question"},
+                 {"text": "best ruby shop online?", "target": "ai", "branded": False, "kind": "question"}]
+                + [{"text": f"how to test ruby {i}?", "target": "google", "branded": False, "kind": "question"}
+                   for i in range(5)]), "Acme Gems"
+    monkeypatch.setattr(vis, "generate_questions", fake_generate)
+    state = {"items": [_q(0)]}
+    questions, added = asyncio.run(vis.ensure_questions(state, {}, [], DOMAIN, ""))
+    assert added == 5
+    assert [q["text"] for q in questions if q["target"] == "ai"] == [
+        "legacy question 0?", "which store sells real rubies?", "best ruby shop online?"]
+    assert [q["text"] for q in questions if q["target"] == "google"] == [f"how to test ruby {i}?" for i in range(3)]
+    assert state["business_name"] == "Acme Gems"
+
+
+def test_moving_a_question_to_the_other_set_is_a_new_measurement():
+    from datetime import datetime
+    qs = [_q(0, "ai")]
+    check = {"questions_key": vis.questions_key(qs), "checked_at": datetime.utcnow().isoformat() + "Z"}
+    assert vis.is_fresh(check, qs) and not vis.is_fresh(check, [{**qs[0], "target": "google"}])
+
+
+def test_the_keyword_list_keeps_each_questions_set():
+    from app.services import keyword_tracking as kt
+    out = kt.clean_items([{"text": "how to test a ruby?", "target": "google"}, {"text": "where to buy rubies?"}], DOMAIN)
+    assert [i["target"] for i in out] == ["google", "ai"]
 
 
 def test_only_the_workspace_keys_are_used_never_the_servers(monkeypatch):

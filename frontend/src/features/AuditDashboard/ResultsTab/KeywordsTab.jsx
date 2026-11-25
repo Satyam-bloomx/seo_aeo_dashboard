@@ -467,6 +467,13 @@ export default function KeywordsTab({ onNavigateToTab, onChecked }) {
                             className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                             {it.kind === 'question' ? 'Question' : 'Keyword'}
                           </button>
+                          {it.kind === 'question' && !it.branded && (
+                            <button type="button" onClick={() => editItem(idx, { target: it.target === 'google' ? 'ai' : 'google' })}
+                              title="Which visibility check asks this question. Click to move it to the other set."
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${it.target === 'google' ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300' : 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300'}`}>
+                              {it.target === 'google' ? 'Google · AEO' : 'AI engines · GEO'}
+                            </button>
+                          )}
                           {it.branded && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">Brand (not scored)</span>}
                           {r?.paa?.length > 0 && (
                             <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300" title={r.paa.join('\n')}>

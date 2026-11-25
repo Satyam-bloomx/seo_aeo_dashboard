@@ -1,17 +1,20 @@
 """Measured visibility: GEO, AEO and Search visibility from real answers and real Google results, never from
 on-page heuristics or a model's opinion.
 
-* Three non-branded questions per site (from the Keywords list; missing ones are generated from the crawled site and
-  marked "auto"). Every question actually asked is shown to the user with every answer.
-* GEO: each question is asked RUNS_PER_ENGINE times on every connected AI engine *with live web search*
+* Six non-branded questions per site, in two separate sets so no question is measured twice:
+    - 3 "ai" questions (GEO): asked to the AI engines, written the way people ask ChatGPT for a recommendation;
+    - 3 "google" questions (AEO + Search visibility): searched on Google, written the way people type searches.
+  They come from the Keywords list (each question says which set it is in); missing ones are generated from the
+  crawled site and marked "auto". Every question actually asked is shown to the user with every answer.
+* GEO: each "ai" question is asked RUNS_PER_ENGINE times on every connected AI engine *with live web search*
   (Gemini with Google Search grounding, ChatGPT with web search, Claude with web search). A plain model call answers
   from training data and would measure what the model remembers, not current AI search, so it is never used.
   Score = share of answers that mention or cite the site, with a 95% interval (wide with only a few answers, and
   shown as such), labelled with the engines used. Only keys the user connected are used, never the server's.
-* AEO: each question searched on Google through SerpAPI (one page + the AI Overview). Score = share of the
+* AEO: each "google" question searched on Google through SerpAPI (one page + the AI Overview). Score = share of the
   questions where Google showed an answer feature (AI Overview, featured snippet, People Also Ask) in which the
   site appears.
-* Search visibility: where the site ranks on page 1 for those questions.
+* Search visibility: where the site ranks on page 1 for those same "google" questions (same search, no extra cost).
 
 Anything that could not be measured (no key, quota, provider error) is reported as not measured with the reason;
 no score is ever filled in.
@@ -26,7 +29,9 @@ import httpx
 
 from app.services import keyword_tracking as kt
 
-VISIBILITY_QUESTIONS = 3   # questions per site
+QUESTIONS_PER_TARGET = 3   # questions per set
+TARGETS = ("ai", "google")  # "ai": asked to the AI engines (GEO); "google": searched on Google (AEO + Search visibility)
+VISIBILITY_QUESTIONS = QUESTIONS_PER_TARGET * len(TARGETS)
 RUNS_PER_ENGINE = 1        # each question asked once per engine (keeps the cost low)
 ENGINES = ("gemini", "openai", "claude")
 ENGINE_LABEL = {"gemini": "Gemini", "openai": "ChatGPT", "claude": "Claude"}
@@ -45,59 +50,83 @@ class EngineLimit(Exception):
 
 # ---------------------------------------------------------------- questions
 
+def target_of(item: Dict[str, Any]) -> str:
+    """Which set a question is in. Questions saved before the split (no target) were asked to the AI engines."""
+    return "google" if item.get("target") == "google" else "ai"
+
+
 def visibility_questions(state: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """The questions the check asks: the first VISIBILITY_QUESTIONS non-branded questions of the site's list."""
-    return [i for i in (state.get("items") or []) if i.get("kind") == "question" and not i.get("branded")][:VISIBILITY_QUESTIONS]
+    """The questions the check asks: the first QUESTIONS_PER_TARGET non-branded questions of each set, AI set first.
+    Each comes back with its "target"."""
+    candidates = [i for i in (state.get("items") or []) if i.get("kind") == "question" and not i.get("branded")]
+    return [{**i, "target": t} for t in TARGETS
+            for i in [c for c in candidates if target_of(c) == t][:QUESTIONS_PER_TARGET]]
 
 
 QUESTION_PROMPT = (
-    "You pick the questions used to measure whether a business shows up in AI answers and Google. From the site "
-    "facts, write {n} questions that a potential customer would type into ChatGPT or Google BEFORE they know this "
-    "business exists: generic questions about the category, the problem it solves, or where to buy / how to choose. "
-    "Rules: never name the business, its domain, or product names that only this site uses (a question about a "
-    "site-specific product name is effectively a brand search and would only measure that the site ranks for its "
-    "own name); one question per distinct topic the site really covers; plain natural language, under 12 words; "
-    "use the site's language and, when given, its location (e.g. 'in India'). Also return the business name "
-    "exactly as the site writes it."
+    "You pick the questions used to measure whether a business shows up in AI answers and on Google. From the site "
+    "facts, write two DIFFERENT sets of questions a potential customer would ask BEFORE they know this business "
+    "exists: generic questions about the category, the problem it solves, or where to buy / how to choose.\n"
+    "- ai_questions ({ai}): asked to ChatGPT, Gemini or Claude. Conversational, the way people ask an assistant for "
+    "advice or a recommendation (e.g. 'Which online store sells genuine ... in India?').\n"
+    "- google_questions ({google}): typed into Google. Short search phrasing that Google answers with an AI Overview, "
+    "featured snippet or People Also Ask (e.g. 'how to check if ... is real').\n"
+    "Rules: no question may appear in both sets, even reworded; never name the business, its domain, or product "
+    "names that only this site uses (that would only measure that the site ranks for its own name); spread the "
+    "questions across the distinct topics the site really covers; plain natural language, under 12 words; use the "
+    "site's language and, when given, its location (e.g. 'in India'). Also return the business name exactly as the "
+    "site writes it."
 )
 QUESTION_SCHEMA = {"type": "OBJECT", "properties": {
     "business_name": {"type": "STRING"},
-    "questions": {"type": "ARRAY", "items": {"type": "STRING"}}}, "required": ["questions"]}
+    "ai_questions": {"type": "ARRAY", "items": {"type": "STRING"}},
+    "google_questions": {"type": "ARRAY", "items": {"type": "STRING"}}},
+    "required": ["ai_questions", "google_questions"]}
 
 
 async def generate_questions(integrations: Dict[str, Any], pages: List[Any], domain: str, location: str,
-                             n: int) -> Tuple[List[Dict[str, Any]], str]:
-    """Generic, non-branded customer questions from the crawled site (one AI call). Returns (items, business name)."""
+                             n: Dict[str, int]) -> Tuple[List[Dict[str, Any]], str]:
+    """Generic, non-branded customer questions from the crawled site, n[target] per set (one AI call).
+    Returns (items with their "target", business name)."""
     from app.services.prompt_engine import PromptEngine
     ok, _by, data = await PromptEngine.execute_llm_json(
-        system_prompt=QUESTION_PROMPT.replace("{n}", str(n)),
-        user_prompt=kt.site_facts(pages, domain, location) + f"\n\nWrite {n} questions.",
-        integrations=integrations, max_output_tokens=1200, response_schema=QUESTION_SCHEMA)
-    if not ok or not isinstance(data.get("questions"), list):
+        system_prompt=QUESTION_PROMPT.replace("{ai}", str(n.get("ai", 0))).replace("{google}", str(n.get("google", 0))),
+        user_prompt=kt.site_facts(pages, domain, location)
+                    + f"\n\nWrite {n.get('ai', 0)} ai_questions and {n.get('google', 0)} google_questions.",
+        integrations=integrations, max_output_tokens=1500, response_schema=QUESTION_SCHEMA)
+    if not ok:
         return [], ""
     name = str(data.get("business_name") or "").strip()[:80]
-    raw = [{"text": q if str(q).strip().endswith("?") else f"{str(q).strip()}?", "kind": "question",
-            "intent": "problem", "source": "auto"} for q in data["questions"] if str(q).strip()]
-    return kt.clean_items(raw, domain, name), name
+    items = []
+    for target in TARGETS:
+        raw = [{"text": q if str(q).strip().endswith("?") else f"{str(q).strip()}?", "kind": "question",
+                "intent": "problem", "source": "auto", "target": target}
+               for q in (data.get(f"{target}_questions") or []) if str(q).strip()]
+        items += kt.clean_items(raw, domain, name)
+    return items, name
 
 
 async def ensure_questions(state: Dict[str, Any], integrations: Dict[str, Any], pages: List[Any], domain: str,
                            location: str) -> Tuple[List[Dict[str, Any]], int]:
-    """Top the list up to VISIBILITY_QUESTIONS non-branded questions, generated from the crawled site ("auto").
+    """Top each set up to QUESTIONS_PER_TARGET non-branded questions, generated from the crawled site ("auto").
+    A generated question already in the list (in either set) is skipped, so no question is measured twice.
     Returns (questions, how many were generated)."""
     have = visibility_questions(state)
-    if len(have) >= VISIBILITY_QUESTIONS:
+    missing = {t: QUESTIONS_PER_TARGET - sum(1 for q in have if q["target"] == t) for t in TARGETS}
+    if not any(v > 0 for v in missing.values()):
         return have, 0
-    items, name = await generate_questions(integrations, pages, domain, location, VISIBILITY_QUESTIONS + 2)
+    # A couple extra per set, in case some come back branded or already listed.
+    items, name = await generate_questions(integrations, pages, domain, location,
+                                           {t: v + 2 for t, v in missing.items() if v > 0})
     existing = {kt._norm(i["text"]) for i in state.get("items") or []}
     added = []
     for item in items:
-        if item["branded"] or kt._norm(item["text"]) in existing:
+        t = item["target"]
+        if missing.get(t, 0) <= 0 or item["branded"] or kt._norm(item["text"]) in existing:
             continue
         added.append({**item, "source": "auto"})
         existing.add(kt._norm(item["text"]))
-        if len(have) + len(added) >= VISIBILITY_QUESTIONS:
-            break
+        missing[t] -= 1
     state["items"] = (state.get("items") or []) + added
     if name and not state.get("business_name"):
         state["business_name"] = name
@@ -105,7 +134,7 @@ async def ensure_questions(state: Dict[str, Any], integrations: Dict[str, Any], 
 
 
 def questions_key(questions: List[Dict[str, Any]]) -> str:
-    return "|".join(kt._norm(q["text"]) for q in questions)
+    return "|".join(f"{target_of(q)}:{kt._norm(q['text'])}" for q in questions)
 
 
 # ---------------------------------------------------------------- engines (same result shape for every engine)
@@ -248,9 +277,11 @@ async def measure(questions: List[Dict[str, Any]], domain: str, location: str, b
 
     async def one(c: httpx.AsyncClient, q: Dict[str, Any]) -> Dict[str, Any]:
         nonlocal searches
-        row: Dict[str, Any] = {"id": q["id"], "text": q["text"], "source": q.get("source", "user"), "ai": {}}
+        target = target_of(q)
+        row: Dict[str, Any] = {"id": q["id"], "text": q["text"], "source": q.get("source", "user"), "target": target,
+                               "ai": {}}
         async with sem:
-            if serp_key and "serp" not in stopped:
+            if target == "google" and serp_key and "serp" not in stopped:
                 try:
                     serp, used = await kt.check_item(c, serp_key, q, domain, location, business_name, depth=1)
                     searches += used
@@ -260,10 +291,11 @@ async def measure(questions: List[Dict[str, Any]], domain: str, location: str, b
                     stopped["serp"] = "SerpAPI: " + str(e)[:180]
                 except Exception as e:  # noqa: BLE001 - no retry: each retry is a paid search
                     row["google_error"] = f"Google search failed ({type(e).__name__})."
-            results = await asyncio.gather(*(ask(c, n, cfg, q["text"]) for n, cfg in engines.items()))
-            for name, r in zip(engines, results):
-                if r is not None:
-                    row["ai"][name] = r
+            if target == "ai":
+                results = await asyncio.gather(*(ask(c, n, cfg, q["text"]) for n, cfg in engines.items()))
+                for name, r in zip(engines, results):
+                    if r is not None:
+                        row["ai"][name] = r
         return row
 
     own = client is None

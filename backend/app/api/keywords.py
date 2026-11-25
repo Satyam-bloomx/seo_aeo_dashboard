@@ -28,6 +28,7 @@ class KeywordItem(BaseModel):
     branded: bool = False
     local: bool = False
     source: Optional[str] = None  # "auto" (generated for the visibility check) or "user"
+    target: Optional[str] = None  # visibility set: "ai" (GEO) or "google" (AEO + Search visibility)
 
 
 class KeywordListUpdate(BaseModel):

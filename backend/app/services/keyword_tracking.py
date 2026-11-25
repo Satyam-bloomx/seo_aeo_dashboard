@@ -106,6 +106,8 @@ def clean_items(raw: List[Dict[str, Any]], domain: str, business_name: str = "")
             "local": bool(r.get("local")) or intent == "local",
             # "auto": generated for the visibility check; anything the user adds or edits is theirs
             "source": r.get("source") if r.get("source") in ("auto", "user") else "user",
+            # Visibility set: "ai" (asked to AI engines, GEO) or "google" (searched on Google, AEO + Search visibility)
+            "target": "google" if r.get("target") == "google" else "ai",
         })
         if len(out) >= MAX_ITEMS:
             break
