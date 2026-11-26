@@ -635,6 +635,7 @@ export function generateAllEvaluatedChecks(pages, summary) {
       count: rule.failing_count,
       evaluatedCount: rule.evaluated_count,
       percentage: rule.evaluated_count > 0 ? ((rule.failing_count / rule.evaluated_count) * 100).toFixed(1) : '0.0',
+      trafficImpact: rule.traffic_impact || null,
       isPassing: rule.status === 'pass',
       notEvaluated,
       notEvaluatedReason: rule.reason,
@@ -643,11 +644,16 @@ export function generateAllEvaluatedChecks(pages, summary) {
   });
 }
 
-/** Failing checks only, highest priority and widest impact first. */
+/** Failing checks only, ranked by live traffic impact when GSC/GA4 is connected, else severity + reach. */
 export function generateIssuesReport(pages, summary) {
   return generateAllEvaluatedChecks(pages, summary)
     .filter(r => r.status === 'Flagged')
-    .sort((a, b) => (PRIORITY_RANK[b.priority] || 1) - (PRIORITY_RANK[a.priority] || 1) || b.count - a.count);
+    .sort((a, b) => {
+      const impA = a.trafficImpact?.impact_score ?? 0;
+      const impB = b.trafficImpact?.impact_score ?? 0;
+      if (impA !== impB) return impB - impA;
+      return (PRIORITY_RANK[b.priority] || 1) - (PRIORITY_RANK[a.priority] || 1) || b.count - a.count;
+    });
 }
 
 

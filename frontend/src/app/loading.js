@@ -27,11 +27,14 @@ export default function Loading({
   isBootloader = false,
   onBootloaderComplete = null,
   label = 'Preparing your audit workspace',
+  progressOverride = null,
 }) {
   const rootRef = useRef(null);
   const progressRingRef = useRef(null);
   const progressBarRef = useRef(null);
-  const [progress, setProgress] = useState(0);
+  const progressValRef = useRef(0);
+  const isControlled = typeof progressOverride === 'number';
+  const [progress, setProgress] = useState(isControlled ? Math.max(0, Math.min(100, Math.round(progressOverride))) : 0);
 
   const currentStageText = useMemo(() => {
     let current = STAGES[0].text;
@@ -42,7 +45,8 @@ export default function Loading({
   }, [progress]);
 
   const paintProgress = useCallback((value) => {
-    const pct = Math.round(value);
+    const pct = Math.max(0, Math.min(100, Math.round(value)));
+    progressValRef.current = pct;
     setProgress(pct);
     if (progressRingRef.current) {
       progressRingRef.current.style.strokeDashoffset = `${
@@ -53,6 +57,20 @@ export default function Loading({
       progressBarRef.current.style.transform = `scaleX(${pct / 100})`;
     }
   }, []);
+
+  // Data-driven progress: smoothly advance ring & bar toward real loaded percentage (never loops or resets).
+  useEffect(() => {
+    if (!isControlled) return undefined;
+    const target = Math.max(progressValRef.current, Math.min(100, progressOverride));
+    const counter = { val: progressValRef.current };
+    const tween = gsap.to(counter, {
+      val: target,
+      duration: 0.35,
+      ease: 'power2.out',
+      onUpdate: () => paintProgress(counter.val),
+    });
+    return () => tween.kill();
+  }, [isControlled, progressOverride, paintProgress]);
 
   // Internal safety timer: guarantees loading screen NEVER hangs even if tab is backgrounded
   useEffect(() => {
@@ -111,6 +129,21 @@ export default function Loading({
       });
 
       // Master entrance & progress lifecycle
+      if (isControlled) {
+        gsap.fromTo(
+          '.boot-emblem',
+          { scale: 0.9, opacity: 0 },
+          { scale: 1, opacity: 1, duration: 0.35, ease: 'back.out(1.4)' }
+        );
+        gsap.fromTo(
+          '.boot-meta',
+          { y: 10, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.3, stagger: 0.04, ease: 'power3.out' }
+        );
+        paintProgress(progressOverride);
+        return;
+      }
+
       const tl = gsap.timeline({
         repeat: isBootloader ? 0 : -1,
         repeatDelay: isBootloader ? 0 : 0.8,

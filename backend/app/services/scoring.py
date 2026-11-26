@@ -23,6 +23,7 @@ Method (scoring version 2026.12): one published methodology, followed as written
     on the AI search bots, noindex / nosnippet, content that needs JavaScript).
   * Integration data (Search Console, GA4) never feeds Site Health; each integration has its own panel.
 """
+import math
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 from app.services.fetch_outcome import is_uncounted
@@ -230,7 +231,8 @@ RULES: List[Rule] = [
     _r("H2", "Missing", W, L),
     _r("H2", "Over 70 Characters", O, L),
     _r("Images", "Missing Alt Attribute", I, L),
-    _r("Images", "Missing Alt Text", I, L),
+    _r("Images", "Missing Alt Text", O, L),
+    _r("Images", "Broken Images", I, M, ours=True),
     _r("Images", "Alt Text Over 100 Characters", O, L),
     _r("Images", "Missing Size Attributes", O, L),
     # ---- Content
@@ -261,6 +263,10 @@ RULES: List[Rule] = [
     *[_r("Validation", n, I, M) for n in ("Missing <head> Tag", "Multiple <head> Tags", "Missing <body> Tag",
                                            "Multiple <body> Tags")],
     _r("Validation", "Premature <head> Closure", I, H, ours=True),
+    _r("Validation", "Missing Viewport Meta Tag", W, H, ours=True),
+    _r("Validation", "Missing HTML Lang Attribute", W, L, ours=True),
+    _r("Validation", "Missing OpenGraph Tags", O, L, ours=True),
+    _r("Validation", "Missing Twitter Card Tags", O, L, ours=True),
     _r("Validation", "HTML Document Over 2MB", I, H),
     _r("Validation", "HTML Over 500KB", W, M, ours=True),            # Enormous HTML payload (>500KB)
     _r("Validation", "DOM Over 1,400 Elements", W, L, ours=True),     # Excessive DOM size (>1,400 nodes)
@@ -542,6 +548,67 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
     if any(not_counted.values()):
         explanation.append({"label": "Pages not counted", "impact": 0, "detail": not_counted_detail(not_counted)})
 
+    # ---- Traffic-weighted prioritization (graceful 4-state fallback: gsc+ga4 | gsc_only | ga4_only | crawl_only)
+    page_traffic: Dict[Any, Dict[str, Optional[float]]] = {}
+    has_gsc_traffic = False
+    has_ga4_traffic = False
+    total_site_impressions = 0.0
+    total_site_clicks = 0.0
+    total_site_sessions = 0.0
+    for p in internal:
+        pid = p.get("id")
+        ad = p.get("audit_data") or {}
+        gsc = ad.get("Search_Console") or {}
+        ga4 = ad.get("Google_Analytics") or {}
+        impr = _num(gsc.get("Impressions_Num")) if gsc.get("Is_Live_GSC") else None
+        clicks = _num(gsc.get("Clicks_Num")) if gsc.get("Is_Live_GSC") else None
+        sess = _num(ga4.get("Sessions_Num"))
+        if impr is not None or clicks is not None:
+            has_gsc_traffic = True
+            total_site_impressions += impr or 0.0
+            total_site_clicks += clicks or 0.0
+        if sess is not None:
+            has_ga4_traffic = True
+            total_site_sessions += sess
+        page_traffic[pid] = {"impressions": impr, "clicks": clicks, "sessions": sess}
+
+    if has_gsc_traffic and has_ga4_traffic:
+        prio_mode = "gsc+ga4"
+        prio_note = "Prioritized by live Search Console impressions and Google Analytics traffic."
+    elif has_gsc_traffic:
+        prio_mode = "gsc_only"
+        prio_note = "Prioritized by live Search Console impressions. Connect Google Analytics 4 to include session traffic."
+    elif has_ga4_traffic:
+        prio_mode = "ga4_only"
+        prio_note = "Prioritized by Google Analytics 4 sessions. Connect Search Console to include search impressions and clicks."
+    else:
+        prio_mode = "crawl_only"
+        prio_note = "Prioritized by technical severity and affected pages. Connect Search Console or GA4 to rank issues by live traffic."
+
+    def _traffic_impact(t: str, pr: str, failing_ids: List[Any], site_wide: bool = False) -> Dict[str, Any]:
+        base = PRIORITY_PENALTY.get((t, pr), 5)
+        if site_wide:
+            impr = round(total_site_impressions) if has_gsc_traffic else None
+            clicks = round(total_site_clicks) if has_gsc_traffic else None
+            sess = round(total_site_sessions) if has_ga4_traffic else None
+            reach = 1.0
+        else:
+            impr = round(sum((page_traffic.get(pid) or {}).get("impressions") or 0.0 for pid in failing_ids)) if has_gsc_traffic else None
+            clicks = round(sum((page_traffic.get(pid) or {}).get("clicks") or 0.0 for pid in failing_ids)) if has_gsc_traffic else None
+            sess = round(sum((page_traffic.get(pid) or {}).get("sessions") or 0.0 for pid in failing_ids)) if has_ga4_traffic else None
+            reach = len(failing_ids) / max(1, n_urls)
+        if has_gsc_traffic or has_ga4_traffic:
+            mult = 1.0 + math.log1p((impr or 0) / 50.0) + math.log1p((sess or 0) / 10.0)
+        else:
+            mult = 1.0 + reach
+        return {
+            "mode": prio_mode,
+            "gsc_impressions": impr,
+            "gsc_clicks": clicks,
+            "ga4_sessions": sess,
+            "impact_score": round(base * mult, 1),
+        }
+
     # ---- Per-check results
     rules_out = []
     for rule in RULES:
@@ -556,9 +623,11 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
             continue
         stats = per_rule[rule.id]
         status = "not_evaluated" if stats["evaluated"] == 0 else ("fail" if stats["failing"] else "pass")
+        ti = _traffic_impact(t, pr, stats["failing"]) if status == "fail" else None
         rules_out.append({**common, "status": status, "reason": None if stats["evaluated"] else "no_data",
                           "failing_count": len(stats["failing"]), "evaluated_count": stats["evaluated"],
-                          "failing_page_ids": stats["failing"][:FAILING_ID_CAP]})
+                          "failing_page_ids": stats["failing"][:FAILING_ID_CAP],
+                          **({"traffic_impact": ti} if ti else {})})
 
     # Site-wide issues (robots.txt, sitemap) join the check list so every view that lists issues shows them.
     for issue in site_issues:
@@ -568,7 +637,7 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
                           "is_error": is_error(t, pr), "escalated": False, "ours": False, "integration": False,
                           "site_wide": True, "detail": issue.get("detail"), "source": issue.get("source"),
                           "status": "fail", "reason": None, "failing_count": 0, "evaluated_count": 0,
-                          "failing_page_ids": []})
+                          "failing_page_ids": [], "traffic_impact": _traffic_impact(t, pr, [], site_wide=True)})
 
     def failing_of(kind: str) -> List[dict]:
         out = []
@@ -642,6 +711,9 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
     geo = compute_geo_readiness(internal, site_mode, site_facts.get("ai_crawlers"))
     integrations_out = integration_scores(internal, integration_data or {})
     _apply_ai_access_to_aeo(integrations_out, geo)
+    ga_aeo = ((integration_data or {}).get("google_analytics") or {}).get("aeo_spotlight") or {}
+    if isinstance(ga_aeo, dict) and ga_aeo.get("ai_assistant_sessions") is not None:
+        geo["ga4_ai_sessions"] = int(ga_aeo.get("ai_assistant_sessions") or 0)
     page_check = None
     if not site_mode and internal:
         only = page_checks.get(str(internal[0].get("id"))) or {}
@@ -684,6 +756,12 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
         "technical_seo": technical_seo,
         "page_checks": page_checks,
         "rules": rules_out,
+        "prioritization": {
+            "mode": prio_mode,
+            "gsc_connected": has_gsc_traffic,
+            "ga4_connected": has_ga4_traffic,
+            "note": prio_note,
+        },
         "integrations": integrations_out,
         "score_explanation": explanation,
         "geo_readiness": geo,

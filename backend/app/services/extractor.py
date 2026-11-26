@@ -895,9 +895,18 @@ def extract_seo_metrics(html_content: str, url: str, headers: Dict[str, str] = N
 
     # 30. Validation
     premature_head = has_premature_head_closure(html_content)
+    html_tag = soup.find("html")
+    html_lang = (html_tag.get("lang") or "").strip() if html_tag else ""
+    has_viewport = soup.find("meta", attrs={"name": re.compile(r"^viewport$", re.I)}) is not None
+    has_og = soup.find("meta", attrs={"property": re.compile(r"^og:", re.I)}) is not None
+    has_twitter = soup.find("meta", attrs={"name": re.compile(r"^twitter:", re.I)}) is not None
     validation_data = {
         "Invalid HTML Elements in <head>": premature_head,
         "Premature <head> Closure": premature_head,
+        "Missing Viewport Meta Tag": not has_viewport,
+        "Missing HTML Lang Attribute": not bool(html_lang),
+        "Missing OpenGraph Tags": not has_og,
+        "Missing Twitter Card Tags": not has_twitter,
         "<body> Element Preceding <html>": False,
         "<head> Not First In <html> Element": False,
         "Missing <head> Tag": soup.find("head") is None,

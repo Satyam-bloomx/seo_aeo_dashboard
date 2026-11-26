@@ -150,6 +150,10 @@ function buildAiReadiness(pages, crawlSummary) {
       : 'AI search crawlers (ChatGPT, Claude, Perplexity) are blocked from reading the site, so it cannot be quoted in their answers.');
     lines.push(`llms.txt guidance file: ${crawlers.llms_txt?.present ? 'present' : 'not found (optional)'}.`);
   }
+  const ga4AiSessions = crawlSummary?.geo_readiness?.ga4_ai_sessions;
+  if (typeof ga4AiSessions === 'number') {
+    lines.push(`Google Analytics 4 real AI assistant referrals (30 days): ${ga4AiSessions.toLocaleString()} session${ga4AiSessions === 1 ? '' : 's'}.`);
+  }
   return { score: ar?.score ?? null, lines };
 }
 

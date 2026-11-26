@@ -6,10 +6,10 @@ import { checkVisibility, getVisibility } from '@/api/client';
 const POLL_MS = 5000;
 
 /** The site's measured visibility (GET /visibility), polled while a measurement runs. */
-export function useVisibility(enabled) {
-  const [data, setData] = useState(null);
+export function useVisibility(enabled, initialData = null) {
+  const [data, setData] = useState(initialData);
   const [error, setError] = useState(null);
-  const [settled, setSettled] = useState(false);
+  const [settled, setSettled] = useState(Boolean(initialData));
   const [starting, setStarting] = useState(false);
   const timer = useRef(null);
 
@@ -147,7 +147,7 @@ function QuestionRow({ q, engines, siteDomain }) {
         <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
           {q.text}
           <span className="ml-2 rounded px-1.5 py-0.5 text-[10px] font-mono font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
-            {q.source === 'auto' ? 'generated' : 'yours'}
+            {q.source === 'gsc' ? 'from gsc' : q.source === 'auto' ? 'generated' : 'yours'}
           </span>
         </span>
         <ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />

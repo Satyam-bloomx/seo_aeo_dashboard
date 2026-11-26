@@ -542,7 +542,7 @@ function ScoreExplanation({ sections }) {
   );
 }
 
-export default function OverviewTab({ pages, integrationsStatus = [], onNavigateToExplorer, onNavigateToTab }) {
+export default function OverviewTab({ pages, integrationsStatus = [], initialVisibility = null, onNavigateToExplorer, onNavigateToTab }) {
   const containerRef = useRef(null);
   const reduced = useReducedMotion();
   const [showTechScoreModal, setShowTechScoreModal] = useState(false);
@@ -611,8 +611,8 @@ export default function OverviewTab({ pages, integrationsStatus = [], onNavigate
   }, [pages, issuesReport, crawlSummary]);
 
   const healthScore = pages?.length > 0 ? technicalSeoResult.siteHealthScore : null;
-  // Measured GEO / AEO / Search visibility: real AI answers and Google results for the site's 5 questions.
-  const vis = useVisibility(Boolean(crawlSummary));
+  // Measured GEO / AEO / Search visibility: preloaded during workspace hydration so cards never flash empty.
+  const vis = useVisibility(Boolean(crawlSummary), initialVisibility);
   const isPageMode = crawlSummary?.mode === 'page';
   const sh = crawlSummary?.site_health;
   const pageCheck = crawlSummary?.page_check;

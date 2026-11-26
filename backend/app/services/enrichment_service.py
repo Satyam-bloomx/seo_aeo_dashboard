@@ -186,7 +186,23 @@ class EnrichmentService:
             gbp_key = getattr(integrations.get("google_business"), "api_key", None) if "google_business" in integrations else None
             ps_key = getattr(integrations.get("pagespeed"), "api_key", None) if "pagespeed" in integrations else None
             gsc_live = bool(gsc_token and gsc_intel and gsc_intel.get("is_live"))
-            html_rank = {p.id: i for i, p in enumerate(p for p in pages if is_html_page(p))}
+            # Traffic-first ranking for paid AI/PageSpeed enrichment: spend credits on pages with real
+            # GSC impressions or GA4 sessions first; fall back to crawl depth & URL length when neither is connected.
+            gsc_pages_map = (gsc_intel or {}).get("pages") if isinstance(gsc_intel, dict) else {}
+            ga4_pages_map = (ga4_data or {}).get("pages") if isinstance(ga4_data, dict) else {}
+
+            def _page_traffic_priority(p: Page) -> float:
+                u = (p.url or "").rstrip("/")
+                gsc_row = (gsc_pages_map or {}).get(p.url) or (gsc_pages_map or {}).get(u) or {}
+                ga4_row = (ga4_pages_map or {}).get(p.url) or (ga4_pages_map or {}).get(u) or {}
+                impr = float(gsc_row.get("impressions") or 0) if isinstance(gsc_row, dict) else 0.0
+                sess = float(ga4_row.get("sessions") or ga4_row.get("sessions_30d") or 0) if isinstance(ga4_row, dict) else 0.0
+                return impr + sess * 10.0
+
+            html_pages = [p for p in pages if is_html_page(p)]
+            if gsc_pages_map or ga4_pages_map:
+                html_pages.sort(key=lambda p: (-_page_traffic_priority(p), p.crawl_depth or 0, len(p.url or ""), p.id))
+            html_rank = {p.id: i for i, p in enumerate(html_pages)}
 
             PSI_PAGES, INSPECT_PAGES, PER_PAGE_TIMEOUT, PROBE_TIMEOUT = 3, 20, 35, 22
             semaphore = asyncio.Semaphore(5)

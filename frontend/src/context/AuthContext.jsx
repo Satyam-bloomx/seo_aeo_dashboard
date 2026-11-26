@@ -17,11 +17,15 @@ const AuthContext = createContext({
 
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000; // 3 days (72 hours / 259,200,000 ms)
 const SESSION_TIMESTAMP_KEY = 'audit_session_started_at';
+const SESSION_VERSION_KEY = 'audit_session_version';
+// Bump this to force all existing browser sessions to sign out once on deploy.
+const CURRENT_SESSION_VERSION = '2026-11-26-v2';
 
 const recordSessionStart = () => {
   try {
     if (typeof window !== 'undefined') {
       localStorage.setItem(SESSION_TIMESTAMP_KEY, Date.now().toString());
+      localStorage.setItem(SESSION_VERSION_KEY, CURRENT_SESSION_VERSION);
     }
   } catch {}
 };
@@ -117,10 +121,31 @@ export const AuthProvider = ({ children }) => {
           console.warn('Error fetching Supabase session:', error.message);
         }
 
+        // One-time forced sign-out when the deployed session version bumps.
+        const savedVersion = typeof window !== 'undefined' ? localStorage.getItem(SESSION_VERSION_KEY) : CURRENT_SESSION_VERSION;
+        if (initialSession && savedVersion !== CURRENT_SESSION_VERSION) {
+          try {
+            localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+            localStorage.removeItem('audit_demo_session');
+            localStorage.setItem(SESSION_VERSION_KEY, CURRENT_SESSION_VERSION);
+            await supabase.auth.signOut();
+          } catch {}
+          setUser(null);
+          setSession(null);
+          setLoading(false);
+          toast.info('Please sign in again', {
+            description: 'We updated AuditPro — please sign in again to load the latest version.',
+            duration: 8000,
+          });
+          return;
+        }
+
         if (initialSession) {
           if (!localStorage.getItem(SESSION_TIMESTAMP_KEY)) {
             recordSessionStart();
           }
+        } else if (typeof window !== 'undefined' && savedVersion !== CURRENT_SESSION_VERSION) {
+          try { localStorage.setItem(SESSION_VERSION_KEY, CURRENT_SESSION_VERSION); } catch {}
         }
 
         setSession(initialSession);

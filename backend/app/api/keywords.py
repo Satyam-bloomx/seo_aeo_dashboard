@@ -208,3 +208,16 @@ async def keyword_locations(q: str = Query(..., min_length=2, max_length=80),
         return {"locations": await kt.search_locations(q)}
     except Exception:
         return {"locations": []}
+
+
+@router.get("/keywords/autocomplete")
+async def keyword_autocomplete(
+    q: str = Query(..., min_length=2, max_length=120),
+    hl: str = Query("en", max_length=10),
+    gl: str = Query("in", max_length=10),
+    user: UserSession = Depends(get_current_user),
+):
+    """Free Google Autocomplete keyword ideas (no API key or AI credits required)."""
+    from app.services.autocomplete import fetch_autocomplete
+    suggestions = await fetch_autocomplete(q, hl=hl, gl=gl, limit=10)
+    return {"source": "autocomplete", "query": q, "suggestions": suggestions}

@@ -16,9 +16,10 @@ const AiAssistantDrawer = dynamic(() => import('./AiAssistantDrawer'), { ssr: fa
 const SettingsModal = dynamic(() => import('./SettingsModal/SettingsModal'), { ssr: false });
 const IntegrationsPanel = dynamic(() => import('./IntegrationsPanel'), { ssr: false });
 import ErrorBoundary from '@/components/common/ErrorBoundary';
+import Loading from '@/app/loading';
 import SpiderLiveProgressScreen from './SpiderLiveProgressScreen';
 import ThemeToggle from '@/components/ui/ThemeToggle';
-import { API_BASE_URL, authFetch } from '@/api/client';
+import { API_BASE_URL, authFetch, getVisibility } from '@/api/client';
 import { generateIssuesReport } from '@/utils/IssuesEngine';
 import { copyToClipboard } from '@/utils/clipboard';
 import { getDiagnosticDetail, getPriorityMeta } from '@/utils/diagnosticDetails';
@@ -350,10 +351,12 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
     return () => { cancelled = true; };
   }, [selectedRowId]);
 
-  // Hold initial dashboard reveal on reload until latest crawl, pages, integrations, and summary have loaded.
+  // Hold initial dashboard reveal on reload until latest crawl, pages, integrations, summary, and visibility have loaded.
   const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [bootSteps, setBootSteps] = useState({ integrations: false, crawl: false, visibility: false });
+  const [initialVisibility, setInitialVisibility] = useState(null);
 
-  // Auto-load latest crawl data and integrations status on mount
+  // Auto-load latest crawl data, integrations status, and AI/search visibility on mount
   useEffect(() => {
     let active = true;
     const loadLatestCrawl = async () => {
@@ -376,14 +379,30 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
         }
       } catch (err) {
         console.warn('Could not auto-load latest crawl:', err);
+      } finally {
+        if (active) setBootSteps(s => ({ ...s, crawl: true }));
       }
     };
     const loadIntegrations = async () => {
-      await Promise.resolve(); // state is only ever set after the request, never during the effect
-      await fetchIntegrationsStatus();
+      try {
+        await Promise.resolve(); // state is only ever set after the request, never during the effect
+        await fetchIntegrationsStatus();
+      } finally {
+        if (active) setBootSteps(s => ({ ...s, integrations: true }));
+      }
     };
-    // Both requests start together.
-    Promise.all([loadIntegrations(), loadLatestCrawl()]).finally(() => {
+    const loadVisibility = async () => {
+      try {
+        const visData = await getVisibility();
+        if (active) setInitialVisibility(visData);
+      } catch {
+        // 404 when no completed audit exists yet: safe to ignore
+      } finally {
+        if (active) setBootSteps(s => ({ ...s, visibility: true }));
+      }
+    };
+    // All initial requests run in parallel before lifting the app's Loading screen.
+    Promise.all([loadIntegrations(), loadLatestCrawl(), loadVisibility()]).finally(() => {
       if (active) setIsBootstrapping(false);
     });
     return () => { active = false; };
@@ -1544,6 +1563,7 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
             key={`overview-${crawlId || 'ready'}`}
             pages={pages}
             integrationsStatus={integrationsStatus}
+            initialVisibility={initialVisibility}
             onNavigateToExplorer={handleNavigateToExplorer}
             onNavigateToTab={(tab) => handleTabChange(tab)}
           />
@@ -1645,17 +1665,16 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
     return null;
   };
 
-  const isWorkspaceHydrating = isBootstrapping || Boolean(crawlId && status === 'completed' && !crawlSummary);
+  const needsSummary = Boolean(crawlId && status === 'completed');
+  const isWorkspaceHydrating = isBootstrapping || (needsSummary && !crawlSummary);
   if (isWorkspaceHydrating) {
-    return (
-      <div className="flex h-screen h-[100dvh] w-full items-center justify-center bg-[#F8FAFC] dark:bg-[#050505] font-sans text-slate-900 dark:text-white">
-        <div className="flex flex-col items-center gap-3 text-center px-6">
-          <Loader2 size={28} className="animate-spin text-indigo-500" />
-          <p className="text-sm font-bold tracking-tight">Loading audit data…</p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">Waiting for crawl results, scores, and integrations before opening the dashboard.</p>
-        </div>
-      </div>
-    );
+    const realProgress =
+      20 +
+      (bootSteps.integrations ? 20 : 0) +
+      (bootSteps.crawl ? 25 : 0) +
+      (bootSteps.visibility ? 20 : 0) +
+      (!needsSummary || crawlSummary ? 15 : 0);
+    return <Loading progressOverride={Math.min(98, realProgress)} label="Loading your audit workspace" />;
   }
 
   return (

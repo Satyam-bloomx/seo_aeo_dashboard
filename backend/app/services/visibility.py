@@ -106,27 +106,90 @@ async def generate_questions(integrations: Dict[str, Any], pages: List[Any], dom
     return items, name
 
 
+_QUESTION_STARTS = ("how ", "what ", "why ", "where ", "when ", "which ", "who ", "can ", "is ", "are ", "best ", "top ")
+
+
+def extract_gsc_questions(pages: List[Any], domain: str, business_name: str,
+                          missing: Dict[str, int]) -> List[Dict[str, Any]]:
+    """Zero-LLM question extraction from real Search Console queries on crawled pages.
+    Saves AI credits when GSC is connected by using real user search queries first."""
+    candidates: List[Tuple[bool, float, str]] = []
+    seen = set()
+    for p in pages or []:
+        ad = (p.audit_data if hasattr(p, "audit_data") else p.get("audit_data")) or {}
+        gsc = ad.get("Search_Console") or {}
+        if not gsc.get("Is_Live_GSC"):
+            continue
+        impr = float(gsc.get("Impressions_Num") or 0)
+        raw_queries = []
+        if gsc.get("Top_Query"):
+            raw_queries.append(str(gsc["Top_Query"]))
+        for q in (gsc.get("Top_Queries") or []):
+            if isinstance(q, dict) and q.get("query"):
+                raw_queries.append(str(q["query"]))
+            elif isinstance(q, str):
+                raw_queries.append(q)
+        for raw_q in raw_queries:
+            q = " ".join(raw_q.split()).strip()
+            low = q.lower()
+            if len(q) < 6 or low in seen or kt.is_branded(q, domain, business_name):
+                continue
+            seen.add(low)
+            is_q = low.endswith("?") or low.startswith(_QUESTION_STARTS)
+            candidates.append((is_q, impr, q))
+
+    if not candidates:
+        return []
+    # Prefer actual question-shaped queries, then highest impressions.
+    candidates.sort(key=lambda item: (not item[0], -item[1], item[2]))
+    need_ai = max(0, missing.get("ai", 0))
+    need_google = max(0, missing.get("google", 0))
+    out: List[Dict[str, Any]] = []
+    idx = 0
+    for target, count in (("google", need_google), ("ai", need_ai)):
+        for _ in range(count):
+            if idx >= len(candidates):
+                break
+            _, _, text = candidates[idx]
+            idx += 1
+            q_text = text if text.endswith("?") else f"{text}?"
+            out.append({"text": q_text, "kind": "question", "intent": "problem", "source": "gsc", "target": target})
+    return kt.clean_items(out, domain, business_name)
+
+
 async def ensure_questions(state: Dict[str, Any], integrations: Dict[str, Any], pages: List[Any], domain: str,
                            location: str) -> Tuple[List[Dict[str, Any]], int]:
-    """Top each set up to QUESTIONS_PER_TARGET non-branded questions, generated from the crawled site ("auto").
-    A generated question already in the list (in either set) is skipped, so no question is measured twice.
-    Returns (questions, how many were generated)."""
+    """Top each set up to QUESTIONS_PER_TARGET non-branded questions.
+    Uses real GSC queries first (0 AI credits) and only calls the LLM for remaining slots.
+    Returns (questions, how many were added)."""
     have = visibility_questions(state)
     missing = {t: QUESTIONS_PER_TARGET - sum(1 for q in have if q["target"] == t) for t in TARGETS}
     if not any(v > 0 for v in missing.values()):
         return have, 0
-    # A couple extra per set, in case some come back branded or already listed.
-    items, name = await generate_questions(integrations, pages, domain, location,
-                                           {t: v + 2 for t, v in missing.items() if v > 0})
     existing = {kt._norm(i["text"]) for i in state.get("items") or []}
     added = []
-    for item in items:
+    # 1. Zero-LLM path: use real Search Console queries when available.
+    gsc_items = extract_gsc_questions(pages, domain, state.get("business_name") or "", missing)
+    for item in gsc_items:
         t = item["target"]
         if missing.get(t, 0) <= 0 or item["branded"] or kt._norm(item["text"]) in existing:
             continue
-        added.append({**item, "source": "auto"})
+        added.append({**item, "source": "gsc"})
         existing.add(kt._norm(item["text"]))
         missing[t] -= 1
+
+    # 2. LLM fallback: only called if GSC didn't fill all slots.
+    name = ""
+    if any(v > 0 for v in missing.values()):
+        items, name = await generate_questions(integrations, pages, domain, location,
+                                               {t: v + 2 for t, v in missing.items() if v > 0})
+        for item in items:
+            t = item["target"]
+            if missing.get(t, 0) <= 0 or item["branded"] or kt._norm(item["text"]) in existing:
+                continue
+            added.append({**item, "source": "auto"})
+            existing.add(kt._norm(item["text"]))
+            missing[t] -= 1
     state["items"] = (state.get("items") or []) + added
     if name and not state.get("business_name"):
         state["business_name"] = name

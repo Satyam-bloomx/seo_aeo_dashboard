@@ -455,12 +455,36 @@ class PostProcessor:
                 }
             }
 
+            # 6b. Deduplicated, SSRF-safe broken image check (capped at 60 unique URLs per crawl)
+            broken_images_by_page: Dict[int, List[Dict[str, Any]]] = {}
+            try:
+                from app.models.domain import Image
+                from app.services.image_checker import check_image_urls, is_broken_image_status
+                img_rows = (
+                    await self.db.execute(select(Image.page_id, Image.url).where(Image.crawl_id == self.crawl_id))
+                ).all()
+                if img_rows:
+                    statuses = await check_image_urls(row[1] for row in img_rows)
+                    for page_id, img_url in img_rows:
+                        code = statuses.get((img_url or "").strip())
+                        if is_broken_image_status(code):
+                            broken_images_by_page.setdefault(page_id, []).append({"url": img_url, "status": code})
+            except Exception as e:
+                print(f"[PostProcessor] Broken image check skipped: {type(e).__name__}")
+
             # 7. Relational, Link & Sitemap Audits
             for p in pages:
                 if not p.audit_data:
                     continue
 
                 ad = dict(p.audit_data)
+                if broken_images_by_page or (ad.get("Images") or {}).get("Total Images", 0) > 0:
+                    ad.setdefault("Images", {})
+                    broken_list = broken_images_by_page.get(p.id, [])
+                    ad["Images"]["Broken Images"] = len(broken_list) > 0
+                    ad["Images"]["Broken Images Count"] = len(broken_list)
+                    if broken_list:
+                        ad["Images"]["Broken Images Sample"] = broken_list[:5]
 
                 # Check Title Same as H1
                 if p.title_1 and p.h1_1 and p.title_1.strip().lower() == p.h1_1.strip().lower():

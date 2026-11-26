@@ -1120,11 +1120,14 @@ class CrawlerService:
         alt_text_over_100_count = sum(1 for i in images if i.get("Alt_Text_Over_100_Characters"))
         missing_size_attrs_count = sum(1 for i in images if i.get("Missing_Size_Attributes"))
 
+        decorative_alt_count = max(0, missing_alt_text_count - missing_alt_attr_count)
+        excessive_empty_alt = len(images) >= 3 and (decorative_alt_count / max(1, len(images))) > 0.5
         ad = metrics["audit_data"]
         ad["Images"] = {
             "Total Images": len(images),
-            "Missing Alt Text": missing_alt_text_count > 0,
+            "Missing Alt Text": excessive_empty_alt,
             "Missing Alt Attribute": missing_alt_attr_count > 0,
+            "Decorative Empty Alt Count": decorative_alt_count,
             "Alt Text Over 100 Characters": alt_text_over_100_count > 0,
             "Missing Size Attributes": missing_size_attrs_count > 0,
             # Counts let the score scale with how many images are affected (2 of 87 is not 87 of 87).
