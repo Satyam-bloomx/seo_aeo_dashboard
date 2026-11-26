@@ -9,6 +9,7 @@ const POLL_MS = 5000;
 export function useVisibility(enabled) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [settled, setSettled] = useState(false);
   const [starting, setStarting] = useState(false);
   const timer = useRef(null);
 
@@ -29,7 +30,8 @@ export function useVisibility(enabled) {
       .then(d => { if (!cancelled) { setData(d); setError(null); } })
       .catch(err => {
         if (!cancelled) setError(err?.response?.status === 404 ? null : (err?.response?.data?.detail || 'Could not load visibility.'));
-      });
+      })
+      .finally(() => { if (!cancelled) setSettled(true); });
     return () => { cancelled = true; };
   }, [enabled]);
 
@@ -51,11 +53,13 @@ export function useVisibility(enabled) {
     }
   }, []);
 
-  return { data, error, measure, starting, reload: load };
+  const loading = Boolean(enabled) && !settled;
+  return { data, error, loading, measure, starting, reload: load };
 }
 
 /** Card props for one measured score (geo / aeo / seo): a score only when it was really measured. */
 export function measuredCard(vis, key) {
+  if (vis?.loading && !vis?.data) return { score: null, isDisconnected: true, statusText: 'Loading…' };
   const s = vis?.data?.last?.scores?.[key];
   if (vis?.data?.running && !s) return { score: null, isDisconnected: true, statusText: 'Measuring…' };
   if (!vis?.data) return { score: null, isDisconnected: true, statusText: 'Not measured yet' };
@@ -73,10 +77,70 @@ function Yes({ on, children }) {
   );
 }
 
-function QuestionRow({ q, engines }) {
+function hostFromUrl(url, fallback) {
+  if (!url) return fallback || '';
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return fallback || url; }
+}
+
+function SourceList({ items }) {
+  return items.map((item, idx) => (
+    <React.Fragment key={`${item.host}-${idx}`}>
+      {idx > 0 ? ', ' : ''}
+      {item.is_self ? (
+        item.url ? (
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={item.url}
+            className="font-semibold text-emerald-600 dark:text-emerald-400 underline decoration-emerald-500/50 hover:decoration-emerald-400"
+          >
+            {item.position ? `#${item.position} ` : ''}{item.host} (you)
+          </a>
+        ) : (
+          <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+            {item.position ? `#${item.position} ` : ''}{item.host} (you)
+          </span>
+        )
+      ) : (
+        <span>{item.position ? `#${item.position} ` : ''}{item.host}</span>
+      )}
+    </React.Fragment>
+  ));
+}
+
+function QuestionRow({ q, engines, siteDomain }) {
   const [open, setOpen] = useState(false);
   const g = q.google;
   const aio = g?.ai_overview || {};
+
+  // Build ordered Google top results (including our own site at its exact rank).
+  const topResults = (() => {
+    if (g?.top_results?.length) return g.top_results;
+    if (!g?.competitors?.length && !g?.rank) return [];
+    const list = (g.competitors || []).map(host => ({ host, is_self: false }));
+    if (g.rank && g.rank >= 1 && g.rank <= 5) {
+      const selfHost = hostFromUrl(g.url, siteDomain);
+      if (selfHost) {
+        list.splice(g.rank - 1, 0, { host: selfHost, url: g.url, is_self: true });
+      }
+    }
+    return list.slice(0, 5).map((item, i) => ({ ...item, position: i + 1 }));
+  })();
+
+  // Build ordered AI Overview sources (including our own site in its exact citation slot).
+  const aioSources = (() => {
+    if (aio.all_sources?.length) return aio.all_sources;
+    const list = (aio.sources || []).map(host => ({ host, is_self: false }));
+    if (aio.cited) {
+      const selfHost = hostFromUrl(g?.url, siteDomain);
+      if (selfHost && !list.some(s => s.host === selfHost)) {
+        list.unshift({ host: selfHost, url: g?.url, is_self: true });
+      }
+    }
+    return list;
+  })();
+
   return (
     <li className="rounded-xl border border-slate-200 dark:border-slate-800 px-3 py-2.5">
       <button type="button" onClick={() => setOpen(o => !o)} className="flex w-full items-start justify-between gap-3 text-left">
@@ -106,8 +170,8 @@ function QuestionRow({ q, engines }) {
       </div>
       {open && (
         <div className="mt-2 space-y-2 border-t border-slate-200 dark:border-slate-800 pt-2 text-[11px] text-slate-600 dark:text-slate-300">
-          {g?.competitors?.length ? <p><strong>Google top results:</strong> {g.competitors.join(', ')}</p> : null}
-          {aio.sources?.length ? <p><strong>AI Overview sources:</strong> {aio.sources.join(', ')}</p> : null}
+          {topResults.length ? <p><strong>Google top results:</strong> <SourceList items={topResults} /></p> : null}
+          {aioSources.length ? <p><strong>AI Overview sources:</strong> <SourceList items={aioSources} /></p> : null}
           {Object.entries(q.ai || {}).map(([name, r]) => (r.answers || []).map((a, i) => (
             <div key={`${name}-${i}`} className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-2">
               <div className="mb-1 flex flex-wrap items-center gap-3 font-semibold">
@@ -209,7 +273,7 @@ export default function VisibilityPanel({ vis, onEditQuestions, onConnect }) {
       )}
 
       {last?.questions?.length ? (
-        <QuestionSets items={last.questions} render={q => <QuestionRow key={q.id} q={q} engines={engines} />} />
+        <QuestionSets items={last.questions} render={q => <QuestionRow key={q.id} q={q} engines={engines} siteDomain={data?.domain} />} />
       ) : data?.questions?.length ? (
         <QuestionSets items={data.questions} render={q => <li key={q.id} className="text-sm text-slate-700 dark:text-slate-200">• {q.text}</li>} />
       ) : (

@@ -350,8 +350,12 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
     return () => { cancelled = true; };
   }, [selectedRowId]);
 
+  // Hold initial dashboard reveal on reload until latest crawl, pages, integrations, and summary have loaded.
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+
   // Auto-load latest crawl data and integrations status on mount
   useEffect(() => {
+    let active = true;
     const loadLatestCrawl = async () => {
       try {
         const fetchLatest = async (mode) => {
@@ -379,7 +383,10 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
       await fetchIntegrationsStatus();
     };
     // Both requests start together.
-    Promise.all([loadIntegrations(), loadLatestCrawl()]);
+    Promise.all([loadIntegrations(), loadLatestCrawl()]).finally(() => {
+      if (active) setIsBootstrapping(false);
+    });
+    return () => { active = false; };
   }, [fetchIntegrationsStatus]);
 
   const mountSettingsModal = useMountedOnceOpened(isSettingsOpen);
@@ -1637,6 +1644,19 @@ export default function AuditDashboard({ initialTab, initialOpenSettings = false
 
     return null;
   };
+
+  const isWorkspaceHydrating = isBootstrapping || Boolean(crawlId && status === 'completed' && !crawlSummary);
+  if (isWorkspaceHydrating) {
+    return (
+      <div className="flex h-screen h-[100dvh] w-full items-center justify-center bg-[#F8FAFC] dark:bg-[#050505] font-sans text-slate-900 dark:text-white">
+        <div className="flex flex-col items-center gap-3 text-center px-6">
+          <Loader2 size={28} className="animate-spin text-indigo-500" />
+          <p className="text-sm font-bold tracking-tight">Loading audit data…</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Waiting for crawl results, scores, and integrations before opening the dashboard.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     // reducedMotion="user": every Framer animation below follows the system "reduce motion" setting.

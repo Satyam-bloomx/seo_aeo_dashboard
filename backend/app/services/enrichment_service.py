@@ -188,8 +188,18 @@ class EnrichmentService:
             gsc_live = bool(gsc_token and gsc_intel and gsc_intel.get("is_live"))
             html_rank = {p.id: i for i, p in enumerate(p for p in pages if is_html_page(p))}
 
-            PSI_PAGES, INSPECT_PAGES, PER_PAGE_TIMEOUT = 3, 20, 60
+            PSI_PAGES, INSPECT_PAGES, PER_PAGE_TIMEOUT, PROBE_TIMEOUT = 3, 20, 35, 22
             semaphore = asyncio.Semaphore(5)
+
+            async def _bounded(coro, label: str, page_id: int, default=None):
+                try:
+                    return await asyncio.wait_for(coro, timeout=PROBE_TIMEOUT)
+                except asyncio.TimeoutError:
+                    print(f"Probe '{label}' timed out after {PROBE_TIMEOUT}s for page {page_id}")
+                    return default
+                except Exception as exc:
+                    print(f"Probe '{label}' failed for page {page_id}: {type(exc).__name__}")
+                    return default
 
             async def enrich(idx: int, page: Page):
                 rank = html_rank.get(page.id)  # None for redirects / errors / external rows
@@ -216,8 +226,12 @@ class EnrichmentService:
                         )
                     return None
 
-                # AI probes, PageSpeed and URL inspection do not depend on each other.
-                ad["AEO_Audit"], vitals, inspection_data = await asyncio.gather(aeo(), speed(), inspect())
+                # Isolate each probe so a slow PageSpeed call never stalls or discards AEO/GSC/GEO enrichment.
+                ad["AEO_Audit"], vitals, inspection_data = await asyncio.gather(
+                    _bounded(aeo(), "aeo", page.id, default=ad.get("AEO_Audit")),
+                    _bounded(speed(), "pagespeed", page.id, default=None),
+                    _bounded(inspect(), "gsc_inspect", page.id, default=None),
+                )
                 ad["GEO_Audit"] = await self._compute_geo_metrics(page, serp_key, gbp_key, serpapi_domain_cache)
                 ad.pop("SERP_Data", None)  # replaced by Keywords & AI answers
 
@@ -524,7 +538,7 @@ class EnrichmentService:
 
         async def run(strategy: str) -> Optional[Dict[str, Any]]:
             try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
+                async with httpx.AsyncClient(timeout=20.0) as client:
                     res = await client.get(
                         _PSI_ENDPOINT,
                         params={"url": url, "strategy": strategy, "category": "performance"},

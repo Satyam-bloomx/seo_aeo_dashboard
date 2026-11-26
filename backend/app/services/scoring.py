@@ -27,16 +27,37 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 from app.services.fetch_outcome import is_uncounted
 
-SCORING_VERSION = "2026.12-3"
+SCORING_VERSION = "2026.12-4"
 BANDS = [(91, "Excellent"), (71, "Good"), (31, "Fair"), (0, "Weak")]  # Ahrefs Health Score bands
 MIN_URLS_FOR_SCORE = 10        # fewer crawled URLs: no site score (our threshold; no vendor publishes one)
 PROVISIONAL_BELOW = 30         # 10-29 URLs: the score is shown as provisional
 SITE_ERROR_CAP = 70            # an open site-wide error caps Site Health at 70 (our extension)
 MIN_URLS_FOR_CONFIDENCE = PROVISIONAL_BELOW
-# Technical SEO category scores: a URL starts at 100 in a category and loses these points per failing check, by its
-# Screaming Frog type and priority (our calibration of Screaming Frog's priorities). Opportunities are listed only.
-PRIORITY_PENALTY = {("Issue", "High"): 40, ("Issue", "Medium"): 25, ("Warning", "High"): 15, ("Warning", "Medium"): 10,
-                    ("Issue", "Low"): 5, ("Warning", "Low"): 5}
+# Technical SEO category scores: a URL starts at 100 in a category and loses these points per failing check.
+# Opportunities deduct small points so a category with flagged items never falsely shows 100/100.
+PRIORITY_PENALTY = {
+    ("Issue", "High"): 40,
+    ("Issue", "Medium"): 25,
+    ("Warning", "High"): 15,
+    ("Warning", "Medium"): 10,
+    ("Issue", "Low"): 5,
+    ("Warning", "Low"): 5,
+    ("Opportunity", "High"): 10,
+    ("Opportunity", "Medium"): 6,
+    ("Opportunity", "Low"): 3,
+}
+# Weighted Technical SEO categories (normalized across whichever categories were evaluated).
+CATEGORY_WEIGHTS = {
+    "Indexability": 0.25,
+    "Technical": 0.25,
+    "On-page": 0.20,
+    "Content": 0.12,
+    "Security": 0.08,
+    "Links": 0.05,
+    "Structured data": 0.05,
+}
+# Categories where intentional noindex pages are excluded from averages when indexable pages exist.
+NOINDEX_EXCLUDED_CATEGORIES = {"On-page", "Content"}
 # robots.txt and sitemap problems affect how the whole site is crawled and indexed.
 SITE_ISSUE_CATEGORY = {"robots.txt": "Indexability", "sitemap": "Indexability"}
 FAILING_ID_CAP = 2000
@@ -239,9 +260,16 @@ RULES: List[Rule] = [
     _r("Structured_Data", "Missing Structured Data", O, L),
     *[_r("Validation", n, I, M) for n in ("Missing <head> Tag", "Multiple <head> Tags", "Missing <body> Tag",
                                            "Multiple <body> Tags")],
+    _r("Validation", "Premature <head> Closure", I, H, ours=True),
     _r("Validation", "HTML Document Over 2MB", I, H),
-    _r("Validation", "HTML Over 500KB", O, M, ours=True),            # SF PageSpeed: enormous payloads, Medium
-    _r("Validation", "DOM Over 1,400 Elements", O, L, ours=True),     # SF PageSpeed: optimise DOM size, Low
+    _r("Validation", "HTML Over 500KB", W, M, ours=True),            # Enormous HTML payload (>500KB)
+    _r("Validation", "DOM Over 1,400 Elements", W, L, ours=True),     # Excessive DOM size (>1,400 nodes)
+    _r("Validation", "Slow Server Response (> 3s)", W, H,
+       ev=lambda p, _ad: (p.get("response_time_ms") or 0) > 3000 if p.get("response_time_ms") is not None else None,
+       ours=True),
+    _r("Validation", "Moderate Server Response (> 1s)", W, M,
+       ev=lambda p, _ad: 1000 < (p.get("response_time_ms") or 0) <= 3000 if p.get("response_time_ms") is not None else None,
+       ours=True),
     _r("JavaScript", "Uses Old AJAX Crawling Scheme URLs", W, L),
     # ---- Security
     _r("Security", "HTTP URLs", I, H),
@@ -264,7 +292,7 @@ RULES: List[Rule] = [
     _r("Links", "Non-Indexable Page Inlinks Only", W, H, scope="site"),
     _r("Links", "Internal Links To Redirects", W, L, scope="site"),
     _r("Links", "Pages With High Crawl Depth", O, M, scope="site"),
-    _r("Links", "Pages With High Internal Outlinks", W, L, scope="site"),
+    _r("Links", "Pages With High Internal Outlinks", W, L, scope="page"),
     _r("Sitemaps", "Non-Indexable URLs in Sitemap", I, M, scope="site"),
     # Screaming Frog lists this as an Issue, but a page missing from a partial sitemap is still found through links
     # (Ahrefs treats it as a notice); as an error it would fail pagination and archive pages on most sites.
@@ -562,22 +590,31 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
               for k in ("errors", "warnings", "opportunities")}
     issues["site"] = site_issues
 
+    def _is_noindex(page: dict) -> bool:
+        ad = page.get("audit_data") or {}
+        return bool((ad.get("Directives") or {}).get("NoIndex") or page.get("dir_noindex"))
+
+    indexable_internal = [p for p in internal if not _is_noindex(p)]
+    noindex_excluded = len(internal) - len(indexable_internal) if indexable_internal else 0
+
     def category_score(group: str, cats) -> Dict[str, Any]:
         """Technical SEO category score: each URL starts at 100 and loses PRIORITY_PENALTY points per failing check
         in the category (passing checks add nothing); the category score is the average over the URLs it evaluated.
+        Intentional noindex pages are excluded from On-page and Content averages when indexable pages exist.
         Site-wide issues mapped to the category count against every URL."""
         rules = [r for r in active_rules if r.category in cats and per_rule[r.id]["evaluated"] and counts_toward_health(r)]
         failing_sets = {r.id: set(per_rule[r.id]["failing"]) for r in rules}
         site_cost = sum(PRIORITY_PENALTY.get((i.get("type"), i.get("priority")), 0)
                         for i in site_issues if SITE_ISSUE_CATEGORY.get(i.get("source")) == group)
+        pool = indexable_internal if (group in NOINDEX_EXCLUDED_CATEGORIES and indexable_internal) else internal
         url_scores = []
-        for page in internal:
+        for page in pool:
             pid = page.get("id")
             if not any(evaluate_rule(r, page) is not None for r in rules):
                 continue
             lost = site_cost + sum(PRIORITY_PENALTY.get(cls_of[r.id], 0) for r in rules if pid in failing_sets[r.id])
             url_scores.append(max(0, 100 - lost))
-        if not url_scores and site_cost and internal:
+        if not url_scores and site_cost and pool:
             url_scores = [max(0, 100 - site_cost)]  # only the site-wide finding speaks for this category
         cat_score = round(sum(url_scores) / len(url_scores)) if url_scores else None
         failed = [r for r in rules if failing_sets[r.id]]
@@ -588,14 +625,18 @@ def compute_scores(pages: List[dict], mode: str = "site", integration_data: Opti
 
     categories = {group: category_score(group, cats) for group, cats in CATEGORY_GROUPS.items()}
     scored = {g: c["score"] for g, c in categories.items() if c["score"] is not None}
-    tech_score = round(sum(scored.values()) / len(scored)) if scored else None
+    total_weight = sum(CATEGORY_WEIGHTS.get(g, 0.1) for g in scored)
+    tech_score = round(sum(scored[g] * CATEGORY_WEIGHTS.get(g, 0.1) for g in scored) / total_weight) if (scored and total_weight > 0) else None
     technical_seo = {
         "score": tech_score, "band": _band(tech_score),
         "categories_scored": len(scored),
         "weakest": min(scored, key=scored.get) if scored else None,
-        "method": "Average of the category scores. In each category a URL starts at 100 and loses points per failing "
-                  "check by Screaming Frog type and priority (Issue high 40, Issue medium 25, Warning high 15, "
-                  "Warning medium 10, low priority 5, opportunities 0); the category score is the average over URLs.",
+        "noindex_excluded": noindex_excluded,
+        "weights": {g: CATEGORY_WEIGHTS.get(g, 0.1) for g in scored},
+        "method": "Weighted average of category scores (Indexability 25%, Technical 25%, On-page 20%, Content 12%, "
+                  "Security 8%, Links 5%, Structured data 5%). In each category a URL starts at 100 and loses points "
+                  "per failing check by type and priority (Issue high 40, Issue medium 25, Warning high 15, "
+                  "Warning medium 10, low issue/warning 5, Opportunity medium 6, Opportunity low 3).",
     }
 
     geo = compute_geo_readiness(internal, site_mode, site_facts.get("ai_crawlers"))

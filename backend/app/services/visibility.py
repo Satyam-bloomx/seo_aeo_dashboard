@@ -286,7 +286,8 @@ async def measure(questions: List[Dict[str, Any]], domain: str, location: str, b
                     serp, used = await kt.check_item(c, serp_key, q, domain, location, business_name, depth=1)
                     searches += used
                     row["google"] = {k: serp.get(k) for k in ("rank", "url", "ai_overview", "featured_snippet",
-                                                               "featured_snippet_cited", "paa", "paa_cited", "competitors")}
+                                                               "featured_snippet_cited", "paa", "paa_cited", "competitors",
+                                                               "top_results")}
                 except kt.SerpQuotaError as e:
                     stopped["serp"] = "SerpAPI: " + str(e)[:180]
                 except Exception as e:  # noqa: BLE001 - no retry: each retry is a paid search

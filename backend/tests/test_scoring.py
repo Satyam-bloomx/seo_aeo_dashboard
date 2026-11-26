@@ -245,9 +245,11 @@ def test_integration_panels_from_synced_data():
 
 # ---------------------------------------------------------------- Technical SEO (category scores)
 
-def test_technical_seo_is_the_average_of_deduction_based_category_scores():
+def test_technical_seo_is_the_weighted_average_of_deduction_based_category_scores():
     """Regression (lifechangingastro.com): CWV failing (Issue high) and an invalid robots.txt (site-wide Issue
-    high) must pull their categories down; low-priority findings cost little; opportunities cost nothing."""
+    high) must pull their categories down; opportunities deduct small points so flagged categories never score 100;
+    Technical SEO uses weighted categories."""
+    from app.services.scoring import CATEGORY_WEIGHTS
     p = page(1, H1={"Missing": False}, Images={"Missing Alt Attribute": True}, Meta_Description={"Missing": True},
              Security={"HTTP URLs": False, "Missing HSTS Header": True})
     p["audit_data"]["PageSpeed"] = {"mobile": {"field_data": {"available": True, "lcp_p75_ms": 2585, "inp_p75_ms": 564, "cls_p75": 0.01}}}
@@ -257,12 +259,36 @@ def test_technical_seo_is_the_average_of_deduction_based_category_scores():
     cats = {g: c["score"] for g, c in r["categories"].items()}
     assert cats["Technical"] == 60      # Core Web Vitals failing: Issue high, 40 points
     assert cats["Indexability"] == 60   # robots.txt: site-wide Issue high, 40 points
-    assert cats["On-page"] == 95        # missing alt (Issue low, 5); missing description is an opportunity
+    assert cats["On-page"] == 92        # missing alt (Issue low, 5) + missing description (Opportunity low, 3)
     assert cats["Security"] == 95       # one low-priority header warning
-    assert cats["Links"] is None        # site-only checks: not evaluated on a single page
-    scored = [v for v in cats.values() if v is not None]
-    assert r["technical_seo"]["score"] == round(sum(scored) / len(scored))
+    assert cats["Links"] is None        # no Links data on this fixture page
+    scored = {g: v for g, v in cats.items() if v is not None}
+    expected = round(sum(scored[g] * CATEGORY_WEIGHTS[g] for g in scored) / sum(CATEGORY_WEIGHTS[g] for g in scored))
+    assert r["technical_seo"]["score"] == expected
     assert r["technical_seo"]["weakest"] in ("Technical", "Indexability")
+
+
+def test_ttfb_and_noindex_exclusion_and_single_page_outlinks_edge_cases():
+    """Edge cases: slow TTFB penalizes Technical without PageSpeed; noindex pages are excluded from On-page/Content
+    averages when indexable pages exist; high outlinks are evaluated on single-page audits."""
+    slow = page(1, Links={"Pages With High Internal Outlinks": True}, Content={"Readability Difficult": True})
+    slow["response_time_ms"] = 3500
+    r_single = compute_scores([slow], mode="page")
+    assert r_single["categories"]["Technical"]["score"] == 85   # >3s TTFB warning high (-15)
+    assert r_single["categories"]["Links"]["score"] == 95       # high outlinks evaluated in page mode (-5)
+    assert r_single["categories"]["Content"]["score"] == 97     # readability opportunity low (-3, never 100)
+
+    # Noindex exclusion: 1 clean indexable page + 1 broken noindex page -> On-page stays 100, excluded=1
+    clean = page(1, H1={"Missing": False})
+    noindexed = page(2, H1={"Missing": True}, Directives={"NoIndex": True})
+    r_mix = compute_scores([clean, noindexed], mode="site")
+    assert r_mix["categories"]["On-page"]["score"] == 100
+    assert r_mix["technical_seo"]["noindex_excluded"] == 1
+
+    # Edge case: if ALL pages are noindex, fall back to evaluating them so categories don't vanish
+    r_all_noindex = compute_scores([noindexed], mode="page")
+    assert r_all_noindex["categories"]["On-page"]["score"] == 75
+    assert r_all_noindex["technical_seo"]["noindex_excluded"] == 0
 
 
 def test_category_scores_average_over_urls():

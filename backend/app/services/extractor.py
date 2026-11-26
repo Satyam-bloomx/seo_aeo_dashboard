@@ -80,6 +80,35 @@ def normalize_url_for_canonical(u: str) -> str:
         return u.strip().rstrip("/")
 
 
+_VALID_HEAD_TAGS = frozenset({"title", "meta", "link", "script", "style", "base", "noscript", "template"})
+_HEAD_OPEN_RE = re.compile(r"<head(?=[\s/>])[^>]*>", re.I)
+_HEAD_CLOSE_RE = re.compile(r"</head\s*>", re.I)
+_TAG_TOKEN_RE = re.compile(r"<(/?)([a-zA-Z][a-zA-Z0-9:-]*)(?=[\s/>])", re.I)
+
+
+def has_premature_head_closure(raw_html: str) -> bool:
+    """Detect non-head elements (e.g. <div>, <img>, <iframe>) placed inside raw <head> markup.
+    Browsers and Googlebot implicitly close <head> on the first invalid element, causing any
+    subsequent <title>, <meta name='robots'>, or <link rel='canonical'> to be ignored."""
+    if not raw_html:
+        return False
+    # Strip comments, scripts, and styles so literal strings like '<div>' inside JS don't trigger false positives.
+    masked = re.sub(r"<!--.*?-->", "", raw_html, flags=re.S)
+    masked = re.sub(r"<(script|style|template)(?=[\s/>])[^>]*>.*?</\1\s*>", "", masked, flags=re.S | re.I)
+    m_open = _HEAD_OPEN_RE.search(masked)
+    if not m_open:
+        return False
+    m_close = _HEAD_CLOSE_RE.search(masked, m_open.end())
+    if not m_close:
+        return False
+    head_inner = masked[m_open.end():m_close.start()]
+    for m in _TAG_TOKEN_RE.finditer(head_inner):
+        closing, tag = m.group(1), m.group(2).lower()
+        if not closing and tag not in _VALID_HEAD_TAGS:
+            return True
+    return False
+
+
 def extract_structured_data(soup) -> Dict[str, Any]:
     """JSON-LD types (including @graph members), invalid blocks, and microdata/RDFa presence, plus the facts GEO
     readiness reads from JSON-LD: publish/modify dates, an author, and Organization sameAs profile links."""
@@ -865,8 +894,10 @@ def extract_seo_metrics(html_content: str, url: str, headers: Dict[str, str] = N
     metrics["indexability_status"] = page_indexability_reason
 
     # 30. Validation
+    premature_head = has_premature_head_closure(html_content)
     validation_data = {
-        "Invalid HTML Elements in <head>": False, 
+        "Invalid HTML Elements in <head>": premature_head,
+        "Premature <head> Closure": premature_head,
         "<body> Element Preceding <html>": False,
         "<head> Not First In <html> Element": False,
         "Missing <head> Tag": soup.find("head") is None,

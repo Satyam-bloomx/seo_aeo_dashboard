@@ -66,11 +66,24 @@ def test_parse_google_page_one():
     page = kt.parse_google(data, DOMAIN, business_name="BloomX Solutions")
     assert page["rank"] == 2 and page["url"] == "https://www.bloomx.in/seo"
     assert page["competitors"] == ["competitor.com", "other.org"]
+    assert page["top_results"] == [
+        {"position": 1, "host": "competitor.com", "url": "https://competitor.com/a", "is_self": False},
+        {"position": 2, "host": "bloomx.in", "url": "https://www.bloomx.in/seo", "is_self": True},
+        {"position": 3, "host": "other.org", "url": "https://other.org/", "is_self": False},
+    ]
     assert page["paa"] == ["What does SEO cost?", "Is SEO worth it?"] and page["paa_cited"]
     assert page["local_rank"] == 2 and page["local_pack"] == ["Rival Digital", "BloomX Solutions Pvt Ltd"]
     assert page["featured_snippet"] and not page["featured_snippet_cited"]
     aio = kt.parse_ai_overview(page["aio"], DOMAIN)
-    assert aio == {"shown": True, "cited": True, "sources": ["competitor.com"]}
+    assert aio == {
+        "shown": True,
+        "cited": True,
+        "sources": ["competitor.com"],
+        "all_sources": [
+            {"host": "competitor.com", "url": "https://competitor.com/a", "is_self": False},
+            {"host": "bloomx.in", "url": "https://bloomx.in/blog", "is_self": True},
+        ],
+    }
 
 
 def _transport(responses, calls):

@@ -1,5 +1,46 @@
 // Numbers for the client report. Uses the same sources as the dashboard Overview tab (backend crawl
-// summary, PageSpeed data on the crawled pages), so the report and the dashboard always agree.
+// summary, PageSpeed data on the crawled pages, and measured AI/Search visibility), so the report
+// and the dashboard always agree.
+
+export const REPORT_SECTIONS = [
+  { id: 'health', label: 'Health Summary' },
+  { id: 'technical', label: 'Technical SEO' },
+  { id: 'speed', label: 'Speed & Vitals' },
+  { id: 'visibility', label: 'AI & Visibility' },
+  { id: 'issues', label: 'Issues Appendix' },
+  { id: 'urls', label: 'Crawled URLs' },
+];
+
+export const REPORT_PRESETS = [
+  {
+    id: 'full',
+    label: 'Full Audit Report',
+    title: 'FULL WEBSITE AUDIT REPORT',
+    filePrefix: 'full_audit_report',
+    sections: ['health', 'technical', 'speed', 'visibility', 'issues', 'urls'],
+  },
+  {
+    id: 'health',
+    label: 'Health Report',
+    title: 'WEBSITE HEALTH REPORT',
+    filePrefix: 'website_health_report',
+    sections: ['health'],
+  },
+  {
+    id: 'technical',
+    label: 'Technical SEO',
+    title: 'TECHNICAL SEO AUDIT REPORT',
+    filePrefix: 'technical_seo_report',
+    sections: ['technical', 'speed', 'issues', 'urls'],
+  },
+  {
+    id: 'visibility',
+    label: 'AI & Visibility',
+    title: 'AI & SEARCH VISIBILITY REPORT',
+    filePrefix: 'ai_visibility_report',
+    sections: ['visibility'],
+  },
+];
 
 const BAND_MEANING = {
   Excellent: 'Your site is in strong shape. What is left is fine-tuning.',
@@ -133,10 +174,97 @@ const toItem = (issue, total) => ({
   fix: issue.hasGuide === false ? '' : sentenceTrim(issue.fixGuide || '', 320),
 });
 
+function buildTechnicalBreakdown(techResult) {
+  const ts = techResult?.technicalSeo || null;
+  const pillars = (techResult?.pillars || []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    score: p.score,
+    band: p.band,
+    summary: p.summary,
+    passedCount: p.passedCount ?? 0,
+    flaggedCount: p.flaggedCount ?? 0,
+    totalCount: p.totalCount ?? 0,
+  }));
+  return {
+    score: ts?.score ?? null,
+    band: ts?.band ?? null,
+    weakest: ts?.weakest ?? null,
+    pillars,
+  };
+}
+
+function buildVisibilitySection(visibility) {
+  const last = visibility?.last || null;
+  const scores = last?.scores || {};
+  const pickScore = (key) => {
+    const s = scores[key];
+    if (!s || s.status !== 'ok') return { score: null, label: s?.reason || 'Not measured' };
+    return { score: s.score, label: s.label || '' };
+  };
+  const questions = (last?.questions || []).map((q) => {
+    const g = q.google || null;
+    const aio = g?.ai_overview || {};
+    const aiEntries = Object.entries(q.ai || {}).map(([engine, r]) => {
+      const answers = r.answers || [];
+      const hits = answers.filter((a) => a.mentioned || a.cited).length;
+      return {
+        engine: visibility?.engines?.[engine]?.label || engine,
+        hits,
+        runs: r.runs || answers.length,
+        error: r.error || null,
+      };
+    });
+    const topResults = g?.top_results?.length
+      ? g.top_results.map((r) => `${r.position ? `#${r.position} ` : ''}${r.host}${r.is_self ? ' (you)' : ''}`)
+      : (g?.competitors || []);
+    const aioSources = aio.all_sources?.length
+      ? aio.all_sources.map((s) => `${s.host}${s.is_self ? ' (you)' : ''}`)
+      : (aio.sources || []);
+    return {
+      text: q.text,
+      target: q.target || (g ? 'google' : 'ai'),
+      googleRank: g?.rank ?? null,
+      googleUrl: g?.url ?? null,
+      aioShown: Boolean(aio.shown),
+      aioCited: Boolean(aio.cited),
+      featuredSnippet: Boolean(g?.featured_snippet),
+      paa: Boolean(g?.paa?.length),
+      topResults,
+      aioSources,
+      aiEntries,
+    };
+  });
+  return {
+    measured: Boolean(last),
+    checkedAt: last?.checked_at || null,
+    aeo: pickScore('aeo'),
+    geo: pickScore('geo'),
+    seo: pickScore('seo'),
+    questions,
+  };
+}
+
+function buildUrlsSummary(pages) {
+  const list = (pages || []).slice(0, 50).map((p) => ({
+    url: p.url || '',
+    status: p.status_code ?? '—',
+    indexability: p.indexability === 'Non-Indexable' ? 'Non-Indexable' : 'Indexable',
+    words: p.word_count ?? '—',
+    responseMs: p.response_time_ms ?? null,
+    title: cleanName(p.title_1 || ''),
+  }));
+  return {
+    total: pages?.length || 0,
+    shown: list.length,
+    rows: list,
+  };
+}
+
 /**
  * @returns the single data object both the on-screen report and the PDF render.
  */
-export function buildReportData({ pages, crawlSummary, issuesReport, techResult, targetUrl }) {
+export function buildReportData({ pages, crawlSummary, issuesReport, techResult, targetUrl, visibility = null }) {
   const total = pages?.length || 0;
   const items = (issuesReport || []).map((i) => toItem(i, total));
   const high = items.filter((i) => i.level === 'High').length;
@@ -147,6 +275,9 @@ export function buildReportData({ pages, crawlSummary, issuesReport, techResult,
   const band = techResult?.band || null;
   const speed = buildSpeed(pages, crawlSummary);
   const ai = buildAiReadiness(pages, crawlSummary);
+  const technical = buildTechnicalBreakdown(techResult);
+  const visibilitySection = buildVisibilitySection(visibility);
+  const urls = buildUrlsSummary(pages);
 
   let meaning = score === null ? 'The score is not available yet for this audit.' : (BAND_MEANING[band] || 'This is the overall health score for the site.');
   if (score !== null && speed.status === 'poor') meaning += ' Page speed is a weak spot and is shown next to the score.';
@@ -191,6 +322,9 @@ export function buildReportData({ pages, crawlSummary, issuesReport, techResult,
     priorities: items.slice(0, 3),
     speed,
     ai,
+    technical,
+    visibility: visibilitySection,
+    urls,
     fallbackSummary,
     scoreExplanation: Array.isArray(crawl.score_explanation) ? crawl.score_explanation : [],
     coverage: coverage ? { crawled: coverage.crawled ?? total, skipped, note: skipped > 0 ? `${skipped} more URLs were found but not crawled (page limit, depth limit or your exclusion rules).` : null } : null,

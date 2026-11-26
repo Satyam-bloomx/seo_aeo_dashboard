@@ -26,8 +26,14 @@ const slugFor = (host) => String(host || 'website').replace(/[^a-zA-Z0-9]+/g, '_
  * @param {object} settings  branding from the report settings
  * @param {string} summary   the one-paragraph summary shown on screen
  * @param {(msg: string) => void} [onProgress]
+ * @param {{ sections?: string[], reportTitle?: string, filePrefix?: string }} [options]
  */
-export async function exportExecutiveReportToPDF(report, settings = {}, summary = '', onProgress) {
+export async function exportExecutiveReportToPDF(report, settings = {}, summary = '', onProgress, options = {}) {
+  const sections = options.sections?.length ? options.sections : ['health', 'technical', 'speed', 'visibility', 'issues', 'urls'];
+  const reportTitle = clean(options.reportTitle || 'FULL WEBSITE AUDIT REPORT').toUpperCase();
+  const filePrefix = options.filePrefix || 'full_audit_report';
+  const has = (id) => sections.includes(id);
+
   const toastId = toast.loading('Building your PDF report...', { description: 'This takes a few seconds.' });
   const step = (msg) => {
     onProgress?.(msg);
@@ -114,7 +120,7 @@ export async function exportExecutiveReportToPDF(report, settings = {}, summary 
     }
     y = Math.max(y, 230);
     setText(11, 'bold', accent);
-    doc.text('WEBSITE HEALTH REPORT', M, y);
+    doc.text(reportTitle, M, y);
     y += 14;
     setText(30, 'bold', INK);
     doc.splitTextToSize(client || report.host, width).slice(0, 2).forEach((l) => { doc.text(l, M, y + 30); y += 36; });
@@ -142,91 +148,178 @@ export async function exportExecutiveReportToPDF(report, settings = {}, summary 
       y += 20;
     });
 
-    // ---- Summary, score, priorities ----
-    step('Writing the summary and priorities...');
-    newPage();
-    heading('Summary');
-    para(summary || report.fallbackSummary, { size: 11.5, lh: 1.5, gap: 14 });
+    let startedBody = false;
+    const startSectionPage = () => {
+      if (!startedBody) {
+        newPage();
+        startedBody = true;
+      }
+    };
 
-    heading('Overall score');
-    ensure(90);
-    setText(44, 'bold', accent);
-    const scoreText = report.score === null ? 'n/a' : String(report.score);
-    doc.text(scoreText, M, y + 40);
-    const sw = doc.getTextWidth(scoreText);
-    setText(14, 'normal', MUTED);
-    doc.text('/ 100', M + sw + 6, y + 40);
-    let px = M + sw + 70;
-    if (report.gradeLabel && report.score !== null) px += pill(report.gradeLabel, px, y + 20, accent) + 8;
-    pill(`Speed: ${report.speed.status === 'unknown' ? 'not measured' : report.speed.status === 'good' ? 'good' : report.speed.status === 'warn' ? 'fair' : 'needs attention'}`, px, y + 20, SPEED_RGB[report.speed.status]);
-    y += 54;
-    para(report.meaning, { size: 11, gap: 8 });
-    para(`${report.counts.total} items to improve in total: ${report.counts.high} high priority, ${report.counts.medium} medium, ${report.counts.low} low. ${report.pagesCrawled} pages checked.`, { size: 10, color: MUTED, gap: 8 });
-    if (report.coverage?.note) para(report.coverage.note, { size: 9.5, color: MUTED, gap: 6 });
-    if (report.scoreExplanation.length) {
-      para('How the score is made up', { size: 10, style: 'bold', gap: 3 });
-      report.scoreExplanation.forEach((e) => {
-        para(`${e.label}${e.impact !== undefined && e.impact !== null ? ` (${e.impact})` : ''}${e.detail ? `: ${e.detail}` : ''}`, { size: 9.5, color: MUTED, gap: 2, x: M + 10, w: width - 10 });
+    // ---- Health Summary, score, priorities ----
+    if (has('health')) {
+      step('Writing the summary and priorities...');
+      startSectionPage();
+      heading('Summary');
+      para(summary || report.fallbackSummary, { size: 11.5, lh: 1.5, gap: 14 });
+
+      heading('Overall score');
+      ensure(90);
+      setText(44, 'bold', accent);
+      const scoreText = report.score === null ? 'n/a' : String(report.score);
+      doc.text(scoreText, M, y + 40);
+      const sw = doc.getTextWidth(scoreText);
+      setText(14, 'normal', MUTED);
+      doc.text('/ 100', M + sw + 6, y + 40);
+      let px = M + sw + 70;
+      if (report.gradeLabel && report.score !== null) px += pill(report.gradeLabel, px, y + 20, accent) + 8;
+      pill(`Speed: ${report.speed.status === 'unknown' ? 'not measured' : report.speed.status === 'good' ? 'good' : report.speed.status === 'warn' ? 'fair' : 'needs attention'}`, px, y + 20, SPEED_RGB[report.speed.status]);
+      y += 54;
+      para(report.meaning, { size: 11, gap: 8 });
+      para(`${report.counts.total} items to improve in total: ${report.counts.high} high priority, ${report.counts.medium} medium, ${report.counts.low} low. ${report.pagesCrawled} pages checked.`, { size: 10, color: MUTED, gap: 8 });
+      if (report.coverage?.note) para(report.coverage.note, { size: 9.5, color: MUTED, gap: 6 });
+      if (report.scoreExplanation.length) {
+        para('How the score is made up', { size: 10, style: 'bold', gap: 3 });
+        report.scoreExplanation.forEach((e) => {
+          para(`${e.label}${e.impact !== undefined && e.impact !== null ? ` (${e.impact})` : ''}${e.detail ? `: ${e.detail}` : ''}`, { size: 9.5, color: MUTED, gap: 2, x: M + 10, w: width - 10 });
+        });
+        y += 6;
+      }
+
+      heading('Your top 3 priorities');
+      if (!report.priorities.length) {
+        para('No issues were found. Nothing needs fixing right now.', { gap: 10 });
+      }
+      report.priorities.forEach((p, i) => {
+        ensure(110);
+        doc.setFillColor(...accent);
+        doc.circle(M + 10, y + 11, 10, 'F');
+        setText(11, 'bold', [255, 255, 255]);
+        doc.text(String(i + 1), M + 10, y + 15, { align: 'center' });
+        setText(12, 'bold', INK);
+        doc.splitTextToSize(clean(p.name), width - 40).forEach((l) => { doc.text(l, M + 30, y + 15); y += 15; });
+        y += 2;
+        const where = `${p.level} priority${p.count ? ` | ${p.count} page${p.count === 1 ? '' : 's'} affected${p.percentage != null ? ` (${p.percentage}%)` : ''}` : ''}`;
+        para(where, { size: 9, color: LEVEL_RGB[p.level] || MUTED, x: M + 30, w: width - 30, gap: 3 });
+        if (p.why) para(`Why it matters: ${p.why}`, { size: 10, x: M + 30, w: width - 30, gap: 3 });
+        if (p.fix) para(`What to do: ${p.fix}`, { size: 10, x: M + 30, w: width - 30, gap: 12 });
+      });
+    }
+
+    // ---- Technical SEO breakdown ----
+    if (has('technical')) {
+      step('Writing Technical SEO breakdown...');
+      startSectionPage();
+      heading('Technical SEO breakdown');
+      const ts = report.technical || {};
+      const techHeadline = `Technical SEO score: ${ts.score != null ? `${ts.score}/100` : 'n/a'}${ts.band ? ` (${ts.band})` : ''}${ts.weakest ? ` | Weakest: ${ts.weakest}` : ''}`;
+      para(techHeadline, { size: 11, style: 'bold', color: accent, gap: 8 });
+      (ts.pillars || []).forEach((p) => {
+        ensure(36);
+        setText(10.5, 'bold', INK);
+        doc.text(clean(p.name), M, y + 11);
+        setText(9.5, 'normal', MUTED);
+        doc.text(clean(`${p.passedCount} passing / ${p.flaggedCount} flagged | ${p.band || 'Not evaluated'}`), M + 140, y + 11);
+        setText(10.5, 'bold', INK);
+        doc.text(p.score != null ? `${p.score} / 100` : '-', W - M, y + 11, { align: 'right' });
+        y += 16;
+        if (p.summary) para(p.summary, { size: 9, color: MUTED, gap: 4 });
+        doc.setDrawColor(...RULE);
+        doc.setLineWidth(0.5);
+        doc.line(M, y - 2, W - M, y - 2);
+        y += 4;
       });
       y += 6;
     }
 
-    heading('Your top 3 priorities');
-    if (!report.priorities.length) {
-      para('No issues were found. Nothing needs fixing right now.', { gap: 10 });
+    // ---- Speed ----
+    if (has('speed')) {
+      step('Writing speed and Core Web Vitals...');
+      startSectionPage();
+      heading('Speed & Core Web Vitals');
+      para(report.speed.headline, { size: 11, style: 'bold', color: SPEED_RGB[report.speed.status], gap: 3 });
+      para(report.speed.detail, { gap: 6 });
+      report.speed.rows.forEach((r) => {
+        para(`${r.label}: ${r.value} (${r.ok === null ? 'n/a' : r.ok ? 'good' : 'needs work'}, target ${r.target})`, { size: 9.5, color: MUTED, gap: 2, x: M + 10, w: width - 10 });
+      });
+      if (report.speed.opportunities.length) {
+        y += 4;
+        para('Biggest speed wins', { size: 10, style: 'bold', gap: 3 });
+        report.speed.opportunities.forEach((o) => para(`${o.title} (could save about ${o.savings})`, { size: 9.5, color: MUTED, gap: 2, x: M + 10, w: width - 10 }));
+      }
+      y += 8;
     }
-    report.priorities.forEach((p, i) => {
-      ensure(110);
-      doc.setFillColor(...accent);
-      doc.circle(M + 10, y + 11, 10, 'F');
-      setText(11, 'bold', [255, 255, 255]);
-      doc.text(String(i + 1), M + 10, y + 15, { align: 'center' });
-      setText(12, 'bold', INK);
-      doc.splitTextToSize(clean(p.name), width - 40).forEach((l) => { doc.text(l, M + 30, y + 15); y += 15; });
-      y += 2;
-      const where = `${p.level} priority${p.count ? ` | ${p.count} page${p.count === 1 ? '' : 's'} affected${p.percentage != null ? ` (${p.percentage}%)` : ''}` : ''}`;
-      para(where, { size: 9, color: LEVEL_RGB[p.level] || MUTED, x: M + 30, w: width - 30, gap: 3 });
-      if (p.why) para(`Why it matters: ${p.why}`, { size: 10, x: M + 30, w: width - 30, gap: 3 });
-      if (p.fix) para(`What to do: ${p.fix}`, { size: 10, x: M + 30, w: width - 30, gap: 12 });
-    });
 
-    // ---- Speed and AI readiness ----
-    step('Writing speed and AI-readiness...');
-    heading('Speed');
-    para(report.speed.headline, { size: 11, style: 'bold', color: SPEED_RGB[report.speed.status], gap: 3 });
-    para(report.speed.detail, { gap: 6 });
-    report.speed.rows.forEach((r) => {
-      para(`${r.label}: ${r.value} (${r.ok === null ? 'n/a' : r.ok ? 'good' : 'needs work'}, target ${r.target})`, { size: 9.5, color: MUTED, gap: 2, x: M + 10, w: width - 10 });
-    });
-    if (report.speed.opportunities.length) {
-      y += 4;
-      para('Biggest speed wins', { size: 10, style: 'bold', gap: 3 });
-      report.speed.opportunities.forEach((o) => para(`${o.title} (could save about ${o.savings})`, { size: 9.5, color: MUTED, gap: 2, x: M + 10, w: width - 10 }));
+    // ---- AI & Search Visibility ----
+    if (has('visibility')) {
+      step('Writing AI & search visibility...');
+      startSectionPage();
+      heading('AI & search visibility');
+      const v = report.visibility || {};
+      const scoreLine = [
+        `AEO Score: ${v.aeo?.score != null ? `${v.aeo.score}/100` : 'n/a'}`,
+        `GEO Score: ${v.geo?.score != null ? `${v.geo.score}/100` : 'n/a'}`,
+        `Search Visibility: ${v.seo?.score != null ? `${v.seo.score}/100` : 'n/a'}`,
+      ].join('   |   ');
+      para(scoreLine, { size: 11, style: 'bold', color: accent, gap: 8 });
+      if (v.questions?.length) {
+        para('Measured questions & citations', { size: 10.5, style: 'bold', gap: 4 });
+        v.questions.forEach((q, idx) => {
+          ensure(44);
+          para(`${idx + 1}. ${q.text}`, { size: 10, style: 'bold', gap: 2 });
+          if (q.target === 'google') {
+            para(`Google: ${q.googleRank ? `#${q.googleRank}` : 'Not on page 1'} | AI Overview: ${q.aioShown ? (q.aioCited ? 'Cited' : 'Shown, not cited') : 'None'}${q.paa ? ' | PAA present' : ''}`, { size: 9.5, color: INK, x: M + 10, w: width - 10, gap: 2 });
+            if (q.topResults?.length) para(`Top results: ${q.topResults.join(', ')}`, { size: 9, color: MUTED, x: M + 10, w: width - 10, gap: 2 });
+            if (q.aioSources?.length) para(`AI Overview sources: ${q.aioSources.join(', ')}`, { size: 9, color: MUTED, x: M + 10, w: width - 10, gap: 6 });
+          } else {
+            const summaryLine = q.aiEntries?.length
+              ? q.aiEntries.map((e) => `${e.engine}: ${e.error || `${e.hits} of ${e.runs} answers mention/cite you`}`).join(' | ')
+              : 'No AI engine answered';
+            para(summaryLine, { size: 9.5, color: MUTED, x: M + 10, w: width - 10, gap: 6 });
+          }
+        });
+      }
+      para('AI crawler & readiness checks', { size: 10.5, style: 'bold', gap: 4 });
+      report.ai.lines.forEach((l) => para(l, { gap: 4 }));
     }
-    y += 8;
 
-    heading('AI-readiness');
-    report.ai.lines.forEach((l) => para(l, { gap: 4 }));
+    // ---- Appendix: Full Issues ----
+    if (has('issues')) {
+      step('Writing the full issue list...');
+      if (startedBody) newPage(); else startSectionPage();
+      heading(`Appendix: full issue list (${report.items.length})`);
+      if (!report.items.length) para('No issues were found.');
+      report.items.forEach((it, i) => {
+        ensure(70);
+        setText(10.5, 'bold', INK);
+        const title = clean(`${i + 1}. ${it.name}`);
+        const lines = doc.splitTextToSize(title, width - 120);
+        lines.forEach((l, li) => { ensure(14); doc.text(l, M, y + 11); if (li === 0) pill(it.level, W - M - 60, y + 9, LEVEL_RGB[it.level] || MUTED); y += 14; });
+        para(`${it.count} page${it.count === 1 ? '' : 's'} affected${it.percentage != null ? ` (${it.percentage}%)` : ''}`, { size: 9, color: MUTED, gap: 2 });
+        if (it.why) para(`Why it matters: ${it.why}`, { size: 9.5, gap: 2 });
+        if (it.fix) para(`What to do: ${it.fix}`, { size: 9.5, gap: 8 });
+        doc.setDrawColor(...RULE);
+        doc.setLineWidth(0.5);
+        doc.line(M, y - 3, W - M, y - 3);
+        y += 4;
+      });
+    }
 
-    // ---- Appendix ----
-    step('Writing the full issue list...');
-    newPage();
-    heading(`Appendix: full issue list (${report.items.length})`);
-    if (!report.items.length) para('No issues were found.');
-    report.items.forEach((it, i) => {
-      ensure(70);
-      setText(10.5, 'bold', INK);
-      const title = clean(`${i + 1}. ${it.name}`);
-      const lines = doc.splitTextToSize(title, width - 120);
-      lines.forEach((l, li) => { ensure(14); doc.text(l, M, y + 11); if (li === 0) pill(it.level, W - M - 60, y + 9, LEVEL_RGB[it.level] || MUTED); y += 14; });
-      para(`${it.count} page${it.count === 1 ? '' : 's'} affected${it.percentage != null ? ` (${it.percentage}%)` : ''}`, { size: 9, color: MUTED, gap: 2 });
-      if (it.why) para(`Why it matters: ${it.why}`, { size: 9.5, gap: 2 });
-      if (it.fix) para(`What to do: ${it.fix}`, { size: 9.5, gap: 8 });
-      doc.setDrawColor(...RULE);
-      doc.setLineWidth(0.5);
-      doc.line(M, y - 3, W - M, y - 3);
-      y += 4;
-    });
+    // ---- Crawled URLs ----
+    if (has('urls') && report.urls?.rows?.length) {
+      step('Writing crawled URLs summary...');
+      if (startedBody) newPage(); else startSectionPage();
+      heading(`Crawled URLs (${report.urls.shown}${report.urls.total > report.urls.shown ? ` of ${report.urls.total}` : ''})`);
+      report.urls.rows.forEach((u, idx) => {
+        ensure(26);
+        const line = `${idx + 1}. ${u.url}`;
+        para(line, { size: 9, style: 'bold', gap: 1 });
+        para(`Status: ${u.status} | ${u.indexability} | Words: ${u.words}${u.responseMs != null ? ` | ${u.responseMs} ms` : ''}`, { size: 8.5, color: MUTED, x: M + 10, w: width - 10, gap: 5 });
+      });
+      if (report.urls.total > report.urls.shown) {
+        para(`Showing first ${report.urls.shown} of ${report.urls.total} URLs. Use Excel (.xlsx) or CSV for the complete URL table.`, { size: 9, color: MUTED, gap: 6 });
+      }
+    }
 
     // ---- Footer on every page ----
     const pages = doc.getNumberOfPages();
@@ -238,7 +331,7 @@ export async function exportExecutiveReportToPDF(report, settings = {}, summary 
     }
 
     step('Saving...');
-    doc.save(`website_health_report_${slugFor(report.host)}.pdf`);
+    doc.save(`${filePrefix}_${slugFor(report.host)}.pdf`);
     toast.success('PDF report downloaded', { id: toastId, description: `${pages} page${pages === 1 ? '' : 's'}, A4.` });
     return true;
   } catch (error) {

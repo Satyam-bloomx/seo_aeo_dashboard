@@ -104,9 +104,10 @@ async def get_limited(
     follow_redirects: bool = True,
     method: str = "GET",
     read_body: bool = True,
+    headers: dict | None = None,
 ) -> LimitedResponse:
     """Fetch url, reading at most max_bytes of decoded body. Non-text bodies are not read."""
-    async with client.stream(method, url, follow_redirects=follow_redirects) as resp:
+    async with client.stream(method, url, follow_redirects=follow_redirects, headers=headers) as resp:
         content_type = resp.headers.get("content-type", "").lower()
         is_text = any(t in content_type for t in ("text/", "xml", "json", "javascript")) or not content_type
         chunks, total, truncated = [], 0, False

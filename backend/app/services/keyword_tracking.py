@@ -289,10 +289,19 @@ async def _serp_get(client: httpx.AsyncClient, params: Dict[str, Any]) -> Dict[s
 def parse_ai_overview(aio: Dict[str, Any], domain: str) -> Dict[str, Any]:
     refs = [r for r in (aio.get("references") or []) if isinstance(r, dict) and r.get("link")]
     hosts = list(dict.fromkeys(site_host(r["link"]) for r in refs))
+    all_sources = []
+    seen_hosts = set()
+    for r in refs:
+        link = r["link"]
+        host = site_host(link)
+        if host and host not in seen_hosts:
+            seen_hosts.add(host)
+            all_sources.append({"host": host, "url": link, "is_self": host_matches(link, domain)})
     return {
         "shown": bool(aio.get("text_blocks") or refs),
         "cited": any(host_matches(r["link"], domain) for r in refs),
         "sources": [h for h in hosts if h and not host_matches(h, domain)][:6],
+        "all_sources": all_sources[:8],
     }
 
 
@@ -305,6 +314,16 @@ def parse_google(data: Dict[str, Any], domain: str, business_name: str = "", off
             url = o["link"]
             break
     competitors = [site_host(o["link"]) for o in organic if not host_matches(o["link"], domain)][:5]
+    top_results = [
+        {
+            "position": o.get("position") or (offset + i + 1),
+            "host": site_host(o["link"]),
+            "url": o["link"],
+            "is_self": host_matches(o["link"], domain),
+        }
+        for i, o in enumerate(organic[:5])
+        if site_host(o["link"])
+    ]
 
     paa = [q for q in (data.get("related_questions") or []) if isinstance(q, dict) and q.get("question")]
     places = (data.get("local_results") or {}).get("places") if isinstance(data.get("local_results"), dict) \
@@ -320,7 +339,7 @@ def parse_google(data: Dict[str, Any], domain: str, business_name: str = "", off
     aio = data.get("ai_overview") if isinstance(data.get("ai_overview"), dict) else {}
     related = [r.get("query") for r in (data.get("related_searches") or []) if isinstance(r, dict) and r.get("query")]
     return {
-        "rank": rank, "url": url, "competitors": competitors,
+        "rank": rank, "url": url, "competitors": competitors, "top_results": top_results,
         "related": [q[:MAX_TEXT] for q in related[:8]],
         "paa": [q["question"][:200] for q in paa[:6]],
         "paa_cited": any(host_matches(q.get("link"), domain) for q in paa),
@@ -357,7 +376,7 @@ async def check_item(client: httpx.AsyncClient, key: str, item: Dict[str, Any], 
             raise
         except Exception:
             aio = {}
-    ai_overview = parse_ai_overview(aio, domain) if aio else {"shown": False, "cited": False, "sources": []}
+    ai_overview = parse_ai_overview(aio, domain) if aio else {"shown": False, "cited": False, "sources": [], "all_sources": []}
 
     for p in range(1, depth):
         if page["rank"] is not None:
@@ -373,7 +392,7 @@ async def check_item(client: httpx.AsyncClient, key: str, item: Dict[str, Any], 
     return {
         "id": item["id"], "text": item["text"], "kind": item["kind"], "intent": item["intent"],
         "branded": item["branded"], "local": item["local"],
-        "rank": page["rank"], "url": page["url"], "competitors": page["competitors"],
+        "rank": page["rank"], "url": page["url"], "competitors": page["competitors"], "top_results": page["top_results"],
         "competition": competition_level(page["competitors"]),
         "related": page["related"],
         "ai_overview": ai_overview,

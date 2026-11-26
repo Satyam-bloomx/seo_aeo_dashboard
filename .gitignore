@@ -53,3 +53,6 @@ new-frontend/
 # Internal only: user-testing sessions/findings and security audit notes (repo is public)
 docs/user-testing/
 docs/SECURITY_AUDIT_AND_ROADMAP.md
+
+# Playwright MCP artifacts (screenshots, snapshots, console logs)
+.playwright-mcp/
