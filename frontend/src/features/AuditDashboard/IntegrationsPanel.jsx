@@ -1392,26 +1392,27 @@ export default function IntegrationsPanel({ projectId = 1, crawlId = null, seedU
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">Key type</span>
                           <div role="radiogroup" aria-label="Gemini key type" className="flex rounded-lg border border-indigo-300 dark:border-indigo-700/80 overflow-hidden text-[11px] font-semibold">
-                            {[['free', 'Free'], ['paid', 'Paid']].map(([id, label]) => (
-                              <button
-                                key={id}
-                                type="button"
-                                role="radio"
-                                aria-checked={integrations.gemini?.tier === id}
-                                onClick={() => handleSetGeminiTier(id)}
-                                className={`px-2.5 py-1 cursor-pointer ${integrations.gemini?.tier === id ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'}`}
-                              >
-                                {label}
-                              </button>
-                            ))}
+                            {[['free', 'Free'], ['paid', 'Paid']].map(([id, label]) => {
+                              const effectiveTier = integrations.gemini?.tier === 'paid' ? 'paid' : 'free';
+                              return (
+                                <button
+                                  key={id}
+                                  type="button"
+                                  role="radio"
+                                  aria-checked={effectiveTier === id}
+                                  onClick={() => handleSetGeminiTier(id)}
+                                  className={`px-2.5 py-1 cursor-pointer ${effectiveTier === id ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'}`}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
                         <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed">
                           {integrations.gemini?.tier === 'paid'
                             ? 'Paid: only the model above is used for everything. If it reaches a limit, choose another model.'
-                            : integrations.gemini?.tier === 'free'
-                              ? 'Free: GEO answers use Gemini 2.5 Flash and Flash-Lite (the models with free Google Search). Other work rotates through your other models.'
-                              : 'Not set yet, so it is treated as a free key. Choose Free or Paid.'}
+                            : 'Free (default): GEO answers use Gemini 2.5 Flash and Flash-Lite (the models with free Google Search). Other work rotates through your other models.'}
                         </p>
                       </div>
                     )}

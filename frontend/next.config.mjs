@@ -50,7 +50,19 @@ const securityHeaders = [
     : []),
 ];
 
+// Unique per production deploy so existing browser sessions sign out cleanly on redeploy
+// (stays stable as "dev" locally so hot-reload never logs you out).
+const BUILD_ID =
+  process.env.NEXT_PUBLIC_BUILD_ID ||
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.RAILWAY_GIT_COMMIT_SHA ||
+  process.env.RENDER_GIT_COMMIT ||
+  (process.env.NODE_ENV === "production" ? String(Date.now()) : "dev");
+
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_BUILD_ID: BUILD_ID,
+  },
   output: "standalone",
   devIndicators: false,
   poweredByHeader: false,

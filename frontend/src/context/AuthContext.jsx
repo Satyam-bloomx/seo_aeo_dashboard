@@ -18,8 +18,8 @@ const AuthContext = createContext({
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000; // 3 days (72 hours / 259,200,000 ms)
 const SESSION_TIMESTAMP_KEY = 'audit_session_started_at';
 const SESSION_VERSION_KEY = 'audit_session_version';
-// Bump this to force all existing browser sessions to sign out once on deploy.
-const CURRENT_SESSION_VERSION = '2026-11-26-v2';
+// Automatically changes on every production build/redeploy (injected in next.config.mjs).
+const CURRENT_SESSION_VERSION = process.env.NEXT_PUBLIC_BUILD_ID || 'dev';
 
 const recordSessionStart = () => {
   try {
